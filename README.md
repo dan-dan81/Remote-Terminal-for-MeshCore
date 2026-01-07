@@ -76,6 +76,42 @@ MESHCORE_SERIAL_PORT=/dev/ttyUSB0 uv run uvicorn app.main:app --host 0.0.0.0 --p
 
 Access the app at http://localhost:8000 (or your server's IP/hostname).
 
+### Systemd Service (Linux)
+
+To run as a system service:
+
+```bash
+# 1. Create service user (with home directory for uv cache)
+sudo useradd -r -m -s /bin/false remoteterm
+
+# 2. Install to /opt/remoteterm
+sudo mkdir -p /opt/remoteterm
+sudo cp -r . /opt/remoteterm/
+sudo chown -R remoteterm:remoteterm /opt/remoteterm
+
+# 3. Create virtualenv and install deps (may need to install uv for the user with curl -LsSf https://astral.sh/uv/install.sh | sudo -u remoteterm sh)
+cd /opt/remoteterm
+sudo -u remoteterm uv venv
+sudo -u remoteterm uv sync
+
+# 4. Build frontend
+cd /opt/remoteterm/frontend
+sudo -u remoteterm npm install
+sudo -u remoteterm npm run build
+
+# 5. Install and start service
+sudo cp /opt/remoteterm/remoteterm.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable remoteterm
+sudo systemctl start remoteterm
+
+# Check status
+sudo systemctl status remoteterm
+sudo journalctl -u remoteterm -f
+```
+
+Edit `/etc/systemd/system/remoteterm.service` to set `MESHCORE_SERIAL_PORT` if auto-detection doesn't work.
+
 ## Environment Variables
 
 | Variable | Default | Description |
