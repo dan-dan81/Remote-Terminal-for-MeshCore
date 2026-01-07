@@ -76,6 +76,20 @@ MESHCORE_SERIAL_PORT=/dev/ttyUSB0 uv run uvicorn app.main:app --host 0.0.0.0 --p
 
 Access the app at http://localhost:8000 (or your server's IP/hostname).
 
+### HTTPS (Required for WebGPU Cracking)
+
+WebGPU requires a secure context. To use the channel key cracker, serve over HTTPS:
+
+```bash
+# Generate self-signed cert
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost'
+
+# Run with SSL
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+```
+
+Accept the browser security warning on first visit. For locally-trusted certs without warnings, use [mkcert](https://github.com/FiloSottile/mkcert).
+
 ### Systemd Service (Linux)
 
 To run as a system service:

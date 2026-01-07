@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GroupTextCracker, type ProgressReport } from 'meshcore-cracker';
+import NoSleep from 'nosleep.js';
 import type { RawPacket, Channel } from '../types';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
   const [gpuAvailable, setGpuAvailable] = useState<boolean | null>(null);
 
   const crackerRef = useRef<GroupTextCracker | null>(null);
+  const noSleepRef = useRef<NoSleep | null>(null);
   const isRunningRef = useRef(false);
   const abortedRef = useRef(false);
   const isProcessingRef = useRef(false);
@@ -42,11 +44,14 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
   const retryFailedRef = useRef(false);
   const maxLengthRef = useRef(6);
 
-  // Initialize cracker
+  // Initialize cracker and NoSleep
   useEffect(() => {
     const cracker = new GroupTextCracker();
     crackerRef.current = cracker;
     setGpuAvailable(cracker.isGpuAvailable());
+
+    const noSleep = new NoSleep();
+    noSleepRef.current = noSleep;
 
     // Load wordlist
     cracker.loadWordlist('/words_alpha.txt')
@@ -56,6 +61,8 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
     return () => {
       cracker.destroy();
       crackerRef.current = null;
+      noSleep.disable();
+      noSleepRef.current = null;
     };
   }, []);
 
@@ -265,6 +272,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
     setIsRunning(true);
     isRunningRef.current = true;
     abortedRef.current = false;
+    noSleepRef.current?.enable();
     processNext();
   };
 
@@ -273,6 +281,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
     isRunningRef.current = false;
     abortedRef.current = true;
     crackerRef.current?.abort();
+    noSleepRef.current?.disable();
   };
 
 
