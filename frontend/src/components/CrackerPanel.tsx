@@ -31,11 +31,13 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   const [isRunning, setIsRunning] = useState(false);
   const [maxLength, setMaxLength] = useState(6);
   const [retryFailedAtNextLength, setRetryFailedAtNextLength] = useState(false);
+  const [decryptHistorical, setDecryptHistorical] = useState(true);
   const [progress, setProgress] = useState<ProgressReport | null>(null);
   const [queue, setQueue] = useState<Map<number, QueueItem>>(new Map());
   const [crackedRooms, setCrackedRooms] = useState<CrackedRoom[]>([]);
   const [wordlistLoaded, setWordlistLoaded] = useState(false);
   const [gpuAvailable, setGpuAvailable] = useState<boolean | null>(null);
+  const [undecryptedPacketCount, setUndecryptedPacketCount] = useState<number | null>(null);
 
   const crackerRef = useRef<GroupTextCracker | null>(null);
   const noSleepRef = useRef<NoSleep | null>(null);
@@ -45,6 +47,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   const queueRef = useRef<Map<number, QueueItem>>(new Map());
   const retryFailedRef = useRef(false);
   const maxLengthRef = useRef(6);
+  const decryptHistoricalRef = useRef(true);
   const undecryptedIdsRef = useRef<Set<number>>(new Set());
 
   // Initialize cracker and NoSleep
@@ -67,6 +70,19 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
       noSleep.disable();
       noSleepRef.current = null;
     };
+  }, []);
+
+  // Fetch undecrypted packet count
+  useEffect(() => {
+    const fetchCount = () => {
+      api.getUndecryptedPacketCount()
+        .then(({ count }) => setUndecryptedPacketCount(count))
+        .catch(() => setUndecryptedPacketCount(null));
+    };
+    fetchCount();
+    // Refresh periodically
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Get existing channel keys for filtering
@@ -115,6 +131,10 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   useEffect(() => {
     maxLengthRef.current = maxLength;
   }, [maxLength]);
+
+  useEffect(() => {
+    decryptHistoricalRef.current = decryptHistorical;
+  }, [decryptHistorical]);
 
   // Keep undecrypted IDs ref in sync - used to skip packets already decrypted by other means
   useEffect(() => {
@@ -245,9 +265,11 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
           try {
             const channelName = '#' + result.roomName;
             await onChannelCreate(channelName, result.key);
-            // Decrypt any other historical packets with this newly discovered key
+            // Optionally decrypt any other historical packets with this newly discovered key
             // This prevents wasting cracking cycles on packets from the same channel
-            await api.decryptHistoricalPackets({ key_type: 'channel', channel_name: channelName });
+            if (decryptHistoricalRef.current) {
+              await api.decryptHistoricalPackets({ key_type: 'channel', channel_name: channelName });
+            }
           } catch (err) {
             console.error('Failed to create channel or decrypt historical:', err);
           }
@@ -355,6 +377,21 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
           />
           Retry failed at n+1
         </label>
+
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={decryptHistorical}
+            onChange={(e) => setDecryptHistorical(e.target.checked)}
+            className="rounded"
+          />
+          Decrypt historical
+        </label>
+        {decryptHistorical && undecryptedPacketCount !== null && undecryptedPacketCount > 0 && (
+          <span className="text-xs text-muted-foreground">
+            (may take a while for {undecryptedPacketCount.toLocaleString()} packets)
+          </span>
+        )}
       </div>
 
       {/* Status */}
