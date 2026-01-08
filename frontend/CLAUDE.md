@@ -11,6 +11,7 @@ This document provides context for AI assistants and developers working on the R
 - **Sonner** - Toast notifications
 - **shadcn/ui components** - Sheet, Tabs, Button (in `components/ui/`)
 - **meshcore-cracker** - WebGPU-accelerated channel key bruteforcing
+- **nosleep.js** - Prevents device sleep during cracking
 
 ## Directory Structure
 
@@ -448,6 +449,22 @@ npm run build
 # Then run backend: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## URL Hash Navigation
+
+Deep linking to conversations via URL hash:
+
+- `#channel/RoomName` - Opens a channel (leading `#` stripped from name for cleaner URLs)
+- `#contact/ContactName` - Opens a DM
+- `#raw` - Opens the raw packet feed
+
+```typescript
+// Parse hash on initial load
+const hashConv = parseHashConversation();
+
+// Update hash when conversation changes (uses replaceState to avoid history pollution)
+window.history.replaceState(null, '', newHash);
+```
+
 ## CrackerPanel
 
 The `CrackerPanel` component provides WebGPU-accelerated brute-forcing of channel keys for undecrypted GROUP_TEXT packets.
@@ -460,6 +477,8 @@ The `CrackerPanel` component provides WebGPU-accelerated brute-forcing of channe
 - **Auto-channel creation**: Cracked channels are automatically added to the channel list
 - **Configurable max length**: Adjustable while running (default: 6)
 - **Retry failed**: Option to retry failed packets at increasing lengths
+- **NoSleep integration**: Prevents device sleep during cracking via `nosleep.js`
+- **Global collapsible panel**: Toggle from sidebar, runs in background when hidden
 
 ### Key Implementation Patterns
 
@@ -474,6 +493,12 @@ const maxLengthRef = useRef(6);
 ```
 
 Progress reporting shows rate in Mkeys/s or Gkeys/s depending on speed.
+
+## Sidebar Features
+
+- **Sort toggle**: Default is 'recent' (most recent message first), can toggle to alphabetical
+- **Mark all as read**: Button appears when there are unread messages, clears all unread counts
+- **Cracker toggle**: Shows/hides the global cracker panel with running status indicator
 
 ## Toast Notifications
 

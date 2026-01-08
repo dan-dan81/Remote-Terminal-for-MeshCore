@@ -1,0 +1,38 @@
+{
+  "name": "meshcore-cracker",
+  "version": "1.0.0",
+  "description": "Standalone MeshCore GroupText packet cracker library",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && node build.js",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@michaelhart/meshcore-decoder": "^0.2.7",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "@webgpu/types": "^0.1.68",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "meshcore",
+    "cracker",
+    "brute-force",
+    "webgpu"
+  ],
+  "license": "MIT"
+}

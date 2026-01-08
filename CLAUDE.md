@@ -15,7 +15,7 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 │  │ StatusBar│  │ Sidebar  │  │MessageList│  │  MessageInput   │ │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘ │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  RawPacketList + CrackerPanel (WebGPU key bruteforcing)   │ │
+│  │      CrackerPanel (global collapsible, WebGPU cracking)    │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                           │                                      │
 │                    useWebSocket ←──── Real-time updates          │
