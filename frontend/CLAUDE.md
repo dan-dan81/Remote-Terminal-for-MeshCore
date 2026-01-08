@@ -10,7 +10,7 @@ This document provides context for AI assistants and developers working on the R
 - **Vitest** - Testing framework
 - **Sonner** - Toast notifications
 - **shadcn/ui components** - Sheet, Tabs, Button (in `components/ui/`)
-- **meshcore-cracker** - WebGPU-accelerated channel key bruteforcing
+- **meshcore-hashtag-cracker** - WebGPU-accelerated channel key bruteforcing
 - **nosleep.js** - Prevents device sleep during cracking
 
 ## Directory Structure

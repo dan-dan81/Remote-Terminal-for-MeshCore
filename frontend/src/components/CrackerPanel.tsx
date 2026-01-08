@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GroupTextCracker, type ProgressReport } from 'meshcore-cracker';
+import { GroupTextCracker, type ProgressReport } from 'meshcore-hashtag-cracker';
 import NoSleep from 'nosleep.js';
 import type { RawPacket, Channel } from '../types';
 import { cn } from '@/lib/utils';
