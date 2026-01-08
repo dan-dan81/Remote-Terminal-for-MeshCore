@@ -23,9 +23,10 @@ interface CrackerPanelProps {
   packets: RawPacket[];
   channels: Channel[];
   onChannelCreate: (name: string, key: string) => Promise<void>;
+  onRunningChange?: (running: boolean) => void;
 }
 
-export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPanelProps) {
+export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChange }: CrackerPanelProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [maxLength, setMaxLength] = useState(6);
   const [retryFailedAtNextLength, setRetryFailedAtNextLength] = useState(false);
@@ -112,6 +113,11 @@ export function CrackerPanel({ packets, channels, onChannelCreate }: CrackerPane
   useEffect(() => {
     maxLengthRef.current = maxLength;
   }, [maxLength]);
+
+  // Notify parent of running state changes
+  useEffect(() => {
+    onRunningChange?.(isRunning);
+  }, [isRunning, onRunningChange]);
 
   // Stats (cracking count is implicit - if progress is shown, we're cracking one)
   const pendingCount = Array.from(queue.values()).filter(q => q.status === 'pending').length;

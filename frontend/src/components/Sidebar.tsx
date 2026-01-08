@@ -18,6 +18,9 @@ interface SidebarProps {
   onNewMessage: () => void;
   lastMessageTimes: ConversationTimes;
   unreadCounts: Record<string, number>;
+  showCracker: boolean;
+  crackerRunning: boolean;
+  onToggleCracker: () => void;
 }
 
 // Load sort preference from localStorage
@@ -47,6 +50,9 @@ export function Sidebar({
   onNewMessage,
   lastMessageTimes,
   unreadCounts,
+  showCracker,
+  crackerRunning,
+  onToggleCracker,
 }: SidebarProps) {
   const [sortOrder, setSortOrder] = useState<SortOrder>(loadSortOrder);
   const [searchQuery, setSearchQuery] = useState('');
@@ -216,6 +222,28 @@ export function Sidebar({
           >
             <span className="text-muted-foreground text-xs">📡</span>
             <span className="flex-1 truncate">Packet Feed</span>
+          </div>
+        )}
+
+        {/* Cracker Toggle */}
+        {!query && (
+          <div
+            className={cn(
+              "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
+              showCracker && "bg-accent border-l-primary"
+            )}
+            onClick={onToggleCracker}
+          >
+            <span className="text-muted-foreground text-xs">🔓</span>
+            <span className="flex-1 truncate">
+              {showCracker ? 'Hide' : 'Show'} Cracker
+              <span className={cn(
+                "ml-1 text-xs",
+                crackerRunning ? "text-green-500" : "text-muted-foreground"
+              )}>
+                ({crackerRunning ? 'running' : 'stopped'})
+              </span>
+            </span>
           </div>
         )}
 

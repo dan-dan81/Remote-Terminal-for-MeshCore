@@ -20,6 +20,7 @@ import {
   type ConversationTimes,
 } from './utils/conversationState';
 import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
+import { cn } from '@/lib/utils';
 import type {
   AppSettings,
   AppSettingsUpdate,
@@ -59,6 +60,8 @@ export function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [undecryptedCount, setUndecryptedCount] = useState(0);
+  const [showCracker, setShowCracker] = useState(false);
+  const [crackerRunning, setCrackerRunning] = useState(false);
   // Track last message times (persisted in localStorage, used for sorting)
   const [lastMessageTimes, setLastMessageTimes] = useState<ConversationTimes>(getLastMessageTimes);
   // Track unread counts (calculated on load and incremented during session)
@@ -634,6 +637,9 @@ export function App() {
       }}
       lastMessageTimes={lastMessageTimes}
       unreadCounts={unreadCounts}
+      showCracker={showCracker}
+      crackerRunning={crackerRunning}
+      onToggleCracker={() => setShowCracker((prev) => !prev)}
     />
   );
 
@@ -670,28 +676,8 @@ export function App() {
             activeConversation.type === 'raw' ? (
               <>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">Raw Packet Feed</div>
-                <div className="flex-1 flex flex-col overflow-hidden">
-                  <div className="flex-1 overflow-hidden min-h-0">
-                    <RawPacketList packets={rawPackets} />
-                  </div>
-                  <div className="h-[280px] flex-shrink-0 border-t border-border overflow-hidden">
-                    <CrackerPanel
-                      packets={rawPackets}
-                      channels={channels}
-                      onChannelCreate={async (name, key) => {
-                        // Create channel without navigating to it
-                        const created = await api.createChannel(name, key);
-                        const data = await api.getChannels();
-                        setChannels(data);
-                        // Try to decrypt historical packets with this key
-                        await api.decryptHistoricalPackets({
-                          key_type: 'channel',
-                          channel_key: created.key,
-                        });
-                        fetchUndecryptedCount();
-                      }}
-                    />
-                  </div>
+                <div className="flex-1 overflow-hidden">
+                  <RawPacketList packets={rawPackets} />
                 </div>
               </>
             ) : (
@@ -748,6 +734,30 @@ export function App() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Global Cracker Panel - always rendered to maintain state */}
+      <div
+        className={cn(
+          "border-t border-border bg-background transition-all duration-200 overflow-hidden",
+          showCracker ? "h-[275px]" : "h-0"
+        )}
+      >
+        <CrackerPanel
+          packets={rawPackets}
+          channels={channels}
+          onChannelCreate={async (name, key) => {
+            const created = await api.createChannel(name, key);
+            const data = await api.getChannels();
+            setChannels(data);
+            await api.decryptHistoricalPackets({
+              key_type: 'channel',
+              channel_key: created.key,
+            });
+            fetchUndecryptedCount();
+          }}
+          onRunningChange={setCrackerRunning}
+        />
       </div>
 
       <NewMessageModal
