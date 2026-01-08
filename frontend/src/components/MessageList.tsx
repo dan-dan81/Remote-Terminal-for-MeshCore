@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import type { Contact, Message } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
 import { pubkeysMatch } from '../utils/pubkey';
@@ -27,6 +27,7 @@ export function MessageList({
   const listRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef<number>(0);
   const isInitialLoadRef = useRef<boolean>(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // Capture scroll state in the scroll handler BEFORE any state updates
   const scrollStateRef = useRef({
@@ -71,11 +72,11 @@ export function MessageList({
     }
   }, [messages.length]);
 
-  // Handle scroll - capture state and detect when user is near top
+  // Handle scroll - capture state and detect when user is near top/bottom
   const handleScroll = useCallback(() => {
     if (!listRef.current) return;
 
-    const { scrollTop, scrollHeight } = listRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
 
     // Always capture current scroll state (needed for scroll preservation)
     scrollStateRef.current = {
@@ -84,6 +85,10 @@ export function MessageList({
       wasNearTop: scrollTop < 150,
     };
 
+    // Show scroll-to-bottom button when not near the bottom (more than 100px away)
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    setShowScrollToBottom(distanceFromBottom > 100);
+
     if (!onLoadOlder || loadingOlder || !hasOlderMessages) return;
 
     // Trigger load when within 100px of top
@@ -91,6 +96,13 @@ export function MessageList({
       onLoadOlder();
     }
   }, [onLoadOlder, loadingOlder, hasOlderMessages]);
+
+  // Scroll to bottom handler
+  const scrollToBottom = useCallback(() => {
+    if (listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, []);
 
   // Look up contact by public key or prefix
   const getContact = (conversationKey: string | null): Contact | null => {
@@ -136,7 +148,8 @@ export function MessageList({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-0.5" ref={listRef} onScroll={handleScroll}>
+    <div className="flex-1 overflow-hidden relative">
+      <div className="h-full overflow-y-auto p-4 flex flex-col gap-0.5" ref={listRef} onScroll={handleScroll}>
       {loadingOlder && (
         <div className="text-center py-2 text-muted-foreground text-sm">
           Loading older messages...
@@ -236,6 +249,31 @@ export function MessageList({
           </div>
         );
       })}
+      </div>
+
+      {/* Scroll to bottom button */}
+      {showScrollToBottom && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-4 right-4 w-10 h-10 rounded-full bg-muted hover:bg-accent border border-border flex items-center justify-center shadow-lg transition-opacity"
+          title="Scroll to bottom"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-muted-foreground"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
