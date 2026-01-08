@@ -22,7 +22,7 @@ class TestHealthEndpoint:
             from app.main import app
             client = TestClient(app)
 
-            response = client.get("/health")
+            response = client.get("/api/health")
 
             assert response.status_code == 200
             data = response.json()
@@ -40,7 +40,7 @@ class TestHealthEndpoint:
             from app.main import app
             client = TestClient(app)
 
-            response = client.get("/health")
+            response = client.get("/api/health")
 
             assert response.status_code == 200
             data = response.json()
@@ -63,7 +63,7 @@ class TestMessagesEndpoint:
             client = TestClient(app)
 
             response = client.post(
-                "/messages/direct",
+                "/api/messages/direct",
                 json={"destination": "abc123", "text": "Hello"}
             )
 
@@ -82,7 +82,7 @@ class TestMessagesEndpoint:
             client = TestClient(app)
 
             response = client.post(
-                "/messages/channel",
+                "/api/messages/channel",
                 json={"channel_key": "0123456789ABCDEF0123456789ABCDEF", "text": "Hello"}
             )
 
@@ -105,7 +105,7 @@ class TestMessagesEndpoint:
             client = TestClient(app)
 
             response = client.post(
-                "/messages/direct",
+                "/api/messages/direct",
                 json={"destination": "nonexistent", "text": "Hello"}
             )
 
@@ -179,7 +179,7 @@ class TestPacketsEndpoint:
             from app.main import app
             client = TestClient(app)
 
-            response = client.get("/packets/undecrypted/count")
+            response = client.get("/api/packets/undecrypted/count")
 
             assert response.status_code == 200
             assert response.json()["count"] == 42

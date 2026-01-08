@@ -41,6 +41,38 @@ function getMessageContentKey(msg: Message): string {
   return `${msg.type}-${msg.conversation_key}-${msg.text}-${msg.sender_timestamp}`;
 }
 
+// Parse URL hash to get conversation (e.g., #channel/Public or #contact/JohnDoe or #raw)
+function parseHashConversation(): { type: 'channel' | 'contact' | 'raw'; name: string } | null {
+  const hash = window.location.hash.slice(1); // Remove leading #
+  if (!hash) return null;
+
+  if (hash === 'raw') {
+    return { type: 'raw', name: 'raw' };
+  }
+
+  const slashIndex = hash.indexOf('/');
+  if (slashIndex === -1) return null;
+
+  const type = hash.slice(0, slashIndex);
+  const name = decodeURIComponent(hash.slice(slashIndex + 1));
+
+  if ((type === 'channel' || type === 'contact') && name) {
+    return { type, name };
+  }
+  return null;
+}
+
+// Generate URL hash from conversation
+function getConversationHash(conv: Conversation | null): string {
+  if (!conv) return '';
+  if (conv.type === 'raw') return '#raw';
+  // Strip leading # from channel names for cleaner URLs
+  const name = conv.type === 'channel' && conv.name.startsWith('#')
+    ? conv.name.slice(1)
+    : conv.name;
+  return `#${conv.type}/${encodeURIComponent(name)}`;
+}
+
 export function App() {
   const messageInputRef = useRef<MessageInputHandle>(null);
   const activeConversationRef = useRef<Conversation | null>(null);
@@ -305,11 +337,49 @@ export function App() {
     fetchUndecryptedCount();
   }, [fetchConfig, fetchAppSettings, fetchUndecryptedCount]);
 
-  // Select Public channel by default when channels first load
+  // Resolve URL hash to a conversation
+  const resolveHashToConversation = useCallback((): Conversation | null => {
+    const hashConv = parseHashConversation();
+    if (!hashConv) return null;
+
+    if (hashConv.type === 'raw') {
+      return { type: 'raw', id: 'raw', name: 'Raw Packet Feed' };
+    }
+    if (hashConv.type === 'channel') {
+      // Match with or without leading # (URL strips it for cleaner URLs)
+      const channel = channels.find(c => c.name === hashConv.name || c.name === `#${hashConv.name}`);
+      if (channel) {
+        return { type: 'channel', id: channel.key, name: channel.name };
+      }
+    }
+    if (hashConv.type === 'contact') {
+      const contact = contacts.find(c => getContactDisplayName(c.name, c.public_key) === hashConv.name);
+      if (contact) {
+        return {
+          type: 'contact',
+          id: contact.public_key,
+          name: getContactDisplayName(contact.name, contact.public_key),
+        };
+      }
+    }
+    return null;
+  }, [channels, contacts]);
+
+  // Set initial conversation from URL hash or default to Public channel
   const hasSetDefaultConversation = useRef(false);
   useEffect(() => {
-    if (hasSetDefaultConversation.current || channels.length === 0 || activeConversation) return;
+    if (hasSetDefaultConversation.current || activeConversation) return;
+    if (channels.length === 0 && contacts.length === 0) return;
 
+    // Try to restore from URL hash first
+    const conv = resolveHashToConversation();
+    if (conv) {
+      setActiveConversation(conv);
+      hasSetDefaultConversation.current = true;
+      return;
+    }
+
+    // Fall back to Public channel
     const publicChannel = channels.find(c => c.name === 'Public');
     if (publicChannel) {
       setActiveConversation({
@@ -319,7 +389,7 @@ export function App() {
       });
       hasSetDefaultConversation.current = true;
     }
-  }, [channels, activeConversation]);
+  }, [channels, contacts, activeConversation, resolveHashToConversation]);
 
   // Fetch messages and count unreads for all conversations on load (single bulk request)
   const fetchedChannels = useRef<Set<string>>(new Set());
@@ -426,6 +496,14 @@ export function App() {
         }
         return prev;
       });
+    }
+
+    // Update URL hash (replaceState doesn't add to history)
+    if (activeConversation) {
+      const newHash = getConversationHash(activeConversation);
+      if (newHash !== window.location.hash) {
+        window.history.replaceState(null, '', newHash);
+      }
     }
   }, [activeConversation]);
 

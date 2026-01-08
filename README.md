@@ -40,9 +40,14 @@ uv run uvicorn app.main:app --reload
 
 # Or specify port explicitly
 MESHCORE_SERIAL_PORT=/dev/cu.usbserial-0001 uv run uvicorn app.main:app --reload
+
+# or disable hot reload for more permanent deployments
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Backend runs at http://localhost:8000, and will preferentially serve from `./frontend/dist` for the GUI. If you want to do GUI development, see below and use http://localhost:5173 for the GUI.
+
+See the `HTTPS` section below if you're serving this anywhere but localhost and need the GPU cracker to function.
 
 **If you just want to run this as-is (all commits push a distribution-ready frontend build), you can just run the backend and access the GUI from there; no need to boot the frontend**
 
