@@ -50,7 +50,7 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
 
     logger.info("Starting historical decryption of %d packets", total)
 
-    for packet_id, packet_data in packets:
+    for packet_id, packet_data, packet_timestamp in packets:
         result = try_decrypt_packet_with_channel_key(packet_data, channel_key_bytes)
 
         if result is not None:
@@ -68,6 +68,7 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
                 sender=result.sender,
                 message_text=result.message,
                 timestamp=result.timestamp,
+                received_at=packet_timestamp,  # Use original packet timestamp for correct ordering
             )
 
             if msg_id is not None:

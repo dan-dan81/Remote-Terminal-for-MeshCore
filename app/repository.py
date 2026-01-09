@@ -429,13 +429,13 @@ class RawPacketRepository:
         return row["count"] if row else 0
 
     @staticmethod
-    async def get_all_undecrypted() -> list[tuple[int, bytes]]:
-        """Get all undecrypted packets as (id, data) tuples."""
+    async def get_all_undecrypted() -> list[tuple[int, bytes, int]]:
+        """Get all undecrypted packets as (id, data, timestamp) tuples."""
         cursor = await db.conn.execute(
-            "SELECT id, data FROM raw_packets WHERE decrypted = 0 ORDER BY timestamp ASC"
+            "SELECT id, data, timestamp FROM raw_packets WHERE decrypted = 0 ORDER BY timestamp ASC"
         )
         rows = await cursor.fetchall()
-        return [(row["id"], bytes(row["data"])) for row in rows]
+        return [(row["id"], bytes(row["data"]), row["timestamp"]) for row in rows]
 
     @staticmethod
     async def mark_decrypted(packet_id: int, message_id: int) -> None:
