@@ -183,3 +183,132 @@ class TestPacketsEndpoint:
 
             assert response.status_code == 200
             assert response.json()["count"] == 42
+
+
+class TestRawPacketRepository:
+    """Test raw packet storage with deduplication."""
+
+    @pytest.mark.asyncio
+    async def test_create_returns_id_for_new_packet(self):
+        """First insert of packet data returns a valid ID."""
+        import aiosqlite
+        from app.repository import RawPacketRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create the raw_packets table
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+        await conn.commit()
+
+        # Patch the db._connection to use our test connection
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            packet_data = b"\x01\x02\x03\x04\x05"
+            packet_id = await RawPacketRepository.create(packet_data, 1234567890)
+
+            assert packet_id is not None
+            assert packet_id > 0
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_create_returns_none_for_duplicate_packet(self):
+        """Second insert of same packet data returns None (duplicate)."""
+        import aiosqlite
+        from app.repository import RawPacketRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create the raw_packets table
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+        await conn.commit()
+
+        # Patch the db._connection to use our test connection
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            packet_data = b"\x01\x02\x03\x04\x05"
+
+            # First insert succeeds
+            first_id = await RawPacketRepository.create(packet_data, 1234567890)
+            assert first_id is not None
+
+            # Second insert of same data returns None
+            second_id = await RawPacketRepository.create(packet_data, 1234567891)
+            assert second_id is None
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_different_packets_both_stored(self):
+        """Different packet data both get stored with unique IDs."""
+        import aiosqlite
+        from app.repository import RawPacketRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create the raw_packets table
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+        await conn.commit()
+
+        # Patch the db._connection to use our test connection
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            packet1 = b"\x01\x02\x03"
+            packet2 = b"\x04\x05\x06"
+
+            id1 = await RawPacketRepository.create(packet1, 1234567890)
+            id2 = await RawPacketRepository.create(packet2, 1234567891)
+
+            assert id1 is not None
+            assert id2 is not None
+            assert id1 != id2
+        finally:
+            db._connection = original_conn
+            await conn.close()

@@ -414,16 +414,19 @@ class MessageRepository:
 
 class RawPacketRepository:
     @staticmethod
-    async def create(data: bytes, timestamp: int | None = None) -> int:
-        """Create a raw packet. Always stores (no deduplication at this level)."""
+    async def create(data: bytes, timestamp: int | None = None) -> int | None:
+        """Create a raw packet. Returns None if duplicate (same data already exists)."""
         ts = timestamp or int(time.time())
 
         cursor = await db.conn.execute(
-            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (ts, data),
         )
         await db.conn.commit()
-        return cursor.lastrowid or 0
+        # rowcount is 0 if INSERT was ignored due to duplicate, 1 if inserted
+        if cursor.rowcount == 0:
+            return None
+        return cursor.lastrowid
 
     @staticmethod
     async def get_undecrypted_count() -> int:
