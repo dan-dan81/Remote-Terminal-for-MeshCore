@@ -7,6 +7,7 @@ import type {
   Message,
   RadioConfig,
   RadioConfigUpdate,
+  TelemetryResponse,
 } from './types';
 
 const API_BASE = '/api';
@@ -79,6 +80,11 @@ export const api = {
   deleteContact: (publicKey: string) =>
     fetchJson<{ status: string }>(`/contacts/${publicKey}`, {
       method: 'DELETE',
+    }),
+  requestTelemetry: (publicKey: string, password: string) =>
+    fetchJson<TelemetryResponse>(`/contacts/${publicKey}/telemetry`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
     }),
 
   // Channels

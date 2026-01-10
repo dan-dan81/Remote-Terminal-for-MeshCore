@@ -141,6 +141,9 @@ await api.decryptHistoricalPackets({ key_type: 'channel', channel_name: '#test' 
 
 // Radio reconnection
 await api.reconnectRadio();  // Returns { status, message, connected }
+
+// Repeater telemetry
+await api.requestTelemetry(publicKey, password);  // Returns TelemetryResponse
 ```
 
 ### API Proxy (Development)
@@ -206,6 +209,29 @@ interface Conversation {
 interface AppSettings {
   max_radio_contacts: number;
 }
+
+// Repeater telemetry types
+interface NeighborInfo {
+  pubkey_prefix: string;
+  name: string | null;
+  snr: number;
+  last_heard_seconds: number;
+}
+
+interface AclEntry {
+  pubkey_prefix: string;
+  name: string | null;
+  permission: number;
+  permission_name: string;
+}
+
+interface TelemetryResponse {
+  battery_volts: number;
+  uptime_seconds: number;
+  // ... status fields
+  neighbors: NeighborInfo[];
+  acl: AclEntry[];
+}
 ```
 
 ## Component Patterns
@@ -220,7 +246,7 @@ export interface MessageInputHandle {
 }
 
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
-  function MessageInput({ onSend, disabled }, ref) {
+  function MessageInput({ onSend, disabled, isRepeaterMode }, ref) {
     useImperativeHandle(ref, () => ({
       appendText: (text: string) => {
         setText((prev) => prev + text);
@@ -235,6 +261,27 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 const messageInputRef = useRef<MessageInputHandle>(null);
 messageInputRef.current?.appendText(`@[${sender}] `);
 ```
+
+### Repeater Mode
+
+When selecting a repeater contact (type=2), MessageInput switches to password mode:
+
+- Input type changes to `password`
+- Button shows "Fetch" instead of "Send"
+- Submitting requests telemetry instead of sending a message
+- Enter "." for empty password
+
+```typescript
+<MessageInput
+  onSend={activeContactIsRepeater ? handleTelemetryRequest : handleSendMessage}
+  isRepeaterMode={activeContactIsRepeater}
+/>
+```
+
+Telemetry response is displayed as three local messages (not persisted):
+1. **[Telemetry]** - Battery voltage, uptime, signal quality, packet stats
+2. **[Neighbors]** - Sorted by SNR (highest first), with resolved names
+3. **[ACL]** - Access control list with permission levels
 
 ### Unread Count Tracking
 

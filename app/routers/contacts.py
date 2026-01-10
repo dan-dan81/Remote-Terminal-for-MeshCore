@@ -4,7 +4,15 @@ from fastapi import APIRouter, HTTPException, Query
 from meshcore import EventType
 
 from app.dependencies import require_connected
-from app.models import Contact
+from app.models import Contact, TelemetryRequest, TelemetryResponse, NeighborInfo, AclEntry, CONTACT_TYPE_REPEATER
+
+# ACL permission level names
+ACL_PERMISSION_NAMES = {
+    0: "Guest",
+    1: "Read-only",
+    2: "Read-write",
+    3: "Admin",
+}
 from app.radio import radio_manager
 from app.repository import ContactRepository
 
@@ -136,3 +144,182 @@ async def delete_contact(public_key: str) -> dict:
     logger.info("Deleted contact %s", contact.public_key[:12])
 
     return {"status": "ok"}
+
+
+@router.post("/{public_key}/telemetry", response_model=TelemetryResponse)
+async def request_telemetry(public_key: str, request: TelemetryRequest) -> TelemetryResponse:
+    """Request telemetry from a repeater.
+
+    The contact must be a repeater (type=2). If not on the radio, it will be added.
+    Uses login + status request with retry logic.
+    """
+    mc = require_connected()
+
+    # Get contact from database
+    contact = await ContactRepository.get_by_key_or_prefix(public_key)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    # Verify it's a repeater
+    if contact.type != CONTACT_TYPE_REPEATER:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Contact is not a repeater (type={contact.type}, expected {CONTACT_TYPE_REPEATER})"
+        )
+
+    # Sync contacts from radio to ensure our cache is up-to-date
+    logger.info("Syncing contacts from radio before telemetry request")
+    await mc.ensure_contacts()
+
+    # Remove contact if it exists (clears any stale auth state on radio)
+    radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
+    if radio_contact:
+        logger.info("Removing existing contact %s from radio", contact.public_key[:12])
+        await mc.commands.remove_contact(contact.public_key)
+        await mc.commands.get_contacts()
+
+    # Add contact fresh with flood mode (matching test_telemetry.py pattern)
+    logger.info("Adding repeater %s to radio with flood mode", contact.public_key[:12])
+    contact_data = {
+        "public_key": contact.public_key,
+        "adv_name": contact.name or "",
+        "type": contact.type,
+        "flags": contact.flags,
+        "out_path": "",
+        "out_path_len": -1,  # Flood mode
+        "adv_lat": contact.lat or 0.0,
+        "adv_lon": contact.lon or 0.0,
+        "last_advert": contact.last_advert or 0,
+    }
+    add_result = await mc.commands.add_contact(contact_data)
+    if add_result.type == EventType.ERROR:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add contact to radio: {add_result.payload}"
+        )
+
+    # Refresh and verify
+    await mc.commands.get_contacts()
+    radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
+    if not radio_contact:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to add contact to radio - contact not found after add"
+        )
+
+    # Send login with password
+    password = request.password
+    logger.info("Sending login to repeater %s", contact.public_key[:12])
+    login_result = await mc.commands.send_login(contact.public_key, password)
+
+    if login_result.type == EventType.ERROR:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Login failed: {login_result.payload}"
+        )
+
+    # Request status with retries
+    logger.info("Requesting status from repeater %s", contact.public_key[:12])
+    status = None
+    for attempt in range(1, 4):
+        logger.debug("Status request attempt %d/3", attempt)
+        status = await mc.commands.req_status_sync(
+            contact.public_key,
+            timeout=10.0,
+            min_timeout=5.0
+        )
+        if status:
+            break
+        logger.debug("Status request timeout, retrying...")
+
+    if not status:
+        raise HTTPException(
+            status_code=504,
+            detail="No response from repeater after 3 attempts"
+        )
+
+    logger.info("Received telemetry from %s: %s", contact.public_key[:12], status)
+
+    # Fetch neighbors (fetch_all_neighbours handles pagination)
+    logger.info("Fetching neighbors from repeater %s", contact.public_key[:12])
+    neighbors_data = None
+    for attempt in range(1, 4):
+        logger.debug("Neighbors request attempt %d/3", attempt)
+        neighbors_data = await mc.commands.fetch_all_neighbours(
+            contact.public_key,
+            timeout=10.0,
+            min_timeout=5.0
+        )
+        if neighbors_data:
+            break
+        logger.debug("Neighbors request timeout, retrying...")
+
+    # Process neighbors - resolve pubkey prefixes to contact names
+    neighbors: list[NeighborInfo] = []
+    if neighbors_data and "neighbours" in neighbors_data:
+        logger.info("Received %d neighbors", len(neighbors_data["neighbours"]))
+        for n in neighbors_data["neighbours"]:
+            pubkey_prefix = n.get("pubkey", "")
+            # Try to resolve to a contact name from our database
+            resolved_contact = await ContactRepository.get_by_key_prefix(pubkey_prefix)
+            neighbors.append(NeighborInfo(
+                pubkey_prefix=pubkey_prefix,
+                name=resolved_contact.name if resolved_contact else None,
+                snr=n.get("snr", 0.0),
+                last_heard_seconds=n.get("secs_ago", 0),
+            ))
+
+    # Fetch ACL
+    logger.info("Fetching ACL from repeater %s", contact.public_key[:12])
+    acl_data = None
+    for attempt in range(1, 4):
+        logger.debug("ACL request attempt %d/3", attempt)
+        acl_data = await mc.commands.req_acl_sync(
+            contact.public_key,
+            timeout=10.0,
+            min_timeout=5.0
+        )
+        if acl_data:
+            break
+        logger.debug("ACL request timeout, retrying...")
+
+    # Process ACL - resolve pubkey prefixes to contact names
+    acl_entries: list[AclEntry] = []
+    if acl_data and isinstance(acl_data, list):
+        logger.info("Received %d ACL entries", len(acl_data))
+        for entry in acl_data:
+            pubkey_prefix = entry.get("key", "")
+            perm = entry.get("perm", 0)
+            # Try to resolve to a contact name from our database
+            resolved_contact = await ContactRepository.get_by_key_prefix(pubkey_prefix)
+            acl_entries.append(AclEntry(
+                pubkey_prefix=pubkey_prefix,
+                name=resolved_contact.name if resolved_contact else None,
+                permission=perm,
+                permission_name=ACL_PERMISSION_NAMES.get(perm, f"Unknown({perm})"),
+            ))
+
+    # Convert raw telemetry to response format
+    # bat is in mV, convert to V (e.g., 3775 -> 3.775)
+    return TelemetryResponse(
+        pubkey_prefix=status.get("pubkey_pre", contact.public_key[:12]),
+        battery_volts=status.get("bat", 0) / 1000.0,
+        tx_queue_len=status.get("tx_queue_len", 0),
+        noise_floor_dbm=status.get("noise_floor", 0),
+        last_rssi_dbm=status.get("last_rssi", 0),
+        last_snr_db=status.get("last_snr", 0.0),
+        packets_received=status.get("nb_recv", 0),
+        packets_sent=status.get("nb_sent", 0),
+        airtime_seconds=status.get("airtime", 0),
+        rx_airtime_seconds=status.get("rx_airtime", 0),
+        uptime_seconds=status.get("uptime", 0),
+        sent_flood=status.get("sent_flood", 0),
+        sent_direct=status.get("sent_direct", 0),
+        recv_flood=status.get("recv_flood", 0),
+        recv_direct=status.get("recv_direct", 0),
+        flood_dups=status.get("flood_dups", 0),
+        direct_dups=status.get("direct_dups", 0),
+        full_events=status.get("full_evts", 0),
+        neighbors=neighbors,
+        acl=acl_entries,
+    )

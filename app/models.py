@@ -122,3 +122,47 @@ class SendDirectMessageRequest(SendMessageRequest):
 
 class SendChannelMessageRequest(SendMessageRequest):
     channel_key: str = Field(description="Channel key (32-char hex)")
+
+
+class TelemetryRequest(BaseModel):
+    password: str = Field(default="", description="Repeater password (empty string for no password)")
+
+
+class NeighborInfo(BaseModel):
+    """Information about a neighbor seen by a repeater."""
+    pubkey_prefix: str = Field(description="Public key prefix (4-12 chars)")
+    name: str | None = Field(default=None, description="Resolved contact name if known")
+    snr: float = Field(description="Signal-to-noise ratio in dB")
+    last_heard_seconds: int = Field(description="Seconds since last heard")
+
+
+class AclEntry(BaseModel):
+    """Access control list entry for a repeater."""
+    pubkey_prefix: str = Field(description="Public key prefix (12 chars)")
+    name: str | None = Field(default=None, description="Resolved contact name if known")
+    permission: int = Field(description="Permission level: 0=Guest, 1=Read-only, 2=Read-write, 3=Admin")
+    permission_name: str = Field(description="Human-readable permission name")
+
+
+class TelemetryResponse(BaseModel):
+    """Telemetry data from a repeater, formatted for human readability."""
+    pubkey_prefix: str = Field(description="12-char public key prefix")
+    battery_volts: float = Field(description="Battery voltage in volts")
+    tx_queue_len: int = Field(description="Transmit queue length")
+    noise_floor_dbm: int = Field(description="Noise floor in dBm")
+    last_rssi_dbm: int = Field(description="Last RSSI in dBm")
+    last_snr_db: float = Field(description="Last SNR in dB")
+    packets_received: int = Field(description="Total packets received")
+    packets_sent: int = Field(description="Total packets sent")
+    airtime_seconds: int = Field(description="TX airtime in seconds")
+    rx_airtime_seconds: int = Field(description="RX airtime in seconds")
+    uptime_seconds: int = Field(description="Uptime in seconds")
+    sent_flood: int = Field(description="Flood packets sent")
+    sent_direct: int = Field(description="Direct packets sent")
+    recv_flood: int = Field(description="Flood packets received")
+    recv_direct: int = Field(description="Direct packets received")
+    flood_dups: int = Field(description="Duplicate flood packets")
+    direct_dups: int = Field(description="Duplicate direct packets")
+    full_events: int = Field(description="Full event queue count")
+    neighbors: list[NeighborInfo] = Field(default_factory=list, description="List of neighbors seen by repeater")
+    acl: list[AclEntry] = Field(default_factory=list, description="Access control list")

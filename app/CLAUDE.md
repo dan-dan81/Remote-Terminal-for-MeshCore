@@ -319,6 +319,7 @@ All endpoints are prefixed with `/api`.
 - `POST /api/contacts/sync` - Pull from radio to database
 - `POST /api/contacts/{key}/add-to-radio` - Push to radio
 - `POST /api/contacts/{key}/remove-from-radio` - Remove from radio
+- `POST /api/contacts/{key}/telemetry` - Request telemetry from repeater (see below)
 
 ### Channels
 - `GET /api/channels` - List from database
@@ -388,4 +389,57 @@ await mc.commands.get_contacts()
 await mc.commands.add_contact(contact_dict)
 await mc.commands.set_channel(idx, name, key)
 await mc.commands.send_advert(flood=True)
+```
+
+## Repeater Telemetry
+
+The `POST /api/contacts/{key}/telemetry` endpoint fetches status, neighbors, and ACL from repeaters (contact type=2).
+
+### Request Flow
+
+1. Verify contact exists and is a repeater (type=2)
+2. Sync contacts from radio with `ensure_contacts()`
+3. Remove and re-add contact with flood mode (clears stale auth state)
+4. Send login with password
+5. Request status with retries (3 attempts, 10s timeout)
+6. Fetch neighbors with `fetch_all_neighbours()` (handles pagination)
+7. Fetch ACL with `req_acl_sync()`
+8. Resolve pubkey prefixes to contact names from database
+
+### ACL Permission Levels
+
+```python
+ACL_PERMISSION_NAMES = {
+    0: "Guest",
+    1: "Read-only",
+    2: "Read-write",
+    3: "Admin",
+}
+```
+
+### Response Models
+
+```python
+class NeighborInfo(BaseModel):
+    pubkey_prefix: str      # 4-12 char prefix
+    name: str | None        # Resolved contact name
+    snr: float              # Signal-to-noise ratio in dB
+    last_heard_seconds: int # Seconds since last heard
+
+class AclEntry(BaseModel):
+    pubkey_prefix: str      # 12 char prefix
+    name: str | None        # Resolved contact name
+    permission: int         # 0-3
+    permission_name: str    # Human-readable name
+
+class TelemetryResponse(BaseModel):
+    # Status fields
+    pubkey_prefix: str
+    battery_volts: float    # Converted from mV
+    uptime_seconds: int
+    # ... signal quality, packet counts, etc.
+
+    # Related data
+    neighbors: list[NeighborInfo]
+    acl: list[AclEntry]
 ```

@@ -109,3 +109,43 @@ export interface AppSettings {
 export interface AppSettingsUpdate {
   max_radio_contacts?: number;
 }
+
+/** Contact type constant for repeaters */
+export const CONTACT_TYPE_REPEATER = 2;
+
+export interface NeighborInfo {
+  pubkey_prefix: string;
+  name: string | null;
+  snr: number;
+  last_heard_seconds: number;
+}
+
+export interface AclEntry {
+  pubkey_prefix: string;
+  name: string | null;
+  permission: number;
+  permission_name: string;
+}
+
+export interface TelemetryResponse {
+  pubkey_prefix: string;
+  battery_volts: number;
+  tx_queue_len: number;
+  noise_floor_dbm: number;
+  last_rssi_dbm: number;
+  last_snr_db: number;
+  packets_received: number;
+  packets_sent: number;
+  airtime_seconds: number;
+  rx_airtime_seconds: number;
+  uptime_seconds: number;
+  sent_flood: number;
+  sent_direct: number;
+  recv_flood: number;
+  recv_direct: number;
+  flood_dups: number;
+  direct_dups: number;
+  full_events: number;
+  neighbors: NeighborInfo[];
+  acl: AclEntry[];
+}

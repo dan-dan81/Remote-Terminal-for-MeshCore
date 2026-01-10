@@ -6,6 +6,8 @@ interface MessageInputProps {
   onSend: (text: string) => Promise<void>;
   disabled: boolean;
   placeholder?: string;
+  /** When true, input becomes password field for repeater telemetry */
+  isRepeaterMode?: boolean;
 }
 
 export interface MessageInputHandle {
@@ -13,7 +15,7 @@ export interface MessageInputHandle {
 }
 
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
-  function MessageInput({ onSend, disabled, placeholder }, ref) {
+  function MessageInput({ onSend, disabled, placeholder, isRepeaterMode }, ref) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,19 +32,35 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
     async (e: FormEvent) => {
       e.preventDefault();
       const trimmed = text.trim();
-      if (!trimmed || sending || disabled) return;
 
-      setSending(true);
-      try {
-        await onSend(trimmed);
-        setText('');
-      } catch (err) {
-        console.error('Failed to send message:', err);
-      } finally {
-        setSending(false);
+      // For repeater mode, allow empty password via "."
+      if (isRepeaterMode) {
+        if (sending || disabled) return;
+        // "." means empty password
+        const password = trimmed === '.' ? '' : trimmed;
+        setSending(true);
+        try {
+          await onSend(password);
+          setText('');
+        } catch (err) {
+          console.error('Failed to request telemetry:', err);
+        } finally {
+          setSending(false);
+        }
+      } else {
+        if (!trimmed || sending || disabled) return;
+        setSending(true);
+        try {
+          await onSend(trimmed);
+          setText('');
+        } catch (err) {
+          console.error('Failed to send message:', err);
+        } finally {
+          setSending(false);
+        }
       }
     },
-    [text, sending, disabled, onSend]
+    [text, sending, disabled, onSend, isRepeaterMode]
   );
 
   const handleKeyDown = useCallback(
@@ -55,20 +73,27 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
     [handleSubmit]
   );
 
+  // For repeater mode, enable submit if there's text OR if it's just "." for empty password
+  const canSubmit = isRepeaterMode
+    ? text.trim().length > 0 || text === '.'
+    : text.trim().length > 0;
+
   return (
     <form className="px-4 py-3 border-t border-border flex gap-2" onSubmit={handleSubmit}>
       <Input
         ref={inputRef}
-        type="text"
+        type={isRepeaterMode ? 'password' : 'text'}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder || 'Type a message...'}
+        placeholder={placeholder || (isRepeaterMode ? 'Enter password (or . for none)...' : 'Type a message...')}
         disabled={disabled || sending}
         className="flex-1"
       />
-      <Button type="submit" disabled={disabled || sending || !text.trim()}>
-        {sending ? 'Sending...' : 'Send'}
+      <Button type="submit" disabled={disabled || sending || !canSubmit}>
+        {sending
+          ? (isRepeaterMode ? 'Fetching...' : 'Sending...')
+          : (isRepeaterMode ? 'Fetch' : 'Send')}
       </Button>
     </form>
   );
