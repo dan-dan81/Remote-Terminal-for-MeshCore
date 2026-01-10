@@ -37,7 +37,7 @@ function createMessage(overrides: Partial<Message>): Message {
     txt_type: 0,
     signature: null,
     outgoing: false,
-    acked: false,
+    acked: 0,
     ...overrides,
   };
 }

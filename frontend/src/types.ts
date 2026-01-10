@@ -76,7 +76,8 @@ export interface Message {
   txt_type: number;
   signature: string | null;
   outgoing: boolean;
-  acked: boolean;
+  /** ACK count: 0 = not acked, 1+ = number of acks/flood echoes received */
+  acked: number;
 }
 
 export type ConversationType = 'contact' | 'channel' | 'raw';
@@ -110,7 +111,8 @@ export interface AppSettingsUpdate {
   max_radio_contacts?: number;
 }
 
-/** Contact type constant for repeaters */
+/** Contact type constants */
+export const CONTACT_TYPE_CLIENT = 1;
 export const CONTACT_TYPE_REPEATER = 2;
 
 export interface NeighborInfo {

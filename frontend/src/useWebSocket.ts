@@ -18,7 +18,7 @@ interface UseWebSocketOptions {
   onMessage?: (message: Message) => void;
   onContact?: (contact: Contact) => void;
   onRawPacket?: (packet: RawPacket) => void;
-  onMessageAcked?: (messageId: number) => void;
+  onMessageAcked?: (messageId: number, ackCount: number) => void;
   onError?: (error: ErrorEvent) => void;
 }
 
@@ -82,9 +82,11 @@ export function useWebSocket(options: UseWebSocketOptions) {
           case 'raw_packet':
             options.onRawPacket?.(msg.data as RawPacket);
             break;
-          case 'message_acked':
-            options.onMessageAcked?.((msg.data as { message_id: number }).message_id);
+          case 'message_acked': {
+            const ackData = msg.data as { message_id: number; ack_count: number };
+            options.onMessageAcked?.(ackData.message_id, ackData.ack_count);
             break;
+          }
           case 'error':
             options.onError?.(msg.data as ErrorEvent);
             break;

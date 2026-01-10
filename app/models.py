@@ -76,7 +76,7 @@ class Message(BaseModel):
     txt_type: int = 0
     signature: str | None = None
     outgoing: bool = False
-    acked: bool = False
+    acked: int = 0
 
 
 class RawPacket(BaseModel):

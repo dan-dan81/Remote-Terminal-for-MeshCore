@@ -258,6 +258,11 @@ KeyStore.clear_private_key()
 
 ## ACK and Repeat Detection
 
+The `acked` field is an integer count, not a boolean:
+- `0` = not acked
+- `1` = one ACK/echo received
+- `2+` = multiple flood echoes received
+
 ### Direct Message ACKs
 
 When sending a direct message, an expected ACK code is tracked:
@@ -267,7 +272,7 @@ from app.event_handlers import track_pending_ack
 track_pending_ack(expected_ack="abc123", message_id=42, timeout_ms=30000)
 ```
 
-When ACK event arrives, the message is marked as acked.
+When ACK event arrives, the message's ack count is incremented.
 
 ### Channel Message Repeats
 
@@ -276,7 +281,10 @@ Flood messages echo back through repeaters. Detection uses:
 - Text hash
 - Timestamp (±5 second window)
 
-When a repeat is detected, the original outgoing message is marked as "acked".
+Each repeat increments the ack count. The frontend displays:
+- `?` = no acks
+- `✓` = 1 echo
+- `✓2`, `✓3`, etc. = multiple echoes (real-time updates via WebSocket)
 
 ### Auto-Contact Sync to Radio
 

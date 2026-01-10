@@ -143,7 +143,7 @@ class TestAckEventHandler:
         # Mock dependencies
         with patch("app.event_handlers.MessageRepository") as mock_repo, \
              patch("app.event_handlers.broadcast_event") as mock_broadcast:
-            mock_repo.mark_acked = AsyncMock()
+            mock_repo.increment_ack_count = AsyncMock(return_value=1)
 
             # Create mock event
             class MockEvent:
@@ -151,11 +151,11 @@ class TestAckEventHandler:
 
             await on_ack(MockEvent())
 
-            # Verify message marked as acked
-            mock_repo.mark_acked.assert_called_once_with(123)
+            # Verify ack count incremented
+            mock_repo.increment_ack_count.assert_called_once_with(123)
 
-            # Verify broadcast sent
-            mock_broadcast.assert_called_once_with("message_acked", {"message_id": 123})
+            # Verify broadcast sent with ack_count
+            mock_broadcast.assert_called_once_with("message_acked", {"message_id": 123, "ack_count": 1})
 
             # Verify pending ACK removed
             assert "deadbeef" not in _pending_acks
@@ -169,13 +169,14 @@ class TestAckEventHandler:
 
         with patch("app.event_handlers.MessageRepository") as mock_repo, \
              patch("app.event_handlers.broadcast_event") as mock_broadcast:
+            mock_repo.increment_ack_count = AsyncMock()
 
             class MockEvent:
                 payload = {"code": "different"}
 
             await on_ack(MockEvent())
 
-            mock_repo.mark_acked.assert_not_called()
+            mock_repo.increment_ack_count.assert_not_called()
             mock_broadcast.assert_not_called()
             assert "expected" in _pending_acks
 
@@ -185,14 +186,14 @@ class TestAckEventHandler:
         from app.event_handlers import on_ack
 
         with patch("app.event_handlers.MessageRepository") as mock_repo:
-            mock_repo.mark_acked = AsyncMock()
+            mock_repo.increment_ack_count = AsyncMock()
 
             class MockEvent:
                 payload = {"code": ""}
 
             await on_ack(MockEvent())
 
-            mock_repo.mark_acked.assert_not_called()
+            mock_repo.increment_ack_count.assert_not_called()
 
 
 class TestContactMessageCLIFiltering:

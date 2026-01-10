@@ -295,7 +295,7 @@ export function MessageList({
                     {formatTime(msg.sender_timestamp || msg.received_at)}
                   </span>
                 )}
-                {msg.outgoing && (msg.acked ? ' ✓' : ' ?')}
+                {msg.outgoing && (msg.acked > 0 ? ` ✓${msg.acked > 1 ? msg.acked : ''}` : ' ?')}
               </div>
             </div>
           </div>

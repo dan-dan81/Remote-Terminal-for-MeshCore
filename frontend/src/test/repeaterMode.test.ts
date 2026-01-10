@@ -52,7 +52,7 @@ describe('Repeater message sender parsing', () => {
 
   it('non-repeater messages still get sender parsed', () => {
     const channelMessage = 'Alice: Hello everyone!';
-    const contactType = CONTACT_TYPE_CLIENT;
+    const contactType: number = CONTACT_TYPE_CLIENT;
 
     const isRepeater = contactType === CONTACT_TYPE_REPEATER;
     const { sender, content } = isRepeater
@@ -107,7 +107,7 @@ describe('Repeater password handling', () => {
   });
 
   it('normal password is passed through unchanged', () => {
-    const trimmed = 'mySecretPassword';
+    const trimmed: string = 'mySecretPassword';
     const password = trimmed === '.' ? '' : trimmed;
 
     expect(password).toBe('mySecretPassword');
@@ -123,7 +123,7 @@ describe('Repeater password handling', () => {
   });
 
   it('".." is NOT converted (only single dot)', () => {
-    const trimmed = '..';
+    const trimmed: string = '..';
     const password = trimmed === '.' ? '' : trimmed;
 
     // Double dot is passed through as-is (it's a valid password)

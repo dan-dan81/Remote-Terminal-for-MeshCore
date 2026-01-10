@@ -305,13 +305,13 @@ export function App() {
         return updated;
       });
     },
-    onMessageAcked: (messageId: number) => {
-      // Update message acked status
+    onMessageAcked: (messageId: number, ackCount: number) => {
+      // Update message acked count
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === messageId);
         if (idx >= 0) {
           const updated = [...prev];
-          updated[idx] = { ...prev[idx], acked: true };
+          updated[idx] = { ...prev[idx], acked: ackCount };
           return updated;
         }
         return prev;
@@ -639,7 +639,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false, // Show as incoming (from the repeater)
-          acked: true, // Mark as acked since it's a response
+          acked: 1, // Mark as acked since it's a response
         };
 
         // Create a second message for neighbors
@@ -654,7 +654,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false,
-          acked: true,
+          acked: 1,
         };
 
         // Create a third message for ACL
@@ -669,7 +669,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false,
-          acked: true,
+          acked: 1,
         };
 
         // Add all messages to the list
@@ -690,7 +690,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false,
-          acked: true,
+          acked: 1,
         };
         setMessages((prev) => [...prev, errorMessage]);
       }
@@ -718,7 +718,7 @@ export function App() {
         txt_type: 0,
         signature: null,
         outgoing: true,
-        acked: true,
+        acked: 1,
       };
       setMessages((prev) => [...prev, commandMessage]);
 
@@ -740,7 +740,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false,
-          acked: true,
+          acked: 1,
         };
 
         setMessages((prev) => [...prev, responseMessage]);
@@ -756,7 +756,7 @@ export function App() {
           txt_type: 0,
           signature: null,
           outgoing: false,
-          acked: true,
+          acked: 1,
         };
         setMessages((prev) => [...prev, errorMessage]);
       }

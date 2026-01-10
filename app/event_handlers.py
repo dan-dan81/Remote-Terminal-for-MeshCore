@@ -180,8 +180,8 @@ async def on_ack(event: "Event") -> None:
         message_id, _, _ = _pending_acks.pop(ack_code)
         logger.info("ACK received for message %d", message_id)
 
-        await MessageRepository.mark_acked(message_id)
-        broadcast_event("message_acked", {"message_id": message_id})
+        ack_count = await MessageRepository.increment_ack_count(message_id)
+        broadcast_event("message_acked", {"message_id": message_id, "ack_count": ack_count})
     else:
         logger.debug("ACK code %s does not match any pending messages", ack_code)
 

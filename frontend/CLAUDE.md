@@ -88,7 +88,7 @@ The `useWebSocket` hook manages real-time connection:
 const wsHandlers = useMemo(() => ({
   onHealth: (data: HealthStatus) => setHealth(data),
   onMessage: (msg: Message) => { /* add to list, track unread */ },
-  onMessageAcked: (messageId: number) => { /* update acked status */ },
+  onMessageAcked: (messageId: number, ackCount: number) => { /* update ack count */ },
   // ...
 }), []);
 
@@ -199,7 +199,7 @@ interface Message {
   conversation_key: string;  // PublicKey for PRIV, ChannelKey for CHAN
   text: string;
   outgoing: boolean;
-  acked: boolean;
+  acked: number;  // 0=not acked, 1+=ack count (flood echoes)
   // ...
 }
 

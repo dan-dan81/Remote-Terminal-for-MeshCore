@@ -230,8 +230,8 @@ async def _process_group_text(
                 # Don't pop - let it expire naturally so subsequent repeats via
                 # different radio paths are also caught as duplicates
                 logger.info("Repeat detected for channel message %d", message_id)
-                await MessageRepository.mark_acked(message_id)
-                broadcast_event("message_acked", {"message_id": message_id})
+                ack_count = await MessageRepository.increment_ack_count(message_id)
+                broadcast_event("message_acked", {"message_id": message_id, "ack_count": ack_count})
                 is_repeat = True
                 break
 

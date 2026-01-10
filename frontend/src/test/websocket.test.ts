@@ -21,7 +21,7 @@ function parseWebSocketMessage(
     onMessage?: (message: Message) => void;
     onContact?: (contact: Contact) => void;
     onRawPacket?: (packet: RawPacket) => void;
-    onMessageAcked?: (messageId: number) => void;
+    onMessageAcked?: (messageId: number, ackCount: number) => void;
   }
 ): { type: string; handled: boolean } {
   try {
@@ -46,9 +46,11 @@ function parseWebSocketMessage(
       case 'raw_packet':
         handlers.onRawPacket?.(msg.data as RawPacket);
         return { type: msg.type, handled: !!handlers.onRawPacket };
-      case 'message_acked':
-        handlers.onMessageAcked?.((msg.data as { message_id: number }).message_id);
+      case 'message_acked': {
+        const ackData = msg.data as { message_id: number; ack_count: number };
+        handlers.onMessageAcked?.(ackData.message_id, ackData.ack_count);
         return { type: msg.type, handled: !!handlers.onMessageAcked };
+      }
       case 'pong':
         return { type: msg.type, handled: true };
       default:
@@ -77,18 +79,18 @@ describe('parseWebSocketMessage', () => {
     });
   });
 
-  it('routes message_acked to onMessageAcked with message ID', () => {
+  it('routes message_acked to onMessageAcked with message ID and ack count', () => {
     const onMessageAcked = vi.fn();
     const data = JSON.stringify({
       type: 'message_acked',
-      data: { message_id: 42 },
+      data: { message_id: 42, ack_count: 3 },
     });
 
     const result = parseWebSocketMessage(data, { onMessageAcked });
 
     expect(result.type).toBe('message_acked');
     expect(result.handled).toBe(true);
-    expect(onMessageAcked).toHaveBeenCalledWith(42);
+    expect(onMessageAcked).toHaveBeenCalledWith(42, 3);
   });
 
   it('routes new message to onMessage handler', () => {
@@ -100,7 +102,7 @@ describe('parseWebSocketMessage', () => {
       text: 'Hello',
       received_at: 1700000000,
       outgoing: false,
-      acked: false,
+      acked: 0,
     };
     const data = JSON.stringify({ type: 'message', data: messageData });
 

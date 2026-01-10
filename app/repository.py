@@ -313,17 +313,23 @@ class MessageRepository:
                 txt_type=row["txt_type"],
                 signature=row["signature"],
                 outgoing=bool(row["outgoing"]),
-                acked=bool(row["acked"]),
+                acked=row["acked"],
             )
             for row in rows
         ]
 
     @staticmethod
-    async def mark_acked(message_id: int) -> None:
+    async def increment_ack_count(message_id: int) -> int:
+        """Increment ack count and return the new value."""
         await db.conn.execute(
-            "UPDATE messages SET acked = 1 WHERE id = ?", (message_id,)
+            "UPDATE messages SET acked = acked + 1 WHERE id = ?", (message_id,)
         )
         await db.conn.commit()
+        cursor = await db.conn.execute(
+            "SELECT acked FROM messages WHERE id = ?", (message_id,)
+        )
+        row = await cursor.fetchone()
+        return row["acked"] if row else 1
 
     @staticmethod
     async def find_duplicate(
@@ -398,7 +404,7 @@ class MessageRepository:
                     txt_type=row["txt_type"],
                     signature=row["signature"],
                     outgoing=bool(row["outgoing"]),
-                    acked=bool(row["acked"]),
+                    acked=row["acked"],
                 )
                 for row in rows
             ]
