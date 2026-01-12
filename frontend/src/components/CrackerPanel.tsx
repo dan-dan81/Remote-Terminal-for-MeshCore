@@ -6,6 +6,41 @@ import type { RawPacket, Channel } from '../types';
 import { api } from '../api';
 import { cn } from '@/lib/utils';
 
+/**
+ * Extract the payload from a raw packet hex string, skipping header and path.
+ * Returns the payload as a hex string, or null if malformed.
+ */
+function extractPayload(packetHex: string): string | null {
+  if (packetHex.length < 4) return null; // Need at least 2 bytes
+
+  try {
+    const header = parseInt(packetHex.slice(0, 2), 16);
+    const routeType = header & 0x03;
+    let offset = 2; // 1 byte = 2 hex chars
+
+    // Skip transport codes if present (TRANSPORT_FLOOD=0, TRANSPORT_DIRECT=3)
+    if (routeType === 0x00 || routeType === 0x03) {
+      if (packetHex.length < offset + 8) return null; // Need 4 more bytes
+      offset += 8; // 4 bytes = 8 hex chars
+    }
+
+    // Get path length
+    if (packetHex.length < offset + 2) return null;
+    const pathLength = parseInt(packetHex.slice(offset, offset + 2), 16);
+    offset += 2;
+
+    // Skip path data
+    const pathBytes = pathLength * 2; // hex chars
+    if (packetHex.length < offset + pathBytes) return null;
+    offset += pathBytes;
+
+    // Rest is payload
+    return packetHex.slice(offset);
+  } catch {
+    return null;
+  }
+}
+
 interface CrackedRoom {
   roomName: string;
   key: string;
@@ -40,6 +75,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   const [wordlistLoaded, setWordlistLoaded] = useState(false);
   const [gpuAvailable, setGpuAvailable] = useState<boolean | null>(null);
   const [undecryptedPacketCount, setUndecryptedPacketCount] = useState<number | null>(null);
+  const [skippedDuplicates, setSkippedDuplicates] = useState(0);
 
   const crackerRef = useRef<GroupTextCracker | null>(null);
   const noSleepRef = useRef<NoSleep | null>(null);
@@ -52,6 +88,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   const decryptHistoricalRef = useRef(true);
   const turboModeRef = useRef(false);
   const undecryptedIdsRef = useRef<Set<number>>(new Set());
+  const seenPayloadsRef = useRef<Set<string>>(new Set());
 
   // Initialize cracker and NoSleep
   useEffect(() => {
@@ -95,14 +132,29 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     p => p.payload_type === 'GROUP_TEXT' && !p.decrypted
   );
 
-  // Update queue when packets change
+  // Update queue when packets change (deduplicated by payload)
   useEffect(() => {
+    let newSkipped = 0;
+
     setQueue(prev => {
       const newQueue = new Map(prev);
       let changed = false;
 
       for (const packet of undecryptedGroupText) {
         if (!newQueue.has(packet.id)) {
+          // Extract payload and check for duplicates
+          const payload = extractPayload(packet.data);
+          if (payload && seenPayloadsRef.current.has(payload)) {
+            // Skip - we already have a packet with this payload queued
+            newSkipped++;
+            continue;
+          }
+
+          // Track this payload as seen
+          if (payload) {
+            seenPayloadsRef.current.add(payload);
+          }
+
           newQueue.set(packet.id, {
             packet,
             attempts: 0,
@@ -119,6 +171,10 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
       }
       return prev;
     });
+
+    if (newSkipped > 0) {
+      setSkippedDuplicates(prev => prev + newSkipped);
+    }
   }, [undecryptedGroupText.length]);
 
   // Keep refs in sync with state
@@ -433,6 +489,11 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
         <span className="text-muted-foreground">
           Failed: <span className="text-destructive font-medium">{failedCount}</span>
         </span>
+        {skippedDuplicates > 0 && (
+          <span className="text-muted-foreground">
+            Skipped (dup): <span className="text-muted-foreground font-medium">{skippedDuplicates}</span>
+          </span>
+        )}
       </div>
 
       {/* Progress */}
