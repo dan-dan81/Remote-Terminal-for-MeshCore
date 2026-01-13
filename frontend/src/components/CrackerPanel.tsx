@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GroupTextCracker, type ProgressReport } from 'meshcore-hashtag-cracker';
-import { ENGLISH_WORDLIST } from 'meshcore-hashtag-cracker/wordlist';
 import NoSleep from 'nosleep.js';
 import type { RawPacket, Channel } from '../types';
 import { api } from '../api';
@@ -62,9 +61,10 @@ interface CrackerPanelProps {
   channels: Channel[];
   onChannelCreate: (name: string, key: string) => Promise<void>;
   onRunningChange?: (running: boolean) => void;
+  visible?: boolean;
 }
 
-export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChange }: CrackerPanelProps) {
+export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChange, visible = false }: CrackerPanelProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [maxLength, setMaxLength] = useState(6);
   const [retryFailedAtNextLength, setRetryFailedAtNextLength] = useState(false);
@@ -100,10 +100,6 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     const noSleep = new NoSleep();
     noSleepRef.current = noSleep;
 
-    // Use built-in wordlist
-    cracker.setWordlist(ENGLISH_WORDLIST);
-    setWordlistLoaded(true);
-
     return () => {
       cracker.destroy();
       crackerRef.current = null;
@@ -111,6 +107,25 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
       noSleepRef.current = null;
     };
   }, []);
+
+  // Load wordlist dynamically when panel becomes visible for the first time
+  useEffect(() => {
+    if (!visible || wordlistLoaded) return;
+
+    import('meshcore-hashtag-cracker/wordlist')
+      .then(({ ENGLISH_WORDLIST }) => {
+        if (crackerRef.current) {
+          crackerRef.current.setWordlist(ENGLISH_WORDLIST);
+          setWordlistLoaded(true);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load wordlist:', err);
+        toast.error('Failed to load wordlist', {
+          description: 'Cracking will not be available',
+        });
+      });
+  }, [visible, wordlistLoaded]);
 
   // Fetch undecrypted packet count
   useEffect(() => {

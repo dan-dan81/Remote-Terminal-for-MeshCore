@@ -633,6 +633,7 @@ export function App() {
         <CrackerPanel
           packets={rawPackets}
           channels={channels}
+          visible={showCracker}
           onChannelCreate={async (name, key) => {
             const created = await api.createChannel(name, key);
             const data = await api.getChannels();
