@@ -562,6 +562,8 @@ export function App() {
                   }
                   disabled={!health?.radio_connected}
                   isRepeaterMode={activeContactIsRepeater && !repeaterLoggedIn}
+                  conversationType={activeConversation.type}
+                  senderName={config?.name}
                   placeholder={
                     !health?.radio_connected
                       ? 'Radio not connected'
