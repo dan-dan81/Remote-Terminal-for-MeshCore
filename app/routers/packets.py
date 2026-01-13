@@ -203,8 +203,8 @@ async def run_maintenance(request: MaintenanceRequest) -> MaintenanceResult:
     deleted = await RawPacketRepository.prune_old_undecrypted(request.prune_undecrypted_days)
     logger.info("Deleted %d old undecrypted packets", deleted)
 
-    # Run VACUUM to reclaim space
-    await db.conn.execute("VACUUM")
+    # Run VACUUM to reclaim space (must be outside transaction, use executescript)
+    await db.conn.executescript("VACUUM;")
     logger.info("Database vacuumed")
 
     return MaintenanceResult(packets_deleted=deleted, vacuumed=True)
@@ -283,8 +283,8 @@ async def _run_payload_dedup() -> None:
 
     await db.conn.commit()
 
-    # Run VACUUM to reclaim space
-    await db.conn.execute("VACUUM")
+    # Run VACUUM to reclaim space (must be outside transaction, use executescript)
+    await db.conn.executescript("VACUUM;")
 
     _dedup_progress = DedupProgress(
         total=total,
