@@ -32,6 +32,19 @@ ls /dev/ttyUSB* /dev/ttyACM*
 
 # macOS
 ls /dev/cu.usbserial-* /dev/cu.usbmodem*
+
+# WSL2
+# Run this in an elevated PowerShell (not WSL) window
+winget install usbipd
+
+# restart console
+
+# find device ID (e.g. 3-8)
+usbipd list
+
+# attach device to WSL
+usbipd bind --busid 3-8
+
 ```
 
 ## Quick Start

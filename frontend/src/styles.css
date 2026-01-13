@@ -28,3 +28,16 @@ body {
   width: 100%;
   border-right: none;
 }
+
+/* Constrain Leaflet map z-index to stay below modals/sheets */
+.leaflet-container {
+  z-index: 0 !important;
+}
+
+.leaflet-pane {
+  z-index: 0 !important;
+}
+
+.leaflet-control {
+  z-index: 10 !important;
+}

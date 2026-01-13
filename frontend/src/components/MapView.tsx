@@ -92,7 +92,7 @@ export function MapView({ contacts }: MapViewProps) {
       {/* Info bar */}
       <div className="px-4 py-2 bg-muted/50 text-xs text-muted-foreground flex items-center justify-between">
         <span>
-          Showing {mappableContacts.length} contact{mappableContacts.length !== 1 ? 's' : ''} heard in the last 7 days with GPS coordinates
+          Showing {mappableContacts.length} contact{mappableContacts.length !== 1 ? 's' : ''} heard in the last 7 days
         </span>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
@@ -110,8 +110,8 @@ export function MapView({ contacts }: MapViewProps) {
         </div>
       </div>
 
-      {/* Map */}
-      <div className="flex-1">
+      {/* Map - z-index constrained to stay below modals/sheets */}
+      <div className="flex-1 relative" style={{ zIndex: 0 }}>
         <MapContainer
           center={[20, 0]}
           zoom={2}
