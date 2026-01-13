@@ -41,6 +41,18 @@ export interface HealthStatus {
   status: string;
   radio_connected: boolean;
   serial_port: string | null;
+  database_size_mb: number;
+}
+
+export interface MaintenanceResult {
+  packets_deleted: number;
+  vacuumed: boolean;
+}
+
+export interface DedupResult {
+  started: boolean;
+  total_packets: number;
+  message: string;
 }
 
 export interface Contact {

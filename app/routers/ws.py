@@ -1,9 +1,11 @@
 """WebSocket router for real-time updates."""
 
 import logging
+import os
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.config import settings
 from app.radio import radio_manager
 from app.repository import ChannelRepository, ContactRepository
 from app.websocket import ws_manager
@@ -20,9 +22,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Send initial state
     try:
         # Health status
+        db_size_mb = 0.0
+        try:
+            db_size_bytes = os.path.getsize(settings.database_path)
+            db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
+        except OSError:
+            pass
+
         health_data = {
+            "status": "ok" if radio_manager.is_connected else "degraded",
             "radio_connected": radio_manager.is_connected,
             "serial_port": radio_manager.port,
+            "database_size_mb": db_size_mb,
         }
         await ws_manager.send_personal(websocket, "health", health_data)
 

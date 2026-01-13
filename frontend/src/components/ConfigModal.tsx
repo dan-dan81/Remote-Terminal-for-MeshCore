@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { AppSettings, AppSettingsUpdate, RadioConfig, RadioConfigUpdate } from '../types';
+import type { AppSettings, AppSettingsUpdate, HealthStatus, RadioConfig, RadioConfigUpdate } from '../types';
 import {
   Dialog,
   DialogContent,
@@ -12,27 +12,33 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { Alert, AlertDescription } from './ui/alert';
+import { toast } from './ui/sonner';
+import { api } from '../api';
 
 interface ConfigModalProps {
   open: boolean;
   config: RadioConfig | null;
   appSettings: AppSettings | null;
+  health: HealthStatus | null;
   onClose: () => void;
   onSave: (update: RadioConfigUpdate) => Promise<void>;
   onSaveAppSettings: (update: AppSettingsUpdate) => Promise<void>;
   onSetPrivateKey: (key: string) => Promise<void>;
   onReboot: () => Promise<void>;
+  onHealthRefresh: () => Promise<void>;
 }
 
 export function ConfigModal({
   open,
   config,
   appSettings,
+  health,
   onClose,
   onSave,
   onSaveAppSettings,
   onSetPrivateKey,
   onReboot,
+  onHealthRefresh,
 }: ConfigModalProps) {
   const [name, setName] = useState('');
   const [lat, setLat] = useState('');
@@ -44,8 +50,11 @@ export function ConfigModal({
   const [cr, setCr] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [maxRadioContacts, setMaxRadioContacts] = useState('');
+  const [retentionDays, setRetentionDays] = useState('14');
   const [loading, setLoading] = useState(false);
   const [rebooting, setRebooting] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [deduping, setDeduping] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -132,6 +141,58 @@ export function ConfigModal({
       setError(err instanceof Error ? err.message : 'Failed to reboot radio');
     } finally {
       setRebooting(false);
+    }
+  };
+
+  const handleCleanup = async () => {
+    const days = parseInt(retentionDays, 10);
+    if (isNaN(days) || days < 1) {
+      setError('Retention days must be at least 1');
+      return;
+    }
+
+    setError('');
+    setCleaning(true);
+
+    try {
+      const result = await api.runMaintenance(days);
+      toast.success('Database cleanup complete', {
+        description: `Deleted ${result.packets_deleted} old packet${result.packets_deleted === 1 ? '' : 's'}`,
+      });
+      // Refresh health to get updated database size
+      await onHealthRefresh();
+    } catch (err) {
+      console.error('Failed to run maintenance:', err);
+      toast.error('Database cleanup failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const handleDedup = async () => {
+    setError('');
+    setDeduping(true);
+
+    try {
+      const result = await api.deduplicatePackets();
+      if (result.started) {
+        toast.success('Deduplication started', {
+          description: result.message,
+        });
+      } else {
+        toast.info('Deduplication', {
+          description: result.message,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to start deduplication:', err);
+      toast.error('Deduplication failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setDeduping(false);
     }
   };
 
@@ -305,6 +366,52 @@ export function ConfigModal({
                 className="border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/10"
               >
                 {rebooting ? 'Rebooting...' : 'Reboot Radio'}
+              </Button>
+            </div>
+
+            <Separator className="my-4" />
+
+            <div className="space-y-3">
+              <Label>Database Maintenance</Label>
+              <p className="text-xs text-muted-foreground">
+                Current database size: <span className="font-medium">{health?.database_size_mb ?? '?'} MB</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Delete undecrypted packets older than the specified days. This helps manage storage
+                for packets that couldn't be decrypted (unknown channel keys).
+              </p>
+              <div className="flex gap-2 items-end">
+                <div className="space-y-1">
+                  <Label htmlFor="retention-days" className="text-xs">Days to retain</Label>
+                  <Input
+                    id="retention-days"
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={retentionDays}
+                    onChange={(e) => setRetentionDays(e.target.value)}
+                    className="w-20"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleCleanup}
+                  disabled={cleaning || loading}
+                >
+                  {cleaning ? 'Cleaning...' : 'Cleanup'}
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-4">
+                Remove packets with duplicate payloads (same message received via different paths).
+                Runs in background and may take a long time.
+              </p>
+              <Button
+                variant="outline"
+                onClick={handleDedup}
+                disabled={deduping || loading}
+              >
+                {deduping ? 'Starting...' : 'Remove Duplicates'}
               </Button>
             </div>
 

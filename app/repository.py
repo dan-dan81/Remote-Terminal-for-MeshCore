@@ -522,3 +522,14 @@ class RawPacketRepository:
             (int(time.time()), packet_id),
         )
         await db.conn.commit()
+
+    @staticmethod
+    async def prune_old_undecrypted(max_age_days: int) -> int:
+        """Delete undecrypted packets older than max_age_days. Returns count deleted."""
+        cutoff = int(time.time()) - (max_age_days * 86400)
+        cursor = await db.conn.execute(
+            "DELETE FROM raw_packets WHERE decrypted = 0 AND timestamp < ?",
+            (cutoff,),
+        )
+        await db.conn.commit()
+        return cursor.rowcount

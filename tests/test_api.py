@@ -563,3 +563,188 @@ class TestRawPacketRepository:
         finally:
             db._connection = original_conn
             await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_prune_old_undecrypted_deletes_old_packets(self):
+        """Prune deletes undecrypted packets older than specified days."""
+        import aiosqlite
+        import time
+        from app.repository import RawPacketRepository
+        from app.database import db
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+
+        now = int(time.time())
+        old_timestamp = now - (15 * 86400)  # 15 days ago
+        recent_timestamp = now - (5 * 86400)  # 5 days ago
+
+        # Insert old undecrypted packet
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            (old_timestamp, b"\x01\x02\x03")
+        )
+        # Insert recent undecrypted packet
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            (recent_timestamp, b"\x04\x05\x06")
+        )
+        # Insert old but decrypted packet (should NOT be deleted)
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 1)",
+            (old_timestamp, b"\x07\x08\x09")
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            # Prune packets older than 10 days
+            deleted = await RawPacketRepository.prune_old_undecrypted(10)
+
+            assert deleted == 1  # Only the old undecrypted packet
+
+            # Verify remaining packets
+            cursor = await conn.execute("SELECT COUNT(*) as count FROM raw_packets")
+            row = await cursor.fetchone()
+            assert row["count"] == 2  # Recent undecrypted + old decrypted
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_prune_old_undecrypted_returns_zero_when_nothing_to_delete(self):
+        """Prune returns 0 when no packets match criteria."""
+        import aiosqlite
+        import time
+        from app.repository import RawPacketRepository
+        from app.database import db
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+
+        now = int(time.time())
+        recent_timestamp = now - (5 * 86400)  # 5 days ago
+
+        # Insert only recent packet
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            (recent_timestamp, b"\x01\x02\x03")
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            # Prune packets older than 10 days (none should match)
+            deleted = await RawPacketRepository.prune_old_undecrypted(10)
+            assert deleted == 0
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+
+class TestMaintenanceEndpoint:
+    """Test database maintenance endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_maintenance_prunes_and_vacuums(self):
+        """Maintenance endpoint prunes old packets and runs vacuum."""
+        import aiosqlite
+        import time
+        from app.repository import RawPacketRepository
+        from app.database import db
+        from app.routers.packets import run_maintenance, MaintenanceRequest
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL UNIQUE,
+                decrypted INTEGER DEFAULT 0,
+                message_id INTEGER,
+                decrypt_attempts INTEGER DEFAULT 0,
+                last_attempt INTEGER
+            )
+        """)
+
+        now = int(time.time())
+        old_timestamp = now - (20 * 86400)  # 20 days ago
+
+        # Insert old undecrypted packets
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            (old_timestamp, b"\x01\x02\x03")
+        )
+        await conn.execute(
+            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            (old_timestamp, b"\x04\x05\x06")
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            request = MaintenanceRequest(prune_undecrypted_days=14)
+            result = await run_maintenance(request)
+
+            assert result.packets_deleted == 2
+            assert result.vacuumed is True
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+
+class TestHealthEndpointDatabaseSize:
+    """Test database size reporting in health endpoint."""
+
+    def test_health_includes_database_size(self):
+        """Health endpoint includes database_size_mb field."""
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch
+
+        with patch("app.routers.health.radio_manager") as mock_rm, \
+             patch("app.routers.health.os.path.getsize") as mock_getsize:
+            mock_rm.is_connected = True
+            mock_rm.port = "/dev/ttyUSB0"
+            mock_getsize.return_value = 10 * 1024 * 1024  # 10 MB
+
+            from app.main import app
+            client = TestClient(app)
+
+            response = client.get("/api/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "database_size_mb" in data
+            assert data["database_size_mb"] == 10.0

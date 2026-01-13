@@ -653,11 +653,16 @@ export function App() {
         open={showConfig}
         config={config}
         appSettings={appSettings}
+        health={health}
         onClose={() => setShowConfig(false)}
         onSave={handleSaveConfig}
         onSaveAppSettings={handleSaveAppSettings}
         onSetPrivateKey={handleSetPrivateKey}
         onReboot={handleReboot}
+        onHealthRefresh={async () => {
+          const data = await api.getHealth();
+          setHealth(data);
+        }}
       />
 
       <Toaster position="top-right" />
