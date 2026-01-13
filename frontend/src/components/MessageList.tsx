@@ -80,7 +80,9 @@ export function MessageList({
   const scrollStateRef = useRef({
     scrollTop: 0,
     scrollHeight: 0,
+    clientHeight: 0,
     wasNearTop: false,
+    wasNearBottom: true, // Default to true so initial messages scroll to bottom
   });
 
   // Handle scroll position AFTER render
@@ -101,8 +103,8 @@ export function MessageList({
       if (scrollStateRef.current.wasNearTop && scrollHeightDiff > 0) {
         // User was near top (loading older) - preserve position by adding the height diff
         list.scrollTop = scrollStateRef.current.scrollTop + scrollHeightDiff;
-      } else if (!scrollStateRef.current.wasNearTop) {
-        // User was at bottom - scroll to bottom for new messages
+      } else if (scrollStateRef.current.wasNearBottom) {
+        // User was near bottom - scroll to bottom for new messages (including sent)
         list.scrollTop = list.scrollHeight;
       }
     }
@@ -115,7 +117,7 @@ export function MessageList({
     if (messages.length === 0) {
       isInitialLoadRef.current = true;
       prevMessagesLengthRef.current = 0;
-      scrollStateRef.current = { scrollTop: 0, scrollHeight: 0, wasNearTop: false };
+      scrollStateRef.current = { scrollTop: 0, scrollHeight: 0, clientHeight: 0, wasNearTop: false, wasNearBottom: true };
     }
   }, [messages.length]);
 
@@ -124,16 +126,18 @@ export function MessageList({
     if (!listRef.current) return;
 
     const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
     // Always capture current scroll state (needed for scroll preservation)
     scrollStateRef.current = {
       scrollTop,
       scrollHeight,
+      clientHeight,
       wasNearTop: scrollTop < 150,
+      wasNearBottom: distanceFromBottom < 100,
     };
 
     // Show scroll-to-bottom button when not near the bottom (more than 100px away)
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     setShowScrollToBottom(distanceFromBottom > 100);
 
     if (!onLoadOlder || loadingOlder || !hasOlderMessages) return;
