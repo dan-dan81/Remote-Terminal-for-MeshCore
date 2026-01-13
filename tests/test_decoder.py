@@ -252,36 +252,91 @@ class TestRealWorldPackets:
 class TestAdvertisementParsing:
     """Test parsing of advertisement packets."""
 
-    def test_parse_real_advertisement(self):
-        """Parse a real advertisement packet from 'Flightless 🥝'."""
+    def test_parse_repeater_advertisement_with_gps(self):
+        """Parse a repeater advertisement with GPS coordinates."""
         from app.decoder import try_parse_advertisement
 
-        # Real advertisement packet
+        # Repeater packet with lat/lon of 49.02056 / -123.82935
+        # Flags 0x92: Role=Repeater (2), Location=Yes, Name=Yes
         packet_hex = (
-            "1200AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A83"
-            "54B55C6934EAC9C9BD98A99788B1725379BB25863731ADAB605BCD62F0BA0E467483"
-            "E0A21E81C9279665D117B265B192890B8E0C2AE03E48DA5AA28C3EFB842EF656670B"
-            "915128D902B72DB5F8466C696768746C65737320F09FA59D"
+            "1106538B1CD273868576DC7F679B493F9AB5AC316173E1A56D3388BC3BA75F583F63"
+            "AB0D1BA2A8ABD0BC6669DBF719E67E4C8517BA4E0D6F8C96A323E9D13A77F2630DED"
+            "965A5C17C3EC6ED1601EEFE857749DA24E9F39CBEACD722C3708F433DB5FA9BAF0BA"
+            "F9BC5B1241069290FEEB029A839EF843616E204F204D657368203220F09FA5AB"
         )
         packet = bytes.fromhex(packet_hex)
 
         result = try_parse_advertisement(packet)
 
         assert result is not None
-        # Public key is the first 32 bytes of payload
+        assert result.public_key == "8576dc7f679b493f9ab5ac316173e1a56d3388bc3ba75f583f63ab0d1ba2a8ab"
+        assert result.name == "Can O Mesh 2 🥫"
+        assert result.device_role == 2  # Repeater
+        assert result.timestamp > 0  # Has valid timestamp
+        assert result.lat is not None
+        assert result.lon is not None
+        assert abs(result.lat - 49.02056) < 0.000001
+        assert abs(result.lon - (-123.82935)) < 0.000001
+
+    def test_parse_chat_node_advertisement_with_gps(self):
+        """Parse a chat node advertisement with GPS coordinates."""
+        from app.decoder import try_parse_advertisement
+
+        # Chat node packet with lat/lon of 47.786038 / -122.344096
+        # Flags 0x91: Role=Chat (1), Location=Yes, Name=Yes
+        packet_hex = (
+            "1100AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A83"
+            "2DBF6669128E9476F36320F21D1B37FF1CF31680F50F4B17EDABCC7CF8C47D3C5E1D"
+            "F3AFD0C8721EA06A8078462EF241DEF80AD6922751F206E3BB121DFB604F4146D60D"
+            "913628D902602DB5F8466C696768746C657373F09FA59D"
+        )
+        packet = bytes.fromhex(packet_hex)
+
+        result = try_parse_advertisement(packet)
+
+        assert result is not None
         assert result.public_key == "ae92564c5c9884854f04f469bbb2bab8871a078053af6cf4aa2c014b18ce8a83"
-        # Name should be extracted from the end
-        assert result.name == "Flightless 🥝"
+        assert result.name == "Flightless🥝"
+        assert result.device_role == 1  # Chat node
+        assert result.timestamp > 0  # Has valid timestamp
+        assert result.lat is not None
+        assert result.lon is not None
+        assert abs(result.lat - 47.786038) < 0.000001
+        assert abs(result.lon - (-122.344096)) < 0.000001
+
+    def test_parse_advertisement_without_gps(self):
+        """Parse an advertisement without GPS coordinates."""
+        from app.decoder import try_parse_advertisement
+
+        # Chat node packet without location
+        # Flags 0x81: Role=Chat (1), Location=No, Name=Yes
+        packet_hex = (
+            "1104D7F9E07A2E38C81F7DC0C1CEDDED6B415B4367CF48F578C5A092CED3490FF0C7"
+            "6EFDF1F5A4BD6669D3D143CFF384D8B3BD950CDCA31C98B7DA789D004D04DED31E16"
+            "B998E1AE352B283EAC8ABCF1F07214EC3BBF7AF3EB8EBF15C00417F2425A259E7CE6"
+            "A875BA0D814D656E6E697344"
+        )
+        packet = bytes.fromhex(packet_hex)
+
+        result = try_parse_advertisement(packet)
+
+        assert result is not None
+        assert result.public_key == "2e38c81f7dc0c1cedded6b415b4367cf48f578c5a092ced3490ff0c76efdf1f5"
+        assert result.name == "MennisD"
+        assert result.device_role == 1  # Chat node
+        assert result.timestamp > 0  # Has valid timestamp
+        assert result.lat is None
+        assert result.lon is None
 
     def test_parse_advertisement_extracts_public_key(self):
         """Advertisement parsing extracts the public key correctly."""
         from app.decoder import parse_packet, PayloadType
 
         packet_hex = (
-            "1200AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A83"
-            "54B55C6934EAC9C9BD98A99788B1725379BB25863731ADAB605BCD62F0BA0E467483"
-            "E0A21E81C9279665D117B265B192890B8E0C2AE03E48DA5AA28C3EFB842EF656670B"
-            "915128D902B72DB5F8466C696768746C65737320F09FA59D"
+            "1100AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A83"
+            "2DBF6669128E9476F36320F21D1B37FF1CF31680F50F4B17EDABCC7CF8C47D3C5E1D"
+            "F3AFD0C8721EA06A8078462EF241DEF80AD6922751F206E3BB121DFB604F4146D60D"
+            "913628D902602DB5F8466C696768746C657373F09FA59D"
         )
         packet = bytes.fromhex(packet_hex)
 

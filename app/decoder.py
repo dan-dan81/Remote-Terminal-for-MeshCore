@@ -53,9 +53,11 @@ class ParsedAdvertisement:
     """Result of parsing an advertisement packet."""
 
     public_key: str  # 64-char hex
+    timestamp: int  # Unix timestamp from the advertisement
     name: str | None
     lat: float | None
     lon: float | None
+    device_role: int  # 1=Chat, 2=Repeater, 3=Room, 4=Sensor
 
 
 @dataclass
@@ -290,62 +292,91 @@ def parse_advertisement(payload: bytes) -> ParsedAdvertisement | None:
     """
     Parse an advertisement payload.
 
-    Advertisement structure:
-    - public_key (32 bytes): Ed25519 public key
-    - signature (64 bytes): Ed25519 signature
-    - advert_data (variable): Contains name and possibly lat/lon
-
-    The name is typically at the end of the payload as a UTF-8 string.
+    Advertisement payload structure (101+ bytes):
+    - Bytes 0-31 (32 bytes): Public Key (Ed25519)
+    - Bytes 32-35 (4 bytes): Timestamp (Unix timestamp, little-endian)
+    - Bytes 36-99 (64 bytes): Signature (Ed25519)
+    - Byte 100 (1 byte): App Flags
+      - Bits 0-3: Device Role (1=Chat, 2=Repeater, 3=Room, 4=Sensor)
+      - Bit 4 (0x10): HasLocation
+      - Bit 5 (0x20): HasFeature1
+      - Bit 6 (0x40): HasFeature2
+      - Bit 7 (0x80): HasName
+    - If HasLocation: 8 bytes (4 lat + 4 lon as signed int32 LE / 1e6)
+    - If HasFeature1: 2 bytes (skipped)
+    - If HasFeature2: 2 bytes (skipped)
+    - If HasName: remaining bytes = name (UTF-8)
     """
-    # Minimum: 32 (pubkey) + 64 (sig) + at least 1 byte for flags/data
-    if len(payload) < 97:
+    # Minimum: pubkey(32) + timestamp(4) + sig(64) + flags(1) = 101 bytes
+    if len(payload) < 101:
         return None
 
-    public_key = payload[:32].hex()
-    # signature = payload[32:96]  # Not currently verified
-    advert_data = payload[96:]
+    # Parse fixed-position fields
+    public_key = payload[0:32].hex()
+    timestamp = int.from_bytes(payload[32:36], byteorder="little")
+    # signature = payload[36:100]  # Not currently verified
+    flags = payload[100]
 
-    if len(advert_data) == 0:
-        return ParsedAdvertisement(
-            public_key=public_key,
-            name=None,
-            lat=None,
-            lon=None,
-        )
+    # Parse flags
+    device_role = flags & 0x0F
+    has_location = bool(flags & 0x10)
+    has_feature1 = bool(flags & 0x20)
+    has_feature2 = bool(flags & 0x40)
+    has_name = bool(flags & 0x80)
 
-    # Try to extract name from the advert data
-    # The structure varies, but the name is typically near the end
-    name = None
+    # Start parsing variable-length app data after flags
+    offset = 101
     lat = None
     lon = None
+    name = None
 
-    # Try to decode the entire advert_data as UTF-8 to find the name
-    # Names are typically at the end after any binary data
-    try:
-        # Find the last valid UTF-8 string
-        for start in range(len(advert_data)):
-            try:
-                text = advert_data[start:].decode("utf-8")
-                # Filter out control characters and check if it looks like a name
-                null_idx = text.find("\x00")
-                if null_idx >= 0:
-                    text = text[:null_idx]
-                text = text.strip()
-                if text and len(text) >= 1 and len(text) <= 40:
-                    # Check if it contains printable characters
-                    if any(c.isalnum() for c in text):
-                        name = text
-                        break
-            except UnicodeDecodeError:
-                continue
-    except Exception:
-        pass
+    # Parse location if present (8 bytes: 4 lat + 4 lon)
+    if has_location:
+        if len(payload) < offset + 8:
+            return ParsedAdvertisement(
+                public_key=public_key,
+                timestamp=timestamp,
+                name=None,
+                lat=None,
+                lon=None,
+                device_role=device_role,
+            )
+        lat_raw = int.from_bytes(payload[offset:offset + 4], byteorder="little", signed=True)
+        lon_raw = int.from_bytes(payload[offset + 4:offset + 8], byteorder="little", signed=True)
+        lat = lat_raw / 1_000_000
+        lon = lon_raw / 1_000_000
+        offset += 8
+
+    # Skip feature fields if present
+    if has_feature1:
+        offset += 2
+    if has_feature2:
+        offset += 2
+
+    # Parse name if present (remaining bytes)
+    if has_name and len(payload) > offset:
+        name_bytes = payload[offset:]
+        try:
+            # Decode name, strip null bytes and control characters
+            name = name_bytes.decode("utf-8", errors="ignore")
+            # Remove null terminator and anything after
+            null_idx = name.find("\x00")
+            if null_idx >= 0:
+                name = name[:null_idx]
+            # Strip control characters and whitespace
+            name = "".join(c for c in name if c >= " " or c in "\t").strip()
+            if not name or not any(c.isalnum() for c in name):
+                name = None
+        except Exception:
+            name = None
 
     return ParsedAdvertisement(
         public_key=public_key,
+        timestamp=timestamp,
         name=name,
         lat=lat,
         lon=lon,
+        device_role=device_role,
     )
 
 

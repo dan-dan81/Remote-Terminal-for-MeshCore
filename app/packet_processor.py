@@ -344,24 +344,31 @@ async def _process_advertisement(
         logger.debug("Failed to parse advertisement packet")
         return
 
-    logger.debug("Parsed advertisement from %s: %s", advert.public_key[:12], advert.name)
+    logger.debug(
+        "Parsed advertisement from %s: %s (role=%d, lat=%s, lon=%s)",
+        advert.public_key[:12], advert.name, advert.device_role, advert.lat, advert.lon
+    )
 
     # Try to find existing contact
     existing = await ContactRepository.get_by_key(advert.public_key)
 
+    # Use device_role from advertisement for contact type (1=Chat, 2=Repeater, 3=Room, 4=Sensor)
+    # Use advert.timestamp for last_advert (sender's timestamp), receive timestamp for last_seen
+    contact_type = advert.device_role if advert.device_role > 0 else (existing.type if existing else 0)
+
     contact_data = {
         "public_key": advert.public_key,
         "name": advert.name,
+        "type": contact_type,
         "lat": advert.lat,
         "lon": advert.lon,
-        "last_advert": timestamp,
+        "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
         "last_seen": timestamp,
     }
 
     await ContactRepository.upsert(contact_data)
 
     # Broadcast contact update to connected clients
-    contact_type = existing.type if existing else 0
     broadcast_event("contact", {
         "public_key": advert.public_key,
         "name": advert.name,
@@ -369,7 +376,7 @@ async def _process_advertisement(
         "flags": existing.flags if existing else 0,
         "last_path": existing.last_path if existing else None,
         "last_path_len": existing.last_path_len if existing else -1,
-        "last_advert": timestamp,
+        "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
         "lat": advert.lat,
         "lon": advert.lon,
         "last_seen": timestamp,
