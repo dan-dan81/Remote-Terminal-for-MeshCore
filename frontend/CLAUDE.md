@@ -617,16 +617,45 @@ The app uses Sonner for toast notifications via a custom wrapper at `components/
 ```typescript
 import { toast } from './components/ui/sonner';
 
-// Success toast
-toast.success('Operation completed', { description: 'Details here' });
+// Success toast (use sparingly - only for significant/destructive actions)
+toast.success('Channel deleted');
 
-// Error toast (muted red styling for readability)
-toast.error('Operation failed', { description: 'Error details' });
+// Error toast with details
+toast.error('Failed to send message', {
+  description: err instanceof Error ? err.message : 'Check radio connection',
+});
 ```
 
-Toasts are automatically shown for:
+### Error Handling Pattern
+
+All async operations that can fail should show error toasts. Keep console.error for debugging:
+
+```typescript
+try {
+  await api.someOperation();
+} catch (err) {
+  console.error('Failed to do X:', err);
+  toast.error('Failed to do X', {
+    description: err instanceof Error ? err.message : 'Check radio connection',
+  });
+}
+```
+
+### Where Toasts Are Used
+
+**Error toasts** (shown when operations fail):
+- `App.tsx`: Advertisement, channel delete, contact delete
+- `useConversationMessages.ts`: Message loading (initial and pagination)
+- `MessageInput.tsx`: Message send, telemetry request
+- `CrackerPanel.tsx`: Channel save after cracking, WebGPU unavailable
+- `StatusBar.tsx`: Manual reconnection failure
+- `useWebSocket.ts`: Backend errors via WebSocket `error` events
+
+**Success toasts** (used sparingly for significant actions):
 - Radio connection/disconnection status changes
-- Backend errors received via WebSocket `error` events
-- Manual reconnection success/failure
+- Manual reconnection success
+- Advertisement sent, channel/contact deleted (confirmation of intentional actions)
+
+**Avoid success toasts** for routine operations like sending messages - only show errors.
 
 The `<Toaster />` component is rendered in `App.tsx` with `position="top-right"`.

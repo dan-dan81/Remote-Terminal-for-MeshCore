@@ -1,6 +1,7 @@
 import { useState, useCallback, useImperativeHandle, forwardRef, useRef, useMemo, type FormEvent, type KeyboardEvent } from 'react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
+import { toast } from './ui/sonner';
 import { cn } from '@/lib/utils';
 
 // MeshCore message size limits (empirically determined from LoRa packet constraints)
@@ -103,6 +104,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
           setText('');
         } catch (err) {
           console.error('Failed to request telemetry:', err);
+          toast.error('Failed to request telemetry', {
+            description: err instanceof Error ? err.message : 'Check radio connection',
+          });
           return;
         } finally {
           setSending(false);
@@ -117,6 +121,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
           setText('');
         } catch (err) {
           console.error('Failed to send message:', err);
+          toast.error('Failed to send message', {
+            description: err instanceof Error ? err.message : 'Check radio connection',
+          });
           return;
         } finally {
           setSending(false);

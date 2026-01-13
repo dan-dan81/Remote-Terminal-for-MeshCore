@@ -4,6 +4,7 @@ import { ENGLISH_WORDLIST } from 'meshcore-hashtag-cracker/wordlist';
 import NoSleep from 'nosleep.js';
 import type { RawPacket, Channel } from '../types';
 import { api } from '../api';
+import { toast } from './ui/sonner';
 import { cn } from '@/lib/utils';
 
 /**
@@ -338,6 +339,9 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
             }
           } catch (err) {
             console.error('Failed to create channel or decrypt historical:', err);
+            toast.error('Failed to save cracked channel', {
+              description: err instanceof Error ? err.message : 'Channel discovered but could not be saved',
+            });
           }
         }
       } else {
@@ -386,7 +390,9 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   // Start/stop handlers
   const handleStart = () => {
     if (!gpuAvailable) {
-      alert('WebGPU is not available in your browser. Please use Chrome 113+ or Edge 113+.');
+      toast.error('WebGPU not available', {
+        description: 'Cracking requires Chrome 113+ or Edge 113+ with WebGPU support.',
+      });
       return;
     }
     setIsRunning(true);

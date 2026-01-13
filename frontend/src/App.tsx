@@ -352,8 +352,12 @@ export function App() {
   const handleAdvertise = useCallback(async () => {
     try {
       await api.sendAdvertisement(true);
+      toast.success('Advertisement sent');
     } catch (err) {
       console.error('Failed to send advertisement:', err);
+      toast.error('Failed to send advertisement', {
+        description: err instanceof Error ? err.message : 'Check radio connection',
+      });
     }
   }, []);
 
@@ -375,8 +379,12 @@ export function App() {
       await api.deleteChannel(key);
       setChannels((prev) => prev.filter((c) => c.key !== key));
       setActiveConversation(null);
+      toast.success('Channel deleted');
     } catch (err) {
       console.error('Failed to delete channel:', err);
+      toast.error('Failed to delete channel', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   }, []);
 
@@ -387,8 +395,12 @@ export function App() {
       await api.deleteContact(publicKey);
       setContacts((prev) => prev.filter((c) => c.public_key !== publicKey));
       setActiveConversation(null);
+      toast.success('Contact deleted');
     } catch (err) {
       console.error('Failed to delete contact:', err);
+      toast.error('Failed to delete contact', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   }, []);
 

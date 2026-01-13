@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { toast } from '../components/ui/sonner';
 import { api } from '../api';
 import type { Conversation, Message } from '../types';
 
@@ -61,6 +62,9 @@ export function useConversationMessages(
       setHasOlderMessages(data.length >= MESSAGE_PAGE_SIZE);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
+      toast.error('Failed to load messages', {
+        description: err instanceof Error ? err.message : 'Check your connection',
+      });
     } finally {
       if (showLoading) {
         setMessagesLoading(false);
@@ -93,6 +97,9 @@ export function useConversationMessages(
       setHasOlderMessages(data.length >= MESSAGE_PAGE_SIZE);
     } catch (err) {
       console.error('Failed to fetch older messages:', err);
+      toast.error('Failed to load older messages', {
+        description: err instanceof Error ? err.message : 'Check your connection',
+      });
     } finally {
       setLoadingOlder(false);
     }
