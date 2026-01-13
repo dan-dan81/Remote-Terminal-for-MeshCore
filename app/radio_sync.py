@@ -187,18 +187,21 @@ async def ensure_default_channels() -> None:
     """
     Ensure default channels exist in the database.
     These will be configured on the radio when needed for sending.
+
+    The Public channel is protected - it always exists with the canonical name.
     """
-    # Public channel - no hashtag, specific key
+    # Public channel - no hashtag, specific well-known key
     PUBLIC_CHANNEL_KEY_HEX = "8B3387E9C5CDEA6AC9E5EDBAA115CD72"
 
-    existing = await ChannelRepository.get_by_name("Public")
-    if not existing:
-        logger.info("Creating default Public channel")
+    # Check by KEY (not name) since that's what's fixed
+    existing = await ChannelRepository.get_by_key(PUBLIC_CHANNEL_KEY_HEX)
+    if not existing or existing.name != "Public":
+        logger.info("Ensuring default Public channel exists with correct name")
         await ChannelRepository.upsert(
             key=PUBLIC_CHANNEL_KEY_HEX,
             name="Public",
             is_hashtag=False,
-            on_radio=False,
+            on_radio=existing.on_radio if existing else False,
         )
 
 
