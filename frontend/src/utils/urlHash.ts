@@ -1,7 +1,7 @@
 import type { Conversation } from '../types';
 
 export interface ParsedHashConversation {
-  type: 'channel' | 'contact' | 'raw';
+  type: 'channel' | 'contact' | 'raw' | 'map';
   name: string;
 }
 
@@ -12,6 +12,10 @@ export function parseHashConversation(): ParsedHashConversation | null {
 
   if (hash === 'raw') {
     return { type: 'raw', name: 'raw' };
+  }
+
+  if (hash === 'map') {
+    return { type: 'map', name: 'map' };
   }
 
   const slashIndex = hash.indexOf('/');
@@ -30,6 +34,7 @@ export function parseHashConversation(): ParsedHashConversation | null {
 export function getConversationHash(conv: Conversation | null): string {
   if (!conv) return '';
   if (conv.type === 'raw') return '#raw';
+  if (conv.type === 'map') return '#map';
   // Strip leading # from channel names for cleaner URLs
   const name = conv.type === 'channel' && conv.name.startsWith('#')
     ? conv.name.slice(1)

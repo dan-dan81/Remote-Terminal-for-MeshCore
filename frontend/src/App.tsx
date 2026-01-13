@@ -10,6 +10,7 @@ import { NewMessageModal } from './components/NewMessageModal';
 import { ConfigModal } from './components/ConfigModal';
 import { MaintenanceModal } from './components/MaintenanceModal';
 import { RawPacketList } from './components/RawPacketList';
+import { MapView } from './components/MapView';
 import { CrackerPanel } from './components/CrackerPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
@@ -540,7 +541,14 @@ export function App() {
 
         <div className="flex-1 flex flex-col bg-background min-w-0">
           {activeConversation ? (
-            activeConversation.type === 'raw' ? (
+            activeConversation.type === 'map' ? (
+              <>
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">Node Map</div>
+                <div className="flex-1 overflow-hidden">
+                  <MapView contacts={contacts} />
+                </div>
+              </>
+            ) : activeConversation.type === 'raw' ? (
               <>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">Raw Packet Feed</div>
                 <div className="flex-1 overflow-hidden">

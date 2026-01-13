@@ -19,11 +19,13 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.562.0",
     "meshcore-hashtag-cracker": "^1.5.0",
     "nosleep.js": "^0.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7"
@@ -31,6 +33,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^25.0.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

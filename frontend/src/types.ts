@@ -94,11 +94,11 @@ export interface Message {
   acked: number;
 }
 
-export type ConversationType = 'contact' | 'channel' | 'raw';
+export type ConversationType = 'contact' | 'channel' | 'raw' | 'map';
 
 export interface Conversation {
   type: ConversationType;
-  /** PublicKey for contacts, ChannelKey for channels, 'raw' for raw feed */
+  /** PublicKey for contacts, ChannelKey for channels, 'raw'/'map' for special views */
   id: string;
   name: string;
 }

@@ -70,7 +70,7 @@ export function Sidebar({
     onSelectConversation(conversation);
   };
 
-  const isActive = (type: 'contact' | 'channel' | 'raw', id: string) =>
+  const isActive = (type: 'contact' | 'channel' | 'raw' | 'map', id: string) =>
     activeConversation?.type === type && activeConversation?.id === id;
 
   // Get unread count for a conversation
@@ -224,6 +224,26 @@ export function Sidebar({
           >
             <span className="text-muted-foreground text-xs">📡</span>
             <span className="flex-1 truncate">Packet Feed</span>
+          </div>
+        )}
+
+        {/* Node Map */}
+        {!query && (
+          <div
+            className={cn(
+              "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
+              isActive('map', 'map') && "bg-accent border-l-primary"
+            )}
+            onClick={() =>
+              handleSelectConversation({
+                type: 'map',
+                id: 'map',
+                name: 'Node Map',
+              })
+            }
+          >
+            <span className="text-muted-foreground text-xs">🗺️</span>
+            <span className="flex-1 truncate">Node Map</span>
           </div>
         )}
 
