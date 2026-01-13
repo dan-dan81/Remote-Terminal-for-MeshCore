@@ -8,11 +8,12 @@ interface StatusBarProps {
   health: HealthStatus | null;
   config: RadioConfig | null;
   onConfigClick: () => void;
+  onMaintenanceClick: () => void;
   onAdvertise: () => void;
   onMenuClick?: () => void;
 }
 
-export function StatusBar({ health, config, onConfigClick, onAdvertise, onMenuClick }: StatusBarProps) {
+export function StatusBar({ health, config, onConfigClick, onMaintenanceClick, onAdvertise, onMenuClick }: StatusBarProps) {
   const connected = health?.radio_connected ?? false;
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -89,10 +90,17 @@ export function StatusBar({ health, config, onConfigClick, onAdvertise, onMenuCl
         Advertise
       </button>
       <button
+        onClick={onMaintenanceClick}
+        className="px-2 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
+        title="Database Maintenance"
+      >
+        <span role="img" aria-label="Settings">&#9881;&#65039;</span>
+      </button>
+      <button
         onClick={onConfigClick}
         className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
       >
-        Config
+        <span role="img" aria-label="Radio">&#128251;</span> Config
       </button>
     </div>
   );

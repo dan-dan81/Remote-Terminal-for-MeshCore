@@ -8,6 +8,7 @@ import { MessageList } from './components/MessageList';
 import { MessageInput, type MessageInputHandle } from './components/MessageInput';
 import { NewMessageModal } from './components/NewMessageModal';
 import { ConfigModal } from './components/ConfigModal';
+import { MaintenanceModal } from './components/MaintenanceModal';
 import { RawPacketList } from './components/RawPacketList';
 import { CrackerPanel } from './components/CrackerPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
@@ -46,6 +47,7 @@ export function App() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [undecryptedCount, setUndecryptedCount] = useState(0);
   const [showCracker, setShowCracker] = useState(false);
@@ -513,6 +515,7 @@ export function App() {
         health={health}
         config={config}
         onConfigClick={() => setShowConfig(true)}
+        onMaintenanceClick={() => setShowMaintenance(true)}
         onAdvertise={handleAdvertise}
         onMenuClick={() => setSidebarOpen(true)}
       />
@@ -662,12 +665,17 @@ export function App() {
         open={showConfig}
         config={config}
         appSettings={appSettings}
-        health={health}
         onClose={() => setShowConfig(false)}
         onSave={handleSaveConfig}
         onSaveAppSettings={handleSaveAppSettings}
         onSetPrivateKey={handleSetPrivateKey}
         onReboot={handleReboot}
+      />
+
+      <MaintenanceModal
+        open={showMaintenance}
+        health={health}
+        onClose={() => setShowMaintenance(false)}
         onHealthRefresh={async () => {
           const data = await api.getHealth();
           setHealth(data);
