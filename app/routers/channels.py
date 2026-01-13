@@ -118,6 +118,20 @@ async def sync_channels_from_radio(
     return {"synced": count}
 
 
+@router.post("/{key}/mark-read")
+async def mark_channel_read(key: str) -> dict:
+    """Mark a channel as read (update last_read_at timestamp)."""
+    channel = await ChannelRepository.get_by_key(key)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    updated = await ChannelRepository.update_last_read_at(key)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update read state")
+
+    return {"status": "ok", "key": channel.key}
+
+
 @router.delete("/{key}")
 async def delete_channel(key: str) -> dict:
     """Delete a channel from the database by key.

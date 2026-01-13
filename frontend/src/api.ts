@@ -82,6 +82,10 @@ export const api = {
     fetchJson<{ status: string }>(`/contacts/${publicKey}`, {
       method: 'DELETE',
     }),
+  markContactRead: (publicKey: string) =>
+    fetchJson<{ status: string; public_key: string }>(`/contacts/${publicKey}/mark-read`, {
+      method: 'POST',
+    }),
   requestTelemetry: (publicKey: string, password: string) =>
     fetchJson<TelemetryResponse>(`/contacts/${publicKey}/telemetry`, {
       method: 'POST',
@@ -105,6 +109,10 @@ export const api = {
     fetchJson<{ synced: number }>('/channels/sync', { method: 'POST' }),
   deleteChannel: (key: string) =>
     fetchJson<{ status: string }>(`/channels/${key}`, { method: 'DELETE' }),
+  markChannelRead: (key: string) =>
+    fetchJson<{ status: string; key: string }>(`/channels/${key}/mark-read`, {
+      method: 'POST',
+    }),
 
   // Messages
   getMessages: (params?: {
@@ -155,6 +163,12 @@ export const api = {
     fetchJson<DecryptResult>('/packets/decrypt/historical', {
       method: 'POST',
       body: JSON.stringify(params),
+    }),
+
+  // Read State
+  markAllRead: () =>
+    fetchJson<{ status: string; timestamp: number }>('/read-state/mark-all-read', {
+      method: 'POST',
     }),
 
   // App Settings

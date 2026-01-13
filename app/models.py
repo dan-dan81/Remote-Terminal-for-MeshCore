@@ -14,6 +14,7 @@ class Contact(BaseModel):
     last_seen: int | None = None
     on_radio: bool = False
     last_contacted: int | None = None  # Last time we sent/received a message
+    last_read_at: int | None = None  # Server-side read state tracking
 
     def to_radio_dict(self) -> dict:
         """Convert to the dict format expected by meshcore radio commands.
@@ -63,6 +64,7 @@ class Channel(BaseModel):
     name: str
     is_hashtag: bool = False
     on_radio: bool = False
+    last_read_at: int | None = None  # Server-side read state tracking
 
 
 class Message(BaseModel):

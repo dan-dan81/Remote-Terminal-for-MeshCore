@@ -214,6 +214,20 @@ async def add_contact_to_radio(public_key: str) -> dict:
     return {"status": "ok"}
 
 
+@router.post("/{public_key}/mark-read")
+async def mark_contact_read(public_key: str) -> dict:
+    """Mark a contact conversation as read (update last_read_at timestamp)."""
+    contact = await ContactRepository.get_by_key_or_prefix(public_key)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    updated = await ContactRepository.update_last_read_at(contact.public_key)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update read state")
+
+    return {"status": "ok", "public_key": contact.public_key}
+
+
 @router.delete("/{public_key}")
 async def delete_contact(public_key: str) -> dict:
     """Delete a contact from the database (and radio if present)."""

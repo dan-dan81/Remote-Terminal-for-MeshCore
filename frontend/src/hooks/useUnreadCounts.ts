@@ -2,9 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '../api';
 import {
   getLastMessageTimes,
-  getLastReadTimes,
   setLastMessageTime,
-  setLastReadTime,
   getStateKey,
   type ConversationTimes,
 } from '../utils/conversationState';
@@ -32,6 +30,7 @@ export function useUnreadCounts(
   const fetchedContacts = useRef<Set<string>>(new Set());
 
   // Fetch messages and count unreads for new channels/contacts
+  // Uses server-side last_read_at for consistent read state across devices
   useEffect(() => {
     const newChannels = channels.filter(c => !fetchedChannels.current.has(c.key));
     const newContacts = contacts.filter(c => c.public_key && !fetchedContacts.current.has(c.public_key));
@@ -52,16 +51,16 @@ export function useUnreadCounts(
 
       try {
         const bulkMessages = await api.getMessagesBulk(conversations, 100);
-        const currentReadTimes = getLastReadTimes();
         const newUnreadCounts: Record<string, number> = {};
         const newLastMessageTimes: Record<string, number> = {};
 
-        // Process channel messages
+        // Process channel messages - use server-side last_read_at
         for (const channel of newChannels) {
           const msgs = bulkMessages[`CHAN:${channel.key}`] || [];
           if (msgs.length > 0) {
             const key = getStateKey('channel', channel.key);
-            const lastRead = currentReadTimes[key] || 0;
+            // Use server-side last_read_at, fallback to 0 if never read
+            const lastRead = channel.last_read_at || 0;
 
             const unreadCount = msgs.filter(m => !m.outgoing && m.received_at > lastRead).length;
             if (unreadCount > 0) {
@@ -74,12 +73,13 @@ export function useUnreadCounts(
           }
         }
 
-        // Process contact messages
+        // Process contact messages - use server-side last_read_at
         for (const contact of newContacts) {
           const msgs = bulkMessages[`PRIV:${contact.public_key}`] || [];
           if (msgs.length > 0) {
             const key = getStateKey('contact', contact.public_key);
-            const lastRead = currentReadTimes[key] || 0;
+            // Use server-side last_read_at, fallback to 0 if never read
+            const lastRead = contact.last_read_at || 0;
 
             const unreadCount = msgs.filter(m => !m.outgoing && m.received_at > lastRead).length;
             if (unreadCount > 0) {
@@ -105,15 +105,15 @@ export function useUnreadCounts(
   }, [channels, contacts]);
 
   // Mark conversation as read when user views it
+  // Calls server API to persist read state across devices
   useEffect(() => {
     if (activeConversation && activeConversation.type !== 'raw') {
       const key = getStateKey(
         activeConversation.type as 'channel' | 'contact',
         activeConversation.id
       );
-      const now = Math.floor(Date.now() / 1000);
-      setLastReadTime(key, now);
 
+      // Update local state immediately for responsive UI
       setUnreadCounts((prev) => {
         if (prev[key]) {
           const next = { ...prev };
@@ -122,6 +122,17 @@ export function useUnreadCounts(
         }
         return prev;
       });
+
+      // Persist to server (fire-and-forget, errors logged but not blocking)
+      if (activeConversation.type === 'channel') {
+        api.markChannelRead(activeConversation.id).catch((err) => {
+          console.error('Failed to mark channel as read on server:', err);
+        });
+      } else if (activeConversation.type === 'contact') {
+        api.markContactRead(activeConversation.id).catch((err) => {
+          console.error('Failed to mark contact as read on server:', err);
+        });
+      }
     }
   }, [activeConversation]);
 
@@ -134,32 +145,25 @@ export function useUnreadCounts(
   }, []);
 
   // Mark all conversations as read
+  // Calls single bulk API endpoint to persist read state
   const markAllRead = useCallback(() => {
-    const now = Math.floor(Date.now() / 1000);
-
-    for (const channel of channels) {
-      const key = getStateKey('channel', channel.key);
-      setLastReadTime(key, now);
-    }
-
-    for (const contact of contacts) {
-      if (contact.public_key) {
-        const key = getStateKey('contact', contact.public_key);
-        setLastReadTime(key, now);
-      }
-    }
-
+    // Update local state immediately
     setUnreadCounts({});
-  }, [channels, contacts]);
+
+    // Persist to server with single bulk request
+    api.markAllRead().catch((err) => {
+      console.error('Failed to mark all as read on server:', err);
+    });
+  }, []);
 
   // Mark a specific conversation as read
+  // Calls server API to persist read state across devices
   const markConversationRead = useCallback((conv: Conversation) => {
     if (conv.type === 'raw') return;
 
     const key = getStateKey(conv.type as 'channel' | 'contact', conv.id);
-    const now = Math.floor(Date.now() / 1000);
-    setLastReadTime(key, now);
 
+    // Update local state immediately
     setUnreadCounts((prev) => {
       if (prev[key]) {
         const next = { ...prev };
@@ -168,6 +172,17 @@ export function useUnreadCounts(
       }
       return prev;
     });
+
+    // Persist to server (fire-and-forget)
+    if (conv.type === 'channel') {
+      api.markChannelRead(conv.id).catch((err) => {
+        console.error('Failed to mark channel as read on server:', err);
+      });
+    } else if (conv.type === 'contact') {
+      api.markContactRead(conv.id).catch((err) => {
+        console.error('Failed to mark contact as read on server:', err);
+      });
+    }
   }, []);
 
   // Track a new incoming message for unread counts

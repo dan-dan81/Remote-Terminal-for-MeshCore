@@ -55,6 +55,7 @@ export interface Contact {
   lon: number | null;
   last_seen: number | null;
   on_radio: boolean;
+  last_read_at: number | null;
 }
 
 export interface Channel {
@@ -62,6 +63,7 @@ export interface Channel {
   name: string;
   is_hashtag: boolean;
   on_radio: boolean;
+  last_read_at: number | null;
 }
 
 export interface Message {

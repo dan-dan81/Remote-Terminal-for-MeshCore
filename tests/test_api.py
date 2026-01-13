@@ -185,6 +185,257 @@ class TestPacketsEndpoint:
             assert response.json()["count"] == 42
 
 
+class TestReadStateEndpoints:
+    """Test read state tracking endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_mark_contact_read_updates_timestamp(self):
+        """Marking contact as read updates last_read_at in database."""
+        import aiosqlite
+        import time
+        from app.repository import ContactRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create contacts table with last_read_at column
+        await conn.execute("""
+            CREATE TABLE contacts (
+                public_key TEXT PRIMARY KEY,
+                name TEXT,
+                type INTEGER DEFAULT 0,
+                flags INTEGER DEFAULT 0,
+                last_path TEXT,
+                last_path_len INTEGER DEFAULT -1,
+                last_advert INTEGER,
+                lat REAL,
+                lon REAL,
+                last_seen INTEGER,
+                on_radio INTEGER DEFAULT 0,
+                last_contacted INTEGER,
+                last_read_at INTEGER
+            )
+        """)
+
+        # Insert a test contact
+        await conn.execute(
+            "INSERT INTO contacts (public_key, name) VALUES (?, ?)",
+            ("abc123def456789012345678901234567890123456789012345678901234", "TestContact")
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            before_time = int(time.time())
+
+            # Update last_read_at
+            updated = await ContactRepository.update_last_read_at(
+                "abc123def456789012345678901234567890123456789012345678901234"
+            )
+
+            assert updated is True
+
+            # Verify the timestamp was set
+            contact = await ContactRepository.get_by_key(
+                "abc123def456789012345678901234567890123456789012345678901234"
+            )
+            assert contact is not None
+            assert contact.last_read_at is not None
+            assert contact.last_read_at >= before_time
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_mark_channel_read_updates_timestamp(self):
+        """Marking channel as read updates last_read_at in database."""
+        import aiosqlite
+        import time
+        from app.repository import ChannelRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create channels table with last_read_at column
+        await conn.execute("""
+            CREATE TABLE channels (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                is_hashtag INTEGER DEFAULT 0,
+                on_radio INTEGER DEFAULT 0,
+                last_read_at INTEGER
+            )
+        """)
+
+        # Insert a test channel
+        await conn.execute(
+            "INSERT INTO channels (key, name) VALUES (?, ?)",
+            ("0123456789ABCDEF0123456789ABCDEF", "#testchannel")
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            before_time = int(time.time())
+
+            # Update last_read_at
+            updated = await ChannelRepository.update_last_read_at(
+                "0123456789ABCDEF0123456789ABCDEF"
+            )
+
+            assert updated is True
+
+            # Verify the timestamp was set
+            channel = await ChannelRepository.get_by_key(
+                "0123456789ABCDEF0123456789ABCDEF"
+            )
+            assert channel is not None
+            assert channel.last_read_at is not None
+            assert channel.last_read_at >= before_time
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_mark_nonexistent_contact_returns_false(self):
+        """Marking nonexistent contact returns False."""
+        import aiosqlite
+        from app.repository import ContactRepository
+        from app.database import db
+
+        # Use in-memory database for testing
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE contacts (
+                public_key TEXT PRIMARY KEY,
+                name TEXT,
+                type INTEGER DEFAULT 0,
+                flags INTEGER DEFAULT 0,
+                last_path TEXT,
+                last_path_len INTEGER DEFAULT -1,
+                last_advert INTEGER,
+                lat REAL,
+                lon REAL,
+                last_seen INTEGER,
+                on_radio INTEGER DEFAULT 0,
+                last_contacted INTEGER,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            updated = await ContactRepository.update_last_read_at("nonexistent")
+            assert updated is False
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    def test_mark_contact_read_endpoint_returns_404_for_missing(self):
+        """Mark-read endpoint returns 404 for nonexistent contact."""
+        from fastapi.testclient import TestClient
+
+        with patch("app.repository.ContactRepository.get_by_key_or_prefix", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = None
+
+            from app.main import app
+            client = TestClient(app)
+
+            response = client.post("/api/contacts/nonexistent/mark-read")
+
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+
+    def test_mark_channel_read_endpoint_returns_404_for_missing(self):
+        """Mark-read endpoint returns 404 for nonexistent channel."""
+        from fastapi.testclient import TestClient
+
+        with patch("app.repository.ChannelRepository.get_by_key", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = None
+
+            from app.main import app
+            client = TestClient(app)
+
+            response = client.post("/api/channels/NONEXISTENT/mark-read")
+
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_mark_all_read_updates_all_conversations(self):
+        """Bulk mark-all-read updates all contacts and channels."""
+        import aiosqlite
+        import time
+        from app.database import db
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create tables
+        await conn.execute("""
+            CREATE TABLE contacts (
+                public_key TEXT PRIMARY KEY,
+                name TEXT,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE channels (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                last_read_at INTEGER
+            )
+        """)
+
+        # Insert test data with NULL last_read_at
+        await conn.execute("INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact1", "Alice"))
+        await conn.execute("INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact2", "Bob"))
+        await conn.execute("INSERT INTO channels (key, name) VALUES (?, ?)", ("CHAN1", "#test1"))
+        await conn.execute("INSERT INTO channels (key, name) VALUES (?, ?)", ("CHAN2", "#test2"))
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            before_time = int(time.time())
+
+            # Call the endpoint
+            from app.routers.read_state import mark_all_read
+            result = await mark_all_read()
+
+            assert result["status"] == "ok"
+            assert result["timestamp"] >= before_time
+
+            # Verify all contacts updated
+            cursor = await conn.execute("SELECT last_read_at FROM contacts")
+            rows = await cursor.fetchall()
+            for row in rows:
+                assert row["last_read_at"] >= before_time
+
+            # Verify all channels updated
+            cursor = await conn.execute("SELECT last_read_at FROM channels")
+            rows = await cursor.fetchall()
+            for row in rows:
+                assert row["last_read_at"] >= before_time
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+
 class TestRawPacketRepository:
     """Test raw packet storage with deduplication."""
 

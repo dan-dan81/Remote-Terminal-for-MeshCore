@@ -59,6 +59,7 @@ class ContactRepository:
             last_seen=row["last_seen"],
             on_radio=bool(row["on_radio"]),
             last_contacted=row["last_contacted"],
+            last_read_at=row["last_read_at"],
         )
 
     @staticmethod
@@ -169,6 +170,20 @@ class ContactRepository:
         )
         await db.conn.commit()
 
+    @staticmethod
+    async def update_last_read_at(public_key: str, timestamp: int | None = None) -> bool:
+        """Update the last_read_at timestamp for a contact.
+
+        Returns True if a row was updated, False if contact not found.
+        """
+        ts = timestamp or int(time.time())
+        cursor = await db.conn.execute(
+            "UPDATE contacts SET last_read_at = ? WHERE public_key = ?",
+            (ts, public_key),
+        )
+        await db.conn.commit()
+        return cursor.rowcount > 0
+
 
 class ChannelRepository:
     @staticmethod
@@ -191,7 +206,7 @@ class ChannelRepository:
     async def get_by_key(key: str) -> Channel | None:
         """Get a channel by its key (32-char hex string)."""
         cursor = await db.conn.execute(
-            "SELECT key, name, is_hashtag, on_radio FROM channels WHERE key = ?",
+            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE key = ?",
             (key.upper(),)
         )
         row = await cursor.fetchone()
@@ -201,13 +216,14 @@ class ChannelRepository:
                 name=row["name"],
                 is_hashtag=bool(row["is_hashtag"]),
                 on_radio=bool(row["on_radio"]),
+                last_read_at=row["last_read_at"],
             )
         return None
 
     @staticmethod
     async def get_all() -> list[Channel]:
         cursor = await db.conn.execute(
-            "SELECT key, name, is_hashtag, on_radio FROM channels ORDER BY name"
+            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels ORDER BY name"
         )
         rows = await cursor.fetchall()
         return [
@@ -216,6 +232,7 @@ class ChannelRepository:
                 name=row["name"],
                 is_hashtag=bool(row["is_hashtag"]),
                 on_radio=bool(row["on_radio"]),
+                last_read_at=row["last_read_at"],
             )
             for row in rows
         ]
@@ -224,7 +241,7 @@ class ChannelRepository:
     async def get_by_name(name: str) -> Channel | None:
         """Get a channel by name."""
         cursor = await db.conn.execute(
-            "SELECT key, name, is_hashtag, on_radio FROM channels WHERE name = ?", (name,)
+            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE name = ?", (name,)
         )
         row = await cursor.fetchone()
         if row:
@@ -233,6 +250,7 @@ class ChannelRepository:
                 name=row["name"],
                 is_hashtag=bool(row["is_hashtag"]),
                 on_radio=bool(row["on_radio"]),
+                last_read_at=row["last_read_at"],
             )
         return None
 
@@ -244,6 +262,20 @@ class ChannelRepository:
             (key.upper(),),
         )
         await db.conn.commit()
+
+    @staticmethod
+    async def update_last_read_at(key: str, timestamp: int | None = None) -> bool:
+        """Update the last_read_at timestamp for a channel.
+
+        Returns True if a row was updated, False if channel not found.
+        """
+        ts = timestamp or int(time.time())
+        cursor = await db.conn.execute(
+            "UPDATE channels SET last_read_at = ? WHERE key = ?",
+            (ts, key.upper()),
+        )
+        await db.conn.commit()
+        return cursor.rowcount > 0
 
 
 class MessageRepository:

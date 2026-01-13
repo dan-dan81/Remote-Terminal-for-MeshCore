@@ -19,7 +19,7 @@ from app.radio_sync import (
     stop_periodic_sync,
     sync_and_offload_all,
 )
-from app.routers import channels, contacts, health, messages, packets, radio, settings, ws
+from app.routers import channels, contacts, health, messages, packets, radio, read_state, settings, ws
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -100,6 +100,7 @@ app.include_router(contacts.router, prefix="/api")
 app.include_router(channels.router, prefix="/api")
 app.include_router(messages.router, prefix="/api")
 app.include_router(packets.router, prefix="/api")
+app.include_router(read_state.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 

@@ -17,7 +17,8 @@ This document provides context for AI assistants and developers working on the F
 app/
 ├── main.py           # FastAPI app, lifespan, router registration, static file serving
 ├── config.py         # Pydantic settings (env vars: MESHCORE_*)
-├── database.py       # SQLite schema, connection management
+├── database.py       # SQLite schema, connection management, runs migrations
+├── migrations.py     # Database migrations using SQLite user_version pragma
 ├── models.py         # Pydantic models for API request/response
 ├── repository.py     # Database CRUD (ContactRepository, ChannelRepository, etc.)
 ├── radio.py          # RadioManager - serial connection to MeshCore device
@@ -30,10 +31,11 @@ app/
 └── routers/          # All routes prefixed with /api
     ├── health.py     # GET /api/health
     ├── radio.py      # Radio config, advertise, private key, reboot
-    ├── contacts.py   # Contact CRUD and radio sync
-    ├── channels.py   # Channel CRUD and radio sync
+    ├── contacts.py   # Contact CRUD, radio sync, mark-read
+    ├── channels.py   # Channel CRUD, radio sync, mark-read
     ├── messages.py   # Message list and send (direct/channel)
     ├── packets.py    # Raw packet endpoints, historical decryption
+    ├── read_state.py # Bulk read state operations (mark-all-read)
     ├── settings.py   # App settings (max_radio_contacts)
     └── ws.py         # WebSocket endpoint at /api/ws
 ```
@@ -138,14 +140,16 @@ contacts (
     lat REAL, lon REAL,
     last_seen INTEGER,
     on_radio INTEGER DEFAULT 0,   -- Boolean: contact loaded on radio
-    last_contacted INTEGER        -- Unix timestamp of last message sent/received
+    last_contacted INTEGER,       -- Unix timestamp of last message sent/received
+    last_read_at INTEGER          -- Unix timestamp when conversation was last read
 )
 
 channels (
     key TEXT PRIMARY KEY,         -- 32-char hex channel key
     name TEXT NOT NULL,
     is_hashtag INTEGER DEFAULT 0, -- Key derived from SHA256(name)[:16]
-    on_radio INTEGER DEFAULT 0
+    on_radio INTEGER DEFAULT 0,
+    last_read_at INTEGER          -- Unix timestamp when channel was last read
 )
 
 messages (
@@ -173,6 +177,49 @@ raw_packets (
     last_attempt INTEGER,
     FOREIGN KEY (message_id) REFERENCES messages(id)
 )
+```
+
+## Database Migrations (`migrations.py`)
+
+Schema migrations use SQLite's `user_version` pragma for version tracking:
+
+```python
+from app.migrations import get_version, set_version, run_migrations
+
+# Check current schema version
+version = await get_version(conn)  # Returns int (0 for new/unmigrated DB)
+
+# Run pending migrations (called automatically on startup)
+applied = await run_migrations(conn)  # Returns number of migrations applied
+```
+
+### How It Works
+
+1. `database.py` calls `run_migrations()` after schema initialization
+2. Each migration checks `user_version` and runs if needed
+3. Migrations are idempotent (safe to run multiple times)
+4. `ALTER TABLE ADD COLUMN` handles existing columns gracefully
+
+### Adding a New Migration
+
+```python
+# In migrations.py
+async def run_migrations(conn: aiosqlite.Connection) -> int:
+    version = await get_version(conn)
+    applied = 0
+
+    if version < 1:
+        await _migrate_001_add_last_read_at(conn)
+        await set_version(conn, 1)
+        applied += 1
+
+    # Add new migrations here:
+    # if version < 2:
+    #     await _migrate_002_something(conn)
+    #     await set_version(conn, 2)
+    #     applied += 1
+
+    return applied
 ```
 
 ## Packet Decryption (`decoder.py`)
@@ -326,6 +373,7 @@ All endpoints are prefixed with `/api`.
 - `POST /api/contacts/sync` - Pull from radio to database
 - `POST /api/contacts/{key}/add-to-radio` - Push to radio
 - `POST /api/contacts/{key}/remove-from-radio` - Remove from radio
+- `POST /api/contacts/{key}/mark-read` - Mark conversation as read (updates last_read_at)
 - `POST /api/contacts/{key}/telemetry` - Request telemetry from repeater (see below)
 
 ### Channels
@@ -333,7 +381,11 @@ All endpoints are prefixed with `/api`.
 - `GET /api/channels/{key}` - Get by channel key
 - `POST /api/channels` - Create (hashtag if name starts with # or no key provided)
 - `POST /api/channels/sync` - Pull from radio
+- `POST /api/channels/{key}/mark-read` - Mark channel as read (updates last_read_at)
 - `DELETE /api/channels/{key}` - Delete channel
+
+### Read State
+- `POST /api/read-state/mark-all-read` - Mark all contacts and channels as read
 
 ### Messages
 - `GET /api/messages?type=&conversation_key=&limit=&offset=` - List with filters
@@ -368,7 +420,8 @@ Key test files:
 - `tests/test_decoder.py` - Channel + direct message decryption, key exchange, real-world test vectors
 - `tests/test_keystore.py` - Ephemeral key store operations
 - `tests/test_event_handlers.py` - ACK tracking, repeat detection, CLI response filtering
-- `tests/test_api.py` - API endpoint tests
+- `tests/test_api.py` - API endpoint tests, read state tracking
+- `tests/test_migrations.py` - Migration system, schema versioning
 
 ## Common Tasks
 

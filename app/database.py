@@ -77,6 +77,10 @@ class Database:
         await self._connection.commit()
         logger.debug("Database schema initialized")
 
+        # Run any pending migrations
+        from app.migrations import run_migrations
+        await run_migrations(self._connection)
+
     async def disconnect(self) -> None:
         if self._connection:
             await self._connection.close()
