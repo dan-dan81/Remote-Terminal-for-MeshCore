@@ -13,6 +13,7 @@ import { CrackerPanel } from './components/CrackerPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
 import { getStateKey } from './utils/conversationState';
+import { formatTime } from './utils/messageParser';
 import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
 import { parseHashConversation, updateUrlHash } from './utils/urlHash';
 import { cn } from '@/lib/utils';
@@ -553,6 +554,14 @@ export function App() {
                     </span>
                     <span className="font-normal text-xs text-muted-foreground font-mono truncate">
                       {activeConversation.id}
+                      {activeConversation.type === 'contact' && (() => {
+                        const contact = contacts.find(c => c.public_key === activeConversation.id);
+                        return contact?.last_seen ? (
+                          <span className="ml-2 font-sans">
+                            (Last heard: {formatTime(contact.last_seen)})
+                          </span>
+                        ) : null;
+                      })()}
                     </span>
                   </span>
                   {!(activeConversation.type === 'channel' && activeConversation.name === 'Public') && (
