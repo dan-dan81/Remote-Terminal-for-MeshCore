@@ -42,6 +42,8 @@ export function useConversationMessages(
 
     if (showLoading) {
       setMessagesLoading(true);
+      // Clear messages first so MessageList resets scroll state for new conversation
+      setMessages([]);
     }
     try {
       const data = await api.getMessages({
