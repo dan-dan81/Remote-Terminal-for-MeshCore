@@ -34,6 +34,8 @@ const MAX_RAW_PACKETS = 500;
 export function App() {
   const messageInputRef = useRef<MessageInputHandle>(null);
   const activeConversationRef = useRef<Conversation | null>(null);
+  // Track seen message IDs to prevent duplicate unread increments
+  const seenMessageIdsRef = useRef<Set<number>>(new Set());
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [config, setConfig] = useState<RadioConfig | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -129,8 +131,20 @@ export function App() {
       // Track for unread counts and sorting
       trackNewMessage(msg);
 
-      // Count unread for non-active, incoming messages
+      // Count unread for non-active, incoming messages (with deduplication)
       if (!msg.outgoing && !isForActiveConversation) {
+        // Skip if we've already seen this message ID (prevents duplicate increments)
+        if (seenMessageIdsRef.current.has(msg.id)) {
+          return;
+        }
+        seenMessageIdsRef.current.add(msg.id);
+
+        // Limit set size to prevent memory issues
+        if (seenMessageIdsRef.current.size > 1000) {
+          const ids = Array.from(seenMessageIdsRef.current);
+          seenMessageIdsRef.current = new Set(ids.slice(-500));
+        }
+
         let stateKey: string | null = null;
         if (msg.type === 'CHAN' && msg.conversation_key) {
           stateKey = getStateKey('channel', msg.conversation_key);
