@@ -210,26 +210,40 @@ class RadioManager:
             from app.websocket import broadcast_health
 
             while True:
-                await asyncio.sleep(5)  # Check every 5 seconds
+                try:
+                    await asyncio.sleep(5)  # Check every 5 seconds
 
-                current_connected = self.is_connected
+                    current_connected = self.is_connected
 
-                # Detect status change
-                if self._last_connected and not current_connected:
-                    # Connection lost
-                    logger.warning("Radio connection lost, broadcasting status change")
-                    broadcast_health(False, self._port)
-                    self._last_connected = False
+                    # Detect status change
+                    if self._last_connected and not current_connected:
+                        # Connection lost
+                        logger.warning("Radio connection lost, broadcasting status change")
+                        broadcast_health(False, self._port)
+                        self._last_connected = False
 
-                    # Attempt reconnection
-                    await asyncio.sleep(3)  # Wait a bit before trying
-                    await self.reconnect()
+                        # Attempt reconnection
+                        await asyncio.sleep(3)  # Wait a bit before trying
+                        if await self.reconnect():
+                            # Re-register event handlers after successful reconnect
+                            from app.event_handlers import register_event_handlers
+                            if self._meshcore:
+                                register_event_handlers(self._meshcore)
+                                await self._meshcore.start_auto_message_fetching()
+                                logger.info("Event handlers re-registered after auto-reconnect")
 
-                elif not self._last_connected and current_connected:
-                    # Connection restored (might have reconnected automatically)
-                    logger.info("Radio connection restored")
-                    broadcast_health(True, self._port)
-                    self._last_connected = True
+                    elif not self._last_connected and current_connected:
+                        # Connection restored (might have reconnected automatically)
+                        logger.info("Radio connection restored")
+                        broadcast_health(True, self._port)
+                        self._last_connected = True
+
+                except asyncio.CancelledError:
+                    # Task is being cancelled, exit cleanly
+                    break
+                except Exception as e:
+                    # Log error but continue monitoring - don't let the monitor die
+                    logger.exception("Error in connection monitor, continuing: %s", e)
 
         self._reconnect_task = asyncio.create_task(monitor_loop())
         logger.info("Radio connection monitor started")

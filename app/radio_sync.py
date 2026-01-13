@@ -29,19 +29,27 @@ _message_poll_task: asyncio.Task | None = None
 # Message poll interval in seconds
 MESSAGE_POLL_INTERVAL = 5
 
-# Flag to pause polling during repeater operations
-_polling_paused: bool = False
+# Counter to pause polling during repeater operations (supports nested pauses)
+_polling_pause_count: int = 0
+
+
+def is_polling_paused() -> bool:
+    """Check if polling is currently paused."""
+    return _polling_pause_count > 0
 
 
 @asynccontextmanager
 async def pause_polling():
-    """Context manager to pause message polling during repeater operations."""
-    global _polling_paused
-    _polling_paused = True
+    """Context manager to pause message polling during repeater operations.
+
+    Supports nested pauses - polling only resumes when all pause contexts have exited.
+    """
+    global _polling_pause_count
+    _polling_pause_count += 1
     try:
         yield
     finally:
-        _polling_paused = False
+        _polling_pause_count -= 1
 
 # Background task handle
 _sync_task: asyncio.Task | None = None
@@ -291,7 +299,7 @@ async def _message_poll_loop():
         try:
             await asyncio.sleep(MESSAGE_POLL_INTERVAL)
 
-            if radio_manager.is_connected and not _polling_paused:
+            if radio_manager.is_connected and not is_polling_paused():
                 await poll_for_messages()
 
         except asyncio.CancelledError:

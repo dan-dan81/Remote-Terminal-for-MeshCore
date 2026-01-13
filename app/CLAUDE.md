@@ -113,6 +113,8 @@ broadcast_health(radio_connected=True, serial_port="/dev/ttyUSB0")
 - Checks connection every 5 seconds
 - Broadcasts `health` event on status change
 - Attempts automatic reconnection when connection lost
+- **Re-registers event handlers after successful auto-reconnect** (critical for message delivery)
+- Resilient to transient errors (logs and continues rather than crashing)
 - Supports manual reconnection via `POST /api/radio/reconnect`
 
 ```python
@@ -124,6 +126,33 @@ success = await radio_manager.reconnect()
 # Background monitor (started automatically in app lifespan)
 await radio_manager.start_connection_monitor()
 await radio_manager.stop_connection_monitor()
+```
+
+### Message Polling
+
+Periodic message polling serves as a fallback for platforms where push events are unreliable.
+Use `pause_polling()` to temporarily suspend polling during operations that need exclusive
+radio access (e.g., repeater CLI commands):
+
+```python
+from app.radio_sync import pause_polling, is_polling_paused
+
+# Pause polling during sensitive operations (supports nesting)
+async with pause_polling():
+    # Polling is paused here
+    await do_repeater_operation()
+
+    async with pause_polling():
+        # Still paused (nested)
+        await do_another_operation()
+
+    # Still paused (outer context active)
+
+# Polling resumes when all contexts exit
+
+# Check current state
+if is_polling_paused():
+    print("Polling is currently paused")
 ```
 
 ## Database Schema
