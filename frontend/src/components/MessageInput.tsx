@@ -4,10 +4,12 @@ import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
 // MeshCore message size limits (empirically determined from LoRa packet constraints)
-// Total text budget is ~150 bytes. DMs use full budget; channels include "sender: " prefix.
-const DM_HARD_LIMIT = 150;
-const DM_WARNING_THRESHOLD = 140; // Multi-hop delivery may be impacted
-const CHANNEL_WARNING_THRESHOLD = 120; // Conservative limit for channels
+// Direct delivery allows ~156 bytes; multi-hop requires buffer for path growth.
+// Channels include "sender: " prefix in the encrypted payload.
+const DM_HARD_LIMIT = 156; // Max for direct delivery
+const DM_WARNING_THRESHOLD = 140; // Conservative for multi-hop
+const CHANNEL_HARD_LIMIT = 156; // Base limit before sender overhead
+const CHANNEL_WARNING_THRESHOLD = 120; // Conservative for multi-hop
 const CHANNEL_DANGER_BUFFER = 8; // Red zone starts this many chars before hard limit
 
 interface MessageInputProps {
@@ -51,9 +53,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
         hardLimit: DM_HARD_LIMIT,
       };
     } else if (conversationType === 'channel') {
-      // Channel hard limit = 150 - senderName.length - 2 (for ": " separator)
+      // Channel hard limit = 156 - senderName.length - 2 (for ": " separator)
       const nameLen = senderName?.length ?? 10;
-      const hardLimit = Math.max(1, DM_HARD_LIMIT - nameLen - 2);
+      const hardLimit = Math.max(1, CHANNEL_HARD_LIMIT - nameLen - 2);
       return {
         warningAt: CHANNEL_WARNING_THRESHOLD,
         dangerAt: Math.max(1, hardLimit - CHANNEL_DANGER_BUFFER),
@@ -72,7 +74,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 
     const len = text.length;
     if (len >= limits.hardLimit) {
-      return { limitState: 'error', warningMessage: 'likely rejected by radio' };
+      return { limitState: 'error', warningMessage: 'likely truncated by radio' };
     }
     if (len >= limits.dangerAt) {
       return { limitState: 'danger', warningMessage: 'may impact multi-repeater hop delivery' };
