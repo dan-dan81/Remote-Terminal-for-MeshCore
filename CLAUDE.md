@@ -92,6 +92,7 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 │   │   ├── useWebSocket.ts # WebSocket hook
 │   │   └── components/
 │   │       ├── CrackerPanel.tsx  # WebGPU key cracking
+│   │       ├── MapView.tsx       # Leaflet map showing node locations
 │   │       └── ...
 │   └── vite.config.ts
 ├── references/meshcore_py/ # MeshCore Python library
@@ -206,6 +207,10 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/messages/direct` | Send direct message |
 | POST | `/api/messages/channel` | Send channel message |
 | POST | `/api/packets/decrypt/historical` | Decrypt stored packets |
+| GET | `/api/packets/decrypt/progress` | Get historical decryption progress |
+| POST | `/api/packets/maintenance` | Delete old packets (cleanup) |
+| POST | `/api/packets/dedup` | Remove duplicate raw packets |
+| GET | `/api/packets/dedup/progress` | Get deduplication progress |
 | POST | `/api/contacts/{key}/mark-read` | Mark contact conversation as read |
 | POST | `/api/channels/{key}/mark-read` | Mark channel as read |
 | POST | `/api/read-state/mark-all-read` | Mark all conversations as read |

@@ -12,6 +12,7 @@ This document provides context for AI assistants and developers working on the R
 - **shadcn/ui components** - Sheet, Tabs, Button (in `components/ui/`)
 - **meshcore-hashtag-cracker** - WebGPU-accelerated channel key bruteforcing
 - **nosleep.js** - Prevents device sleep during cracking
+- **leaflet / react-leaflet** - Interactive map for node locations
 
 ## Directory Structure
 
@@ -41,9 +42,11 @@ frontend/
 │   │   ├── MessageInput.tsx  # Text input with imperative handle
 │   │   ├── ContactAvatar.tsx # Contact profile image component
 │   │   ├── RawPacketList.tsx # Raw packet feed display
-│   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker
+│   │   ├── MapView.tsx       # Leaflet map showing node locations
+│   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker (lazy-loads wordlist)
 │   │   ├── NewMessageModal.tsx
-│   │   └── ConfigModal.tsx   # Radio config + app settings
+│   │   ├── ConfigModal.tsx   # Radio config + app settings
+│   │   └── MaintenanceModal.tsx  # Database maintenance (cleanup, dedup)
 │   └── test/
 │       ├── setup.ts          # Test setup (jsdom, matchers)
 │       ├── messageParser.test.ts
@@ -204,8 +207,8 @@ interface Message {
 }
 
 interface Conversation {
-  type: 'contact' | 'channel' | 'raw';
-  id: string;              // PublicKey for contacts, ChannelKey for channels
+  type: 'contact' | 'channel' | 'raw' | 'map';
+  id: string;              // PublicKey for contacts, ChannelKey for channels, 'raw'/'map' for special views
   name: string;
 }
 
@@ -566,6 +569,7 @@ Deep linking to conversations via URL hash:
 - `#channel/RoomName` - Opens a channel (leading `#` stripped from name for cleaner URLs)
 - `#contact/ContactName` - Opens a DM
 - `#raw` - Opens the raw packet feed
+- `#map` - Opens the node map
 
 ```typescript
 // Parse hash on initial load
@@ -603,6 +607,27 @@ const maxLengthRef = useRef(6);
 ```
 
 Progress reporting shows rate in Mkeys/s or Gkeys/s depending on speed.
+
+## MapView
+
+The `MapView` component displays contacts with GPS coordinates on an interactive Leaflet map.
+
+### Features
+
+- **Location filtering**: Only shows contacts with lat/lon that were heard within the last 7 days
+- **Freshness coloring**: Markers colored by how recently the contact was heard:
+  - Bright green (`#22c55e`) - less than 1 hour ago
+  - Light green (`#4ade80`) - less than 1 day ago
+  - Yellow-green (`#a3e635`) - less than 3 days ago
+  - Gray (`#9ca3af`) - older (up to 7 days)
+- **Node/repeater distinction**: Regular nodes have black outlines, repeaters are larger with no outline
+- **Geolocation**: Tries browser geolocation first, falls back to fitting all markers in view
+- **Popups**: Click a marker to see contact name, last heard time, and coordinates
+
+### Data Source
+
+Contact location data (`lat`, `lon`) is extracted from advertisement packets in the backend (`decoder.py`).
+The `last_seen` timestamp determines marker freshness.
 
 ## Sidebar Features
 

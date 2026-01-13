@@ -331,6 +331,50 @@ KeyStore.clear_private_key()
 - Never logged
 - Lost on server restart (must re-export from radio)
 
+## Advertisement Parsing (`decoder.py`)
+
+Advertisement packets contain contact information including optional GPS coordinates.
+
+### Packet Structure
+
+```
+Bytes 0-31:   Public key (32 bytes)
+Bytes 32-35:  Timestamp (4 bytes, little-endian Unix timestamp)
+Bytes 36-99:  Signature (64 bytes)
+Byte 100:     App flags
+Bytes 101+:   Optional fields (location, name) based on flags
+```
+
+### App Flags (byte 100)
+
+- Bits 0-3: Device role (1=Chat, 2=Repeater, 3=Room, 4=Sensor)
+- Bit 4: Has location (lat/lon follow)
+- Bit 5: Has feature 1
+- Bit 6: Has feature 2
+- Bit 7: Has name (null-terminated string at end)
+
+### GPS Extraction
+
+When bit 4 is set, latitude and longitude follow as signed int32 little-endian values,
+divided by 1,000,000 to get decimal degrees:
+
+```python
+from app.decoder import parse_advertisement
+
+advert = parse_advertisement(payload_bytes)
+if advert:
+    print(f"Device role: {advert.device_role}")  # 1=Chat, 2=Repeater
+    if advert.lat and advert.lon:
+        print(f"Location: {advert.lat}, {advert.lon}")
+```
+
+### Data Flow
+
+1. `event_handlers.py` receives ADVERTISEMENT event
+2. `packet_processor.py` calls `parse_advertisement()` to extract data
+3. Contact is upserted with location data (`lat`, `lon`) and `device_role` as `type`
+4. Frontend MapView displays contacts with GPS coordinates
+
 ## ACK and Repeat Detection
 
 The `acked` field is an integer count, not a boolean:
