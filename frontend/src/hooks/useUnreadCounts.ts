@@ -10,20 +10,39 @@ import type { Channel, Contact, Conversation, Message } from '../types';
 
 export interface UseUnreadCountsResult {
   unreadCounts: Record<string, number>;
+  /** Tracks which conversations have unread messages that mention the user */
+  mentions: Record<string, boolean>;
   lastMessageTimes: ConversationTimes;
-  incrementUnread: (stateKey: string) => void;
+  incrementUnread: (stateKey: string, hasMention?: boolean) => void;
   markAllRead: () => void;
   markConversationRead: (conv: Conversation) => void;
   trackNewMessage: (msg: Message) => void;
 }
 
+/** Check if a message text contains a mention of the given name in @[name] format */
+function messageContainsMention(text: string, name: string | null): boolean {
+  if (!name) return false;
+  // Escape special regex characters in the name
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionPattern = new RegExp(`@\\[${escaped}\\]`, 'i');
+  return mentionPattern.test(text);
+}
+
 export function useUnreadCounts(
   channels: Channel[],
   contacts: Contact[],
-  activeConversation: Conversation | null
+  activeConversation: Conversation | null,
+  myName: string | null = null
 ): UseUnreadCountsResult {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [mentions, setMentions] = useState<Record<string, boolean>>({});
   const [lastMessageTimes, setLastMessageTimes] = useState<ConversationTimes>(getLastMessageTimes);
+
+  // Keep myName in a ref so callbacks always have current value
+  const myNameRef = useRef(myName);
+  useEffect(() => {
+    myNameRef.current = myName;
+  }, [myName]);
 
   // Track which channels/contacts we've already fetched unreads for
   const fetchedChannels = useRef<Set<string>>(new Set());
@@ -52,6 +71,7 @@ export function useUnreadCounts(
       try {
         const bulkMessages = await api.getMessagesBulk(conversations, 100);
         const newUnreadCounts: Record<string, number> = {};
+        const newMentions: Record<string, boolean> = {};
         const newLastMessageTimes: Record<string, number> = {};
 
         // Process channel messages - use server-side last_read_at
@@ -62,9 +82,13 @@ export function useUnreadCounts(
             // Use server-side last_read_at, fallback to 0 if never read
             const lastRead = channel.last_read_at || 0;
 
-            const unreadCount = msgs.filter(m => !m.outgoing && m.received_at > lastRead).length;
-            if (unreadCount > 0) {
-              newUnreadCounts[key] = unreadCount;
+            const unreadMsgs = msgs.filter(m => !m.outgoing && m.received_at > lastRead);
+            if (unreadMsgs.length > 0) {
+              newUnreadCounts[key] = unreadMsgs.length;
+              // Check if any unread message mentions the user
+              if (unreadMsgs.some(m => messageContainsMention(m.text, myNameRef.current))) {
+                newMentions[key] = true;
+              }
             }
 
             const latestTime = Math.max(...msgs.map(m => m.received_at));
@@ -81,9 +105,13 @@ export function useUnreadCounts(
             // Use server-side last_read_at, fallback to 0 if never read
             const lastRead = contact.last_read_at || 0;
 
-            const unreadCount = msgs.filter(m => !m.outgoing && m.received_at > lastRead).length;
-            if (unreadCount > 0) {
-              newUnreadCounts[key] = unreadCount;
+            const unreadMsgs = msgs.filter(m => !m.outgoing && m.received_at > lastRead);
+            if (unreadMsgs.length > 0) {
+              newUnreadCounts[key] = unreadMsgs.length;
+              // Check if any unread message mentions the user
+              if (unreadMsgs.some(m => messageContainsMention(m.text, myNameRef.current))) {
+                newMentions[key] = true;
+              }
             }
 
             const latestTime = Math.max(...msgs.map(m => m.received_at));
@@ -94,6 +122,9 @@ export function useUnreadCounts(
 
         if (Object.keys(newUnreadCounts).length > 0) {
           setUnreadCounts(prev => ({ ...prev, ...newUnreadCounts }));
+        }
+        if (Object.keys(newMentions).length > 0) {
+          setMentions(prev => ({ ...prev, ...newMentions }));
         }
         setLastMessageTimes(getLastMessageTimes());
       } catch (err) {
@@ -107,7 +138,7 @@ export function useUnreadCounts(
   // Mark conversation as read when user views it
   // Calls server API to persist read state across devices
   useEffect(() => {
-    if (activeConversation && activeConversation.type !== 'raw') {
+    if (activeConversation && activeConversation.type !== 'raw' && activeConversation.type !== 'map') {
       const key = getStateKey(
         activeConversation.type as 'channel' | 'contact',
         activeConversation.id
@@ -115,6 +146,16 @@ export function useUnreadCounts(
 
       // Update local state immediately for responsive UI
       setUnreadCounts((prev) => {
+        if (prev[key]) {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        }
+        return prev;
+      });
+
+      // Also clear mentions for this conversation
+      setMentions((prev) => {
         if (prev[key]) {
           const next = { ...prev };
           delete next[key];
@@ -137,11 +178,17 @@ export function useUnreadCounts(
   }, [activeConversation]);
 
   // Increment unread count for a conversation
-  const incrementUnread = useCallback((stateKey: string) => {
+  const incrementUnread = useCallback((stateKey: string, hasMention?: boolean) => {
     setUnreadCounts((prev) => ({
       ...prev,
       [stateKey]: (prev[stateKey] || 0) + 1,
     }));
+    if (hasMention) {
+      setMentions((prev) => ({
+        ...prev,
+        [stateKey]: true,
+      }));
+    }
   }, []);
 
   // Mark all conversations as read
@@ -149,6 +196,7 @@ export function useUnreadCounts(
   const markAllRead = useCallback(() => {
     // Update local state immediately
     setUnreadCounts({});
+    setMentions({});
 
     // Persist to server with single bulk request
     api.markAllRead().catch((err) => {
@@ -159,12 +207,22 @@ export function useUnreadCounts(
   // Mark a specific conversation as read
   // Calls server API to persist read state across devices
   const markConversationRead = useCallback((conv: Conversation) => {
-    if (conv.type === 'raw') return;
+    if (conv.type === 'raw' || conv.type === 'map') return;
 
     const key = getStateKey(conv.type as 'channel' | 'contact', conv.id);
 
     // Update local state immediately
     setUnreadCounts((prev) => {
+      if (prev[key]) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return prev;
+    });
+
+    // Also clear mentions for this conversation
+    setMentions((prev) => {
       if (prev[key]) {
         const next = { ...prev };
         delete next[key];
@@ -203,6 +261,7 @@ export function useUnreadCounts(
 
   return {
     unreadCounts,
+    mentions,
     lastMessageTimes,
     incrementUnread,
     markAllRead,

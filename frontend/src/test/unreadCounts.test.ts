@@ -175,3 +175,70 @@ describe('getUnreadCount', () => {
     expect(getUnreadCount('contact', 'xyz999999999fullkey12345678901234567890123456789', counts)).toBe(0);
   });
 });
+
+/**
+ * Check if a message text contains a mention of the given name in @[name] format.
+ * Extracted from useUnreadCounts.ts for testing.
+ */
+function messageContainsMention(text: string, name: string | null): boolean {
+  if (!name) return false;
+  // Escape special regex characters in the name
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionPattern = new RegExp(`@\\[${escaped}\\]`, 'i');
+  return mentionPattern.test(text);
+}
+
+describe('messageContainsMention', () => {
+  it('returns true when text contains mention of the name', () => {
+    expect(messageContainsMention('Hey @[Alice] check this out', 'Alice')).toBe(true);
+  });
+
+  it('returns false when text does not contain the mention', () => {
+    expect(messageContainsMention('Hey Alice check this out', 'Alice')).toBe(false);
+  });
+
+  it('returns false when name is null', () => {
+    expect(messageContainsMention('Hey @[Alice] check this out', null)).toBe(false);
+  });
+
+  it('returns false when text is empty', () => {
+    expect(messageContainsMention('', 'Alice')).toBe(false);
+  });
+
+  it('matches case insensitively', () => {
+    expect(messageContainsMention('Hey @[ALICE] check this out', 'alice')).toBe(true);
+    expect(messageContainsMention('Hey @[alice] check this out', 'ALICE')).toBe(true);
+  });
+
+  it('handles emojis in names', () => {
+    expect(messageContainsMention('Hey @[FlightlessDt🥝] nice!', 'FlightlessDt🥝')).toBe(true);
+    expect(messageContainsMention('Hey @[🎉Party🎉]', '🎉Party🎉')).toBe(true);
+  });
+
+  it('handles special regex characters in names', () => {
+    // Names with characters that have special meaning in regex
+    expect(messageContainsMention('Hey @[Test.User] hello', 'Test.User')).toBe(true);
+    expect(messageContainsMention('Hey @[User+1] hello', 'User+1')).toBe(true);
+    expect(messageContainsMention('Hey @[User*Star] hello', 'User*Star')).toBe(true);
+    expect(messageContainsMention('Hey @[What?] hello', 'What?')).toBe(true);
+  });
+
+  it('does not match partial names', () => {
+    // @[Alice] should not match a name of just "Ali"
+    expect(messageContainsMention('Hey @[Alice] check this', 'Ali')).toBe(false);
+  });
+
+  it('handles mention at start of text', () => {
+    expect(messageContainsMention('@[Bob] hello there', 'Bob')).toBe(true);
+  });
+
+  it('handles mention at end of text', () => {
+    expect(messageContainsMention('hello @[Bob]', 'Bob')).toBe(true);
+  });
+
+  it('handles multiple mentions - matches if user is mentioned', () => {
+    expect(messageContainsMention('@[Alice] and @[Bob] should see this', 'Alice')).toBe(true);
+    expect(messageContainsMention('@[Alice] and @[Bob] should see this', 'Bob')).toBe(true);
+    expect(messageContainsMention('@[Alice] and @[Bob] should see this', 'Charlie')).toBe(false);
+  });
+});

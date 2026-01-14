@@ -18,6 +18,8 @@ interface SidebarProps {
   onNewMessage: () => void;
   lastMessageTimes: ConversationTimes;
   unreadCounts: Record<string, number>;
+  /** Tracks which conversations have unread messages that mention the user */
+  mentions: Record<string, boolean>;
   showCracker: boolean;
   crackerRunning: boolean;
   onToggleCracker: () => void;
@@ -51,6 +53,7 @@ export function Sidebar({
   onNewMessage,
   lastMessageTimes,
   unreadCounts,
+  mentions,
   showCracker,
   crackerRunning,
   onToggleCracker,
@@ -77,6 +80,12 @@ export function Sidebar({
   const getUnreadCount = (type: 'channel' | 'contact', id: string): number => {
     const key = getStateKey(type, id);
     return unreadCounts[key] || 0;
+  };
+
+  // Check if a conversation has a mention
+  const hasMention = (type: 'channel' | 'contact', id: string): boolean => {
+    const key = getStateKey(type, id);
+    return mentions[key] || false;
   };
 
   const getLastMessageTime = (type: 'channel' | 'contact', id: string) => {
@@ -295,6 +304,7 @@ export function Sidebar({
             </div>
             {filteredChannels.map((channel) => {
               const unreadCount = getUnreadCount('channel', channel.key);
+              const isMention = hasMention('channel', channel.key);
               return (
                 <div
                   key={`chan-${channel.key}`}
@@ -314,7 +324,12 @@ export function Sidebar({
                   <span className="text-muted-foreground text-xs">#</span>
                   <span className="name flex-1 truncate">{channel.name}</span>
                   {unreadCount > 0 && (
-                    <span className="bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    <span className={cn(
+                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                      isMention
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-primary text-primary-foreground"
+                    )}>
                       {unreadCount}
                     </span>
                   )}
@@ -341,6 +356,7 @@ export function Sidebar({
             </div>
             {filteredContacts.map((contact) => {
               const unreadCount = getUnreadCount('contact', contact.public_key);
+              const isMention = hasMention('contact', contact.public_key);
               return (
                 <div
                   key={contact.public_key}
@@ -362,7 +378,12 @@ export function Sidebar({
                     {getContactDisplayName(contact.name, contact.public_key)}
                   </span>
                   {unreadCount > 0 && (
-                    <span className="bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    <span className={cn(
+                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                      isMention
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-primary text-primary-foreground"
+                    )}>
                       {unreadCount}
                     </span>
                   )}

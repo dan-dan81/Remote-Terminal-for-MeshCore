@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from './api';
 import { useWebSocket } from './useWebSocket';
-import { useRepeaterMode, useUnreadCounts, useConversationMessages } from './hooks';
+import { useRepeaterMode, useUnreadCounts, useConversationMessages, getMessageContentKey } from './hooks';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { MessageList } from './components/MessageList';
@@ -37,8 +37,9 @@ const MAX_RAW_PACKETS = 500;
 export function App() {
   const messageInputRef = useRef<MessageInputHandle>(null);
   const activeConversationRef = useRef<Conversation | null>(null);
-  // Track seen message IDs to prevent duplicate unread increments
-  const seenMessageIdsRef = useRef<Set<number>>(new Set());
+  // Track seen message content to prevent duplicate unread increments
+  // Uses content-based key (type-conversation_key-text-sender_timestamp) for deduplication
+  const seenMessageContentRef = useRef<Set<string>>(new Set());
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [config, setConfig] = useState<RadioConfig | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -57,6 +58,21 @@ export function App() {
   // Track previous health status to detect changes
   const prevHealthRef = useRef<HealthStatus | null>(null);
 
+  // Keep user's name in ref for mention detection in WebSocket callback
+  const myNameRef = useRef<string | null>(null);
+  useEffect(() => {
+    myNameRef.current = config?.name ?? null;
+  }, [config?.name]);
+
+  // Check if a message mentions the user
+  const checkMention = useCallback((text: string): boolean => {
+    const name = myNameRef.current;
+    if (!name) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const mentionPattern = new RegExp(`@\\[${escaped}\\]`, 'i');
+    return mentionPattern.test(text);
+  }, []);
+
   // Custom hooks for extracted functionality
   const {
     messages,
@@ -72,11 +88,12 @@ export function App() {
 
   const {
     unreadCounts,
+    mentions,
     lastMessageTimes,
     incrementUnread,
     markAllRead,
     trackNewMessage,
-  } = useUnreadCounts(channels, contacts, activeConversation);
+  } = useUnreadCounts(channels, contacts, activeConversation, config?.name);
 
   const {
     repeaterLoggedIn,
@@ -137,16 +154,18 @@ export function App() {
 
       // Count unread for non-active, incoming messages (with deduplication)
       if (!msg.outgoing && !isForActiveConversation) {
-        // Skip if we've already seen this message ID (prevents duplicate increments)
-        if (seenMessageIdsRef.current.has(msg.id)) {
+        // Skip if we've already seen this message content (prevents duplicate increments
+        // when the same message arrives via multiple mesh paths)
+        const contentKey = getMessageContentKey(msg);
+        if (seenMessageContentRef.current.has(contentKey)) {
           return;
         }
-        seenMessageIdsRef.current.add(msg.id);
+        seenMessageContentRef.current.add(contentKey);
 
         // Limit set size to prevent memory issues
-        if (seenMessageIdsRef.current.size > 1000) {
-          const ids = Array.from(seenMessageIdsRef.current);
-          seenMessageIdsRef.current = new Set(ids.slice(-500));
+        if (seenMessageContentRef.current.size > 1000) {
+          const keys = Array.from(seenMessageContentRef.current);
+          seenMessageContentRef.current = new Set(keys.slice(-500));
         }
 
         let stateKey: string | null = null;
@@ -156,7 +175,8 @@ export function App() {
           stateKey = getStateKey('contact', msg.conversation_key);
         }
         if (stateKey) {
-          incrementUnread(stateKey);
+          const hasMention = checkMention(msg.text);
+          incrementUnread(stateKey, hasMention);
         }
       }
     },
@@ -194,7 +214,7 @@ export function App() {
     onMessageAcked: (messageId: number, ackCount: number) => {
       updateMessageAck(messageId, ackCount);
     },
-  }), [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck]);
+  }), [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck, checkMention]);
 
   // Connect to WebSocket
   useWebSocket(wsHandlers);
@@ -503,6 +523,7 @@ export function App() {
       }}
       lastMessageTimes={lastMessageTimes}
       unreadCounts={unreadCounts}
+      mentions={mentions}
       showCracker={showCracker}
       crackerRunning={crackerRunning}
       onToggleCracker={() => setShowCracker((prev) => !prev)}
