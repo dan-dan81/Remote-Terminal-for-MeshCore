@@ -52,6 +52,10 @@ sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 echo -e "${YELLOW}Updating frontend/package.json...${NC}"
 sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" frontend/package.json
 
+# Update uv.lock with new version
+echo -e "${YELLOW}Updating uv.lock...${NC}"
+uv sync
+
 echo -e "${GREEN}Version updated to $VERSION${NC}"
 echo
 
