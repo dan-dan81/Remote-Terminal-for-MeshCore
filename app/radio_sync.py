@@ -319,11 +319,17 @@ def start_message_polling():
         logger.info("Started periodic message polling (interval: %ds)", MESSAGE_POLL_INTERVAL)
 
 
-def stop_message_polling():
+async def stop_message_polling():
     """Stop the periodic message polling background task."""
     global _message_poll_task
     if _message_poll_task and not _message_poll_task.done():
         _message_poll_task.cancel()
+        try:
+            await _message_poll_task
+        except asyncio.CancelledError:
+            pass
+        _message_poll_task = None
+        logger.info("Stopped periodic message polling")
 
 
 async def _periodic_sync_loop():
@@ -348,11 +354,16 @@ def start_periodic_sync():
         logger.info("Started periodic radio sync (interval: %ds)", SYNC_INTERVAL)
 
 
-def stop_periodic_sync():
+async def stop_periodic_sync():
     """Stop the periodic sync background task."""
     global _sync_task
     if _sync_task and not _sync_task.done():
         _sync_task.cancel()
+        try:
+            await _sync_task
+        except asyncio.CancelledError:
+            pass
+        _sync_task = None
         logger.info("Stopped periodic radio sync")
 
 

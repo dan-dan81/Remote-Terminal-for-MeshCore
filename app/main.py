@@ -70,8 +70,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down")
     await radio_manager.stop_connection_monitor()
-    stop_message_polling()
-    stop_periodic_sync()
+    await stop_message_polling()
+    await stop_periodic_sync()
     if radio_manager.meshcore:
         await radio_manager.meshcore.stop_auto_message_fetching()
     await radio_manager.disconnect()

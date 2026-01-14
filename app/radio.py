@@ -105,7 +105,7 @@ class RadioManager:
         self._port: str | None = None
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: bool = False
-        self._reconnecting: bool = False
+        self._reconnect_lock: asyncio.Lock | None = None
 
     @property
     def meshcore(self) -> MeshCore | None:
@@ -121,7 +121,7 @@ class RadioManager:
 
     @property
     def is_reconnecting(self) -> bool:
-        return self._reconnecting
+        return self._reconnect_lock is not None and self._reconnect_lock.locked()
 
     async def connect(self) -> None:
         """Connect to the radio over serial."""
@@ -164,42 +164,46 @@ class RadioManager:
         """Attempt to reconnect to the radio.
 
         Returns True if reconnection was successful, False otherwise.
+        Uses a lock to prevent concurrent reconnection attempts.
         """
         from app.websocket import broadcast_error, broadcast_health
 
-        if self._reconnecting:
+        # Lazily initialize lock (can't create in __init__ before event loop exists)
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+
+        # Try to acquire lock without blocking to check if reconnect is in progress
+        if self._reconnect_lock.locked():
             logger.debug("Reconnection already in progress")
             return False
 
-        self._reconnecting = True
-        logger.info("Attempting to reconnect to radio...")
+        async with self._reconnect_lock:
+            logger.info("Attempting to reconnect to radio...")
 
-        try:
-            # Disconnect if we have a stale connection
-            if self._meshcore is not None:
-                try:
-                    await self._meshcore.disconnect()
-                except Exception:
-                    pass
-                self._meshcore = None
+            try:
+                # Disconnect if we have a stale connection
+                if self._meshcore is not None:
+                    try:
+                        await self._meshcore.disconnect()
+                    except Exception:
+                        pass
+                    self._meshcore = None
 
-            # Try to connect (will auto-detect if no port specified)
-            await self.connect()
+                # Try to connect (will auto-detect if no port specified)
+                await self.connect()
 
-            if self.is_connected:
-                logger.info("Radio reconnected successfully at %s", self._port)
-                broadcast_health(True, self._port)
-                return True
-            else:
-                logger.warning("Reconnection failed: not connected after connect()")
+                if self.is_connected:
+                    logger.info("Radio reconnected successfully at %s", self._port)
+                    broadcast_health(True, self._port)
+                    return True
+                else:
+                    logger.warning("Reconnection failed: not connected after connect()")
+                    return False
+
+            except Exception as e:
+                logger.warning("Reconnection failed: %s", e)
+                broadcast_error("Reconnection failed", str(e))
                 return False
-
-        except Exception as e:
-            logger.warning("Reconnection failed: %s", e)
-            broadcast_error("Reconnection failed", str(e))
-            return False
-        finally:
-            self._reconnecting = False
 
     async def start_connection_monitor(self) -> None:
         """Start background task to monitor connection and auto-reconnect."""

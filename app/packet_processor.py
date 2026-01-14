@@ -149,24 +149,6 @@ async def process_raw_packet(
     ts = timestamp or int(time.time())
 
     packet_id = await RawPacketRepository.create(raw_bytes, ts)
-
-    # If packet_id is None, this is a duplicate packet (same data already exists)
-    # Skip processing since we've already handled this exact packet
-    if packet_id is None:
-        logger.debug("Duplicate raw packet detected, skipping")
-        return {
-            "packet_id": None,
-            "timestamp": ts,
-            "raw_hex": raw_bytes.hex(),
-            "payload_type": "Duplicate",
-            "snr": snr,
-            "rssi": rssi,
-            "decrypted": False,
-            "message_id": None,
-            "channel_name": None,
-            "sender": None,
-        }
-
     raw_hex = raw_bytes.hex()
 
     # Parse packet to get type
