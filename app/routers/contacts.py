@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
@@ -28,6 +29,9 @@ from app.repository import ContactRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+# Delay between repeater radio operations to allow key exchange and path establishment
+REPEATER_OP_DELAY_SECONDS = 2.0
 
 
 async def ensure_repeater_on_radio(mc, contact: Contact) -> None:
@@ -108,6 +112,10 @@ async def prepare_repeater_connection(mc, contact: Contact, password: str) -> No
             status_code=401,
             detail=f"Login failed: {login_result.payload}"
         )
+
+    # Wait for key exchange to complete before sending requests
+    logger.debug("Waiting %.1fs for key exchange to complete", REPEATER_OP_DELAY_SECONDS)
+    await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
 
 
 @router.get("", response_model=list[Contact])
@@ -287,6 +295,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         if status:
             break
         logger.debug("Status request timeout, retrying...")
+        await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
 
     if not status:
         raise HTTPException(
@@ -295,6 +304,9 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         )
 
     logger.info("Received telemetry from %s: %s", contact.public_key[:12], status)
+
+    # Wait before next request
+    await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
 
     # Fetch neighbors (fetch_all_neighbours handles pagination)
     logger.info("Fetching neighbors from repeater %s", contact.public_key[:12])
@@ -309,6 +321,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         if neighbors_data:
             break
         logger.debug("Neighbors request timeout, retrying...")
+        await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
 
     # Process neighbors - resolve pubkey prefixes to contact names
     neighbors: list[NeighborInfo] = []
@@ -325,6 +338,9 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
                 last_heard_seconds=n.get("secs_ago", 0),
             ))
 
+    # Wait before next request
+    await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
+
     # Fetch ACL
     logger.info("Fetching ACL from repeater %s", contact.public_key[:12])
     acl_data = None
@@ -338,6 +354,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         if acl_data:
             break
         logger.debug("ACL request timeout, retrying...")
+        await asyncio.sleep(REPEATER_OP_DELAY_SECONDS)
 
     # Process ACL - resolve pubkey prefixes to contact names
     acl_entries: list[AclEntry] = []
