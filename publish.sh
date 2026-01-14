@@ -115,6 +115,7 @@ echo
 echo -e "${YELLOW}Committing changes...${NC}"
 git add .
 git commit -m "Updating changelog + build for $VERSION"
+git push
 echo -e "${GREEN}Changes committed!${NC}"
 echo
 
