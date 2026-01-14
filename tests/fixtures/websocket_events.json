@@ -1,0 +1,63 @@
+{
+  "channel_message": {
+    "description": "Channel message on #six77 from Flightless🥝",
+    "raw_packet_hex": "1500E69C7A89DD0AF6A2D69F5823B88F9720731E4B887C56932BF889255D8D926D99195927144323A42DD8A158F878B518B8304DF55E80501C7D02A9FFD578D3518283156BBA257BF8413E80A237393B2E4149BBBC864371140A9BBC4E23EB9BF203EF0D029214B3E3AAC3C0295690ACDB89A28619E7E5F22C83E16073AD679D25FA904D07E5ACF1DB5A7C77D7E1719FB9AE5BF55541EE0D7F59ED890E12CF0FEED6700818",
+    "channel_name": "#six77",
+    "channel_key_hex": "7aba109edcf304a84433cb71d0f3ab73",
+    "expected_ws_event": {
+      "type": "message",
+      "data": {
+        "type": "CHAN",
+        "conversation_key": "7ABA109EDCF304A84433CB71D0F3AB73",
+        "text": "Flightless🥝: hello there; this hashtag room is essentially public. MeshCore has great crypto; use private rooms or DMs for private comms instead!",
+        "sender_timestamp": 1766604717,
+        "outgoing": false,
+        "acked": 0
+      }
+    }
+  },
+  "advertisement_with_gps": {
+    "description": "Repeater advertisement with GPS coordinates from Can O Mesh 2",
+    "raw_packet_hex": "1106538B1CD273868576DC7F679B493F9AB5AC316173E1A56D3388BC3BA75F583F63AB0D1BA2A8ABD0BC6669DBF719E67E4C8517BA4E0D6F8C96A323E9D13A77F2630DED965A5C17C3EC6ED1601EEFE857749DA24E9F39CBEACD722C3708F433DB5FA9BAF0BAF9BC5B1241069290FEEB029A839EF843616E204F204D657368203220F09FA5AB",
+    "expected_ws_event": {
+      "type": "contact",
+      "data": {
+        "public_key": "8576dc7f679b493f9ab5ac316173e1a56d3388bc3ba75f583f63ab0d1ba2a8ab",
+        "name": "Can O Mesh 2 🥫",
+        "type": 2,
+        "lat": 49.02056,
+        "lon": -123.82935
+      }
+    }
+  },
+  "advertisement_chat_node": {
+    "description": "Chat node advertisement with GPS from Flightless🥝",
+    "raw_packet_hex": "1100AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A832DBF6669128E9476F36320F21D1B37FF1CF31680F50F4B17EDABCC7CF8C47D3C5E1DF3AFD0C8721EA06A8078462EF241DEF80AD6922751F206E3BB121DFB604F4146D60D913628D902602DB5F8466C696768746C657373F09FA59D",
+    "expected_ws_event": {
+      "type": "contact",
+      "data": {
+        "public_key": "ae92564c5c9884854f04f469bbb2bab8871a078053af6cf4aa2c014b18ce8a83",
+        "name": "Flightless🥝",
+        "type": 1,
+        "lat": 47.786038,
+        "lon": -122.344096
+      }
+    }
+  },
+  "message_acked": {
+    "description": "ACK event when a message is confirmed delivered",
+    "expected_ws_event": {
+      "type": "message_acked",
+      "data": {
+        "message_id": 42,
+        "ack_count": 1
+      }
+    }
+  },
+  "duplicate_channel_message": {
+    "description": "Same channel message arriving twice (via different paths) should only produce one message event",
+    "raw_packet_hex": "1500E69C7A89DD0AF6A2D69F5823B88F9720731E4B887C56932BF889255D8D926D99195927144323A42DD8A158F878B518B8304DF55E80501C7D02A9FFD578D3518283156BBA257BF8413E80A237393B2E4149BBBC864371140A9BBC4E23EB9BF203EF0D029214B3E3AAC3C0295690ACDB89A28619E7E5F22C83E16073AD679D25FA904D07E5ACF1DB5A7C77D7E1719FB9AE5BF55541EE0D7F59ED890E12CF0FEED6700818",
+    "channel_name": "#six77",
+    "expected_behavior": "First packet creates message and broadcasts, second packet is deduplicated (no broadcast)"
+  }
+}

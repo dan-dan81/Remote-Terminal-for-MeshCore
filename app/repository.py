@@ -307,8 +307,10 @@ class MessageRepository:
              path_len, txt_type, signature, outgoing),
         )
         await db.conn.commit()
-        # lastrowid is 0 if no row was inserted (duplicate)
-        return cursor.lastrowid if cursor.lastrowid else None
+        # rowcount is 0 if INSERT was ignored due to UNIQUE constraint violation
+        if cursor.rowcount == 0:
+            return None
+        return cursor.lastrowid
 
     @staticmethod
     async def get_all(

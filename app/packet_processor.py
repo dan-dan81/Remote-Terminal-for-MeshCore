@@ -43,25 +43,38 @@ async def create_message_from_decrypted(
     message_text: str,
     timestamp: int,
     received_at: int | None = None,
+    path_len: int | None = None,
 ) -> int | None:
     """Create a message record from decrypted channel packet content.
 
     This is the shared logic for storing decrypted channel messages,
     used by both real-time packet processing and historical decryption.
 
+    Args:
+        packet_id: ID of the raw packet being processed
+        channel_key: Hex string channel key
+        sender: Sender name (will be prefixed to message) or None
+        message_text: The decrypted message content
+        timestamp: Sender timestamp from the packet
+        received_at: When the packet was received (defaults to now)
+        path_len: Path length from packet routing (None for historical decryption)
+
     Returns the message ID if created, None if duplicate.
     """
     import time as time_module
     received = received_at or int(time_module.time())
 
-    # Format the message text
+    # Format the message text with sender prefix if present
     text = f"{sender}: {message_text}" if sender else message_text
+
+    # Normalize channel key to uppercase for consistency
+    channel_key_normalized = channel_key.upper()
 
     # Try to create message - INSERT OR IGNORE handles duplicates atomically
     msg_id = await MessageRepository.create(
         msg_type="CHAN",
         text=text,
-        conversation_key=channel_key.upper(),
+        conversation_key=channel_key_normalized,
         sender_timestamp=timestamp,
         received_at=received,
     )
@@ -69,26 +82,32 @@ async def create_message_from_decrypted(
     if msg_id is None:
         # Duplicate detected - find existing message ID for packet linkage
         existing_id = await MessageRepository.find_duplicate(
-            conversation_key=channel_key.upper(),
+            conversation_key=channel_key_normalized,
             text=text,
             sender_timestamp=timestamp,
+        )
+        logger.debug(
+            "Duplicate message detected for channel %s (existing id=%s)",
+            channel_key_normalized[:8], existing_id
         )
         if existing_id:
             await RawPacketRepository.mark_decrypted(packet_id, existing_id)
         return None
 
+    logger.info("Stored channel message %d for channel %s", msg_id, channel_key_normalized[:8])
+
     # Mark the raw packet as decrypted
     await RawPacketRepository.mark_decrypted(packet_id, msg_id)
 
-    # Broadcast new message to connected clients (for historical decryption visibility)
+    # Broadcast new message to connected clients
     broadcast_event("message", {
         "id": msg_id,
         "type": "CHAN",
-        "conversation_key": channel_key.upper(),
+        "conversation_key": channel_key_normalized,
         "text": text,
         "sender_timestamp": timestamp,
         "received_at": received,
-        "path_len": None,
+        "path_len": path_len,
         "txt_type": 0,
         "signature": None,
         "outgoing": False,
@@ -262,67 +281,22 @@ async def _process_group_text(
                 "message_id": message_id,
             }
 
-        # Format the message text
-        if decrypted.sender:
-            text = f"{decrypted.sender}: {decrypted.message}"
-        else:
-            text = decrypted.message
-
-        # Try to create message - INSERT OR IGNORE handles duplicates atomically
-        msg_id = await MessageRepository.create(
-            msg_type="CHAN",
-            text=text,
-            conversation_key=channel.key,
-            sender_timestamp=decrypted.timestamp,
+        # Use shared function to create message, handle duplicates, and broadcast
+        msg_id = await create_message_from_decrypted(
+            packet_id=packet_id,
+            channel_key=channel.key,
+            sender=decrypted.sender,
+            message_text=decrypted.message,
+            timestamp=decrypted.timestamp,
             received_at=timestamp,
+            path_len=packet_info.path_length if packet_info else None,
         )
-
-        if msg_id is None:
-            # Duplicate detected by database constraint (same message via different RF path)
-            # Find existing message ID for packet linkage
-            existing_id = await MessageRepository.find_duplicate(
-                conversation_key=channel.key,
-                text=text,
-                sender_timestamp=decrypted.timestamp,
-            )
-            logger.debug(
-                "Duplicate message detected for channel %s (existing id=%s)",
-                channel.name, existing_id
-            )
-            if existing_id:
-                await RawPacketRepository.mark_decrypted(packet_id, existing_id)
-            return {
-                "decrypted": True,
-                "channel_name": channel.name,
-                "sender": decrypted.sender,
-                "message_id": existing_id,
-            }
-
-        logger.info("Stored channel message %d for %s", msg_id, channel.name)
-
-        # Broadcast new message (only for genuinely new messages)
-        broadcast_event("message", {
-            "id": msg_id,
-            "type": "CHAN",
-            "conversation_key": channel.key,
-            "text": text,
-            "sender_timestamp": decrypted.timestamp,
-            "received_at": timestamp,
-            "path_len": packet_info.path_length if packet_info else None,
-            "txt_type": 0,
-            "signature": None,
-            "outgoing": False,
-            "acked": 0,
-        })
-
-        # Mark the raw packet as decrypted
-        await RawPacketRepository.mark_decrypted(packet_id, msg_id)
 
         return {
             "decrypted": True,
             "channel_name": channel.name,
             "sender": decrypted.sender,
-            "message_id": msg_id,
+            "message_id": msg_id,  # None if duplicate, msg_id if new
         }
 
     # Couldn't decrypt with any known key
