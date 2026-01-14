@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Delay between repeater radio operations to allow key exchange and path establishment
-REPEATER_OP_DELAY_SECONDS = 2.0
+REPEATER_OP_DELAY_SECONDS = 5.0
 
 
 async def ensure_repeater_on_radio(mc, contact: Contact) -> None:
@@ -57,6 +57,14 @@ async def ensure_repeater_on_radio(mc, contact: Contact) -> None:
         logger.info("Removing existing contact %s from radio", contact.public_key[:12])
         await mc.commands.remove_contact(contact.public_key)
         await mc.commands.get_contacts()
+
+        # Verify removal succeeded
+        radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
+        if radio_contact:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to remove contact from radio - contact still present after removal"
+            )
 
     # Add contact fresh with flood mode
     logger.info("Adding repeater %s to radio with flood mode", contact.public_key[:12])
