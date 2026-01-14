@@ -35,7 +35,7 @@ REPEATER_OP_DELAY_SECONDS = 5.0
 
 
 async def prepare_repeater_connection(mc, contact: Contact, password: str) -> None:
-    """Prepare connection to a repeater by logging in.
+    """Prepare connection to a repeater by adding to radio and logging in.
 
     Args:
         mc: MeshCore instance
@@ -45,6 +45,21 @@ async def prepare_repeater_connection(mc, contact: Contact, password: str) -> No
     Raises:
         HTTPException: If login fails
     """
+    # Add contact to radio with flood mode
+    logger.info("Adding repeater %s to radio", contact.public_key[:12])
+    contact_data = {
+        "public_key": contact.public_key,
+        "adv_name": contact.name or "",
+        "type": contact.type,
+        "flags": contact.flags,
+        "out_path": "",
+        "out_path_len": -1,  # Flood mode
+        "adv_lat": contact.lat or 0.0,
+        "adv_lon": contact.lon or 0.0,
+        "last_advert": contact.last_advert or 0,
+    }
+    await mc.commands.add_contact(contact_data)
+
     # Send login with password
     logger.info("Sending login to repeater %s", contact.public_key[:12])
     login_result = await mc.commands.send_login(contact.public_key, password)
@@ -365,6 +380,21 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
     # Pause message polling to prevent it from stealing our response
     async with pause_polling():
+        # Add contact to radio with flood mode
+        logger.info("Adding repeater %s to radio", contact.public_key[:12])
+        contact_data = {
+            "public_key": contact.public_key,
+            "adv_name": contact.name or "",
+            "type": contact.type,
+            "flags": contact.flags,
+            "out_path": "",
+            "out_path_len": -1,  # Flood mode
+            "adv_lat": contact.lat or 0.0,
+            "adv_lon": contact.lon or 0.0,
+            "last_advert": contact.last_advert or 0,
+        }
+        await mc.commands.add_contact(contact_data)
+
         # Send the command
         logger.info("Sending command to repeater %s: %s", contact.public_key[:12], request.command)
 

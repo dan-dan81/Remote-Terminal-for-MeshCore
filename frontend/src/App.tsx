@@ -588,9 +588,21 @@ export function App() {
                       {activeConversation.id}
                       {activeConversation.type === 'contact' && (() => {
                         const contact = contacts.find(c => c.public_key === activeConversation.id);
-                        return contact?.last_seen ? (
+                        if (!contact) return null;
+                        const parts: string[] = [];
+                        if (contact.last_seen) {
+                          parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
+                        }
+                        if (contact.last_path_len === -1) {
+                          parts.push('flood');
+                        } else if (contact.last_path_len === 0) {
+                          parts.push('direct');
+                        } else if (contact.last_path_len > 0) {
+                          parts.push(`${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`);
+                        }
+                        return parts.length > 0 ? (
                           <span className="ml-2 font-sans">
-                            (Last heard: {formatTime(contact.last_seen)})
+                            ({parts.join(', ')})
                           </span>
                         ) : null;
                       })()}
