@@ -174,20 +174,10 @@ export function MessageList({
     return <div className="flex-1 overflow-y-auto p-5 text-center text-muted-foreground">No messages yet</div>;
   }
 
-  // Deduplicate messages by content + timestamp (same message via different paths)
-  const deduplicatedMessages = messages.reduce<Message[]>((acc, msg) => {
-    const key = `${msg.type}-${msg.conversation_key}-${msg.text}-${msg.sender_timestamp}`;
-    const existing = acc.find(m =>
-      `${m.type}-${m.conversation_key}-${m.text}-${m.sender_timestamp}` === key
-    );
-    if (!existing) {
-      acc.push(msg);
-    }
-    return acc;
-  }, []);
-
   // Sort messages by received_at ascending (oldest first)
-  const sortedMessages = [...deduplicatedMessages].sort(
+  // Note: Deduplication is handled by useConversationMessages.addMessageIfNew()
+  // and the database UNIQUE constraint on (type, conversation_key, text, sender_timestamp)
+  const sortedMessages = [...messages].sort(
     (a, b) => a.received_at - b.received_at
   );
 
