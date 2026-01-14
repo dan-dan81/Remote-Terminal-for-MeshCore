@@ -48,17 +48,27 @@ async def ensure_repeater_on_radio(mc, contact: Contact) -> None:
         HTTPException: If contact cannot be added or removed
     """
     # Sync contacts from radio to ensure our cache is up-to-date
+    # Use get_contacts() directly to force a fresh read (ensure_contacts may skip if cache exists)
     logger.info("Syncing contacts from radio before repeater operation")
-    await mc.ensure_contacts()
+    await mc.commands.get_contacts()
 
     # Remove contact if it exists (clears any stale state on radio)
     radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
     if radio_contact:
         logger.info("Removing existing contact %s from radio", contact.public_key[:12])
-        await mc.commands.remove_contact(contact.public_key)
+        remove_result = await mc.commands.remove_contact(radio_contact)
+        # Error code 2 = NOT_FOUND, which is fine - contact already gone
+        if remove_result.type == EventType.ERROR:
+            error_code = remove_result.payload.get("error_code") if isinstance(remove_result.payload, dict) else None
+            if error_code != 2:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to remove contact from radio: {remove_result.payload}"
+                )
+            logger.info("Contact %s not found on radio (already removed)", contact.public_key[:12])
         await mc.commands.get_contacts()
 
-        # Verify removal succeeded
+        # Verify removal succeeded (skip if we got NOT_FOUND)
         radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
         if radio_contact:
             raise HTTPException(
