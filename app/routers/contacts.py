@@ -37,73 +37,63 @@ REPEATER_OP_DELAY_SECONDS = 5.0
 async def ensure_repeater_on_radio(mc, contact: Contact) -> None:
     """Ensure a repeater contact is on the radio with flood mode.
 
-    If the contact already exists, resets its path to flood mode.
-    If not present, adds it fresh with flood mode. Does NOT perform login.
+    This syncs contacts, removes any existing entry (to clear stale state),
+    and re-adds with flood mode. Does NOT perform login.
 
     Args:
         mc: MeshCore instance
         contact: The repeater contact
 
     Raises:
-        HTTPException: If contact cannot be added or path cannot be reset
+        HTTPException: If contact cannot be added or removed
     """
     # Sync contacts from radio to ensure our cache is up-to-date
     logger.info("Syncing contacts from radio before repeater operation")
     await mc.ensure_contacts()
 
+    # Remove contact if it exists (clears any stale state on radio)
     radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
     if radio_contact:
-        # Contact exists - reset path to flood mode
-        logger.info("Resetting path for existing contact %s", contact.public_key[:12])
-        reset_result = await mc.commands.reset_path(contact.public_key)
-        if reset_result.type == EventType.ERROR:
+        logger.info("Removing existing contact %s from radio", contact.public_key[:12])
+        await mc.commands.remove_contact(contact.public_key)
+        await mc.commands.get_contacts()
+
+        # Verify removal succeeded
+        radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
+        if radio_contact:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to reset contact path: {reset_result.payload}"
+                detail="Failed to remove contact from radio - contact still present after removal"
             )
 
-        # Refresh and verify path was reset
-        await mc.commands.get_contacts()
-        radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
-        if not radio_contact:
-            raise HTTPException(
-                status_code=500,
-                detail="Contact disappeared after path reset"
-            )
-        if radio_contact.get("out_path_len", -1) != -1:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to reset path - out_path_len is {radio_contact.get('out_path_len')}, expected -1"
-            )
-    else:
-        # Contact not on radio - add it fresh with flood mode
-        logger.info("Adding repeater %s to radio with flood mode", contact.public_key[:12])
-        contact_data = {
-            "public_key": contact.public_key,
-            "adv_name": contact.name or "",
-            "type": contact.type,
-            "flags": contact.flags,
-            "out_path": "",
-            "out_path_len": -1,  # Flood mode
-            "adv_lat": contact.lat or 0.0,
-            "adv_lon": contact.lon or 0.0,
-            "last_advert": contact.last_advert or 0,
-        }
-        add_result = await mc.commands.add_contact(contact_data)
-        if add_result.type == EventType.ERROR:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to add contact to radio: {add_result.payload}"
-            )
+    # Add contact fresh with flood mode
+    logger.info("Adding repeater %s to radio with flood mode", contact.public_key[:12])
+    contact_data = {
+        "public_key": contact.public_key,
+        "adv_name": contact.name or "",
+        "type": contact.type,
+        "flags": contact.flags,
+        "out_path": "",
+        "out_path_len": -1,  # Flood mode
+        "adv_lat": contact.lat or 0.0,
+        "adv_lon": contact.lon or 0.0,
+        "last_advert": contact.last_advert or 0,
+    }
+    add_result = await mc.commands.add_contact(contact_data)
+    if add_result.type == EventType.ERROR:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add contact to radio: {add_result.payload}"
+        )
 
-        # Refresh and verify
-        await mc.commands.get_contacts()
-        radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
-        if not radio_contact:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to add contact to radio - contact not found after add"
-            )
+    # Refresh and verify
+    await mc.commands.get_contacts()
+    radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
+    if not radio_contact:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to add contact to radio - contact not found after add"
+        )
 
 
 async def prepare_repeater_connection(mc, contact: Contact, password: str) -> None:
