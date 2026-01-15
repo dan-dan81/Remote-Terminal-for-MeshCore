@@ -478,13 +478,13 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
             onChange={(e) => setDecryptHistorical(e.target.checked)}
             className="rounded"
           />
-          Decrypt historical
+          Decrypt historical packets if key found
         </label>
         {decryptHistorical && (
           <span className="text-xs text-muted-foreground">
             {undecryptedPacketCount !== null && undecryptedPacketCount > 0
-              ? `(${undecryptedPacketCount.toLocaleString()} packets; messages stream in as decrypted)`
-              : '(messages stream in as decrypted)'}
+              ? `(${undecryptedPacketCount.toLocaleString()} packets; messages will stream in as decrypted)`
+              : '(messages will stream in as decrypted)'}
           </span>
         )}
 
