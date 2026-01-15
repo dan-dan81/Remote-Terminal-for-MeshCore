@@ -443,6 +443,7 @@ export function App() {
         lon: null,
         last_seen: null,
         on_radio: false,
+        last_contacted: null,
         last_read_at: null,
       };
       setContacts((prev) => [...prev, newContact]);

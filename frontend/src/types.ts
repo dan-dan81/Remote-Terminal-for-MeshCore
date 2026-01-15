@@ -67,6 +67,7 @@ export interface Contact {
   lon: number | null;
   last_seen: number | null;
   on_radio: boolean;
+  last_contacted: number | null;
   last_read_at: number | null;
 }
 

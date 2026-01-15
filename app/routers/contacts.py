@@ -45,22 +45,9 @@ async def prepare_repeater_connection(mc, contact: Contact, password: str) -> No
     Raises:
         HTTPException: If login fails
     """
-    # Add contact to radio with path from DB (or flood if no path known)
-    path_len = contact.last_path_len if contact.last_path_len >= 0 else -1
-    path_str = "direct" if path_len == 0 else f"{path_len} hops" if path_len > 0 else "flood"
-    logger.info("Adding repeater %s to radio (%s)", contact.public_key[:12], path_str)
-    contact_data = {
-        "public_key": contact.public_key,
-        "adv_name": contact.name or "",
-        "type": contact.type,
-        "flags": contact.flags,
-        "out_path": contact.last_path or "",
-        "out_path_len": path_len,
-        "adv_lat": contact.lat or 0.0,
-        "adv_lon": contact.lon or 0.0,
-        "last_advert": contact.last_advert or 0,
-    }
-    await mc.commands.add_contact(contact_data)
+    # Add contact to radio with path from DB
+    logger.info("Adding repeater %s to radio", contact.public_key[:12])
+    await mc.commands.add_contact(contact.to_radio_dict())
 
     # Send login with password
     logger.info("Sending login to repeater %s", contact.public_key[:12])
@@ -382,22 +369,9 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
     # Pause message polling to prevent it from stealing our response
     async with pause_polling():
-        # Add contact to radio with path from DB (or flood if no path known)
-        path_len = contact.last_path_len if contact.last_path_len >= 0 else -1
-        path_str = "direct" if path_len == 0 else f"{path_len} hops" if path_len > 0 else "flood"
-        logger.info("Adding repeater %s to radio (%s)", contact.public_key[:12], path_str)
-        contact_data = {
-            "public_key": contact.public_key,
-            "adv_name": contact.name or "",
-            "type": contact.type,
-            "flags": contact.flags,
-            "out_path": contact.last_path or "",
-            "out_path_len": path_len,
-            "adv_lat": contact.lat or 0.0,
-            "adv_lon": contact.lon or 0.0,
-            "last_advert": contact.last_advert or 0,
-        }
-        await mc.commands.add_contact(contact_data)
+        # Add contact to radio with path from DB
+        logger.info("Adding repeater %s to radio", contact.public_key[:12])
+        await mc.commands.add_contact(contact.to_radio_dict())
 
         # Send the command
         logger.info("Sending command to repeater %s: %s", contact.public_key[:12], request.command)
