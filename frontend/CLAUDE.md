@@ -83,6 +83,13 @@ const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 2. **REST API** fetches initial data and handles user actions
 3. **Components** receive state as props, call handlers to trigger changes
 
+### Conversation Header
+
+For contacts, the header shows path information alongside "Last heard":
+- `(Last heard: 10:30 AM, direct)` - Direct neighbor (path_len=0)
+- `(Last heard: 10:30 AM, 2 hops)` - Routed through repeaters (path_len>0)
+- `(Last heard: 10:30 AM, flood)` - No known path (path_len=-1)
+
 ## WebSocket (`useWebSocket.ts`)
 
 The `useWebSocket` hook manages real-time connection:
@@ -186,6 +193,9 @@ interface Contact {
   name: string | null;
   type: number;            // 0=unknown, 1=client, 2=repeater, 3=room
   on_radio: boolean;
+  last_path_len: number;   // -1=flood, 0=direct, >0=hops through repeaters
+  last_path: string | null; // Hex routing path
+  last_seen: number | null; // Unix timestamp
   // ...
 }
 

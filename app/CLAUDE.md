@@ -531,13 +531,12 @@ The `POST /api/contacts/{key}/telemetry` endpoint fetches status, neighbors, and
 ### Request Flow
 
 1. Verify contact exists and is a repeater (type=2)
-2. Sync contacts from radio with `ensure_contacts()`
-3. Remove and re-add contact with flood mode (clears stale auth state)
-4. Send login with password
-5. Request status with retries (3 attempts, 10s timeout)
-6. Fetch neighbors with `fetch_all_neighbours()` (handles pagination)
-7. Fetch ACL with `req_acl_sync()`
-8. Resolve pubkey prefixes to contact names from database
+2. Add contact to radio with stored path data (from advertisements)
+3. Send login with password
+4. Request status with retries (3 attempts, 10s timeout)
+5. Fetch neighbors with `fetch_all_neighbours()` (handles pagination)
+6. Fetch ACL with `req_acl_sync()`
+7. Resolve pubkey prefixes to contact names from database
 
 ### ACL Permission Levels
 
@@ -626,7 +625,14 @@ if txt_type == 1:
 ### Helper Function
 
 `prepare_repeater_connection()` handles the login dance:
-1. Sync contacts from radio
-2. Remove contact if exists (clears stale auth)
-3. Re-add with flood mode (`out_path_len=-1`)
-4. Send login with password
+1. Add contact to radio with stored path from DB (`out_path`, `out_path_len`)
+2. Send login with password
+3. Wait for key exchange to complete
+
+### Contact Path Tracking
+
+When advertisements are received, path data is extracted and stored:
+- `last_path`: Hex string of routing path bytes
+- `last_path_len`: Number of hops (-1=flood/unknown, 0=direct, >0=hops through repeaters)
+
+**Shortest path selection**: When receiving echoed advertisements within 60 seconds, the shortest path is kept. This ensures we use the most efficient route when multiple paths exist.

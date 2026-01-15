@@ -309,16 +309,40 @@ async def _process_advertisement(
         return
 
     # Extract path info from packet
-    path_len = packet_info.path_length
-    path_hex = packet_info.path.hex() if packet_info.path else ""
+    new_path_len = packet_info.path_length
+    new_path_hex = packet_info.path.hex() if packet_info.path else ""
+
+    # Try to find existing contact
+    existing = await ContactRepository.get_by_key(advert.public_key)
+
+    # Determine which path to use: keep shorter path if heard recently (within 60s)
+    # This handles advertisement echoes through different routes
+    PATH_FRESHNESS_SECONDS = 60
+    use_existing_path = False
+
+    if existing and existing.last_seen:
+        path_age = timestamp - existing.last_seen
+        existing_path_len = existing.last_path_len if existing.last_path_len >= 0 else float('inf')
+
+        # Keep existing path if it's fresh and shorter (or equal)
+        if path_age <= PATH_FRESHNESS_SECONDS and existing_path_len <= new_path_len:
+            use_existing_path = True
+            logger.debug(
+                "Keeping existing shorter path for %s (existing=%d, new=%d, age=%ds)",
+                advert.public_key[:12], existing_path_len, new_path_len, path_age
+            )
+
+    if use_existing_path:
+        path_len = existing.last_path_len
+        path_hex = existing.last_path or ""
+    else:
+        path_len = new_path_len
+        path_hex = new_path_hex
 
     logger.debug(
         "Parsed advertisement from %s: %s (role=%d, lat=%s, lon=%s, path_len=%d)",
         advert.public_key[:12], advert.name, advert.device_role, advert.lat, advert.lon, path_len
     )
-
-    # Try to find existing contact
-    existing = await ContactRepository.get_by_key(advert.public_key)
 
     # Use device_role from advertisement for contact type (1=Chat, 2=Repeater, 3=Room, 4=Sensor)
     # Use advert.timestamp for last_advert (sender's timestamp), receive timestamp for last_seen

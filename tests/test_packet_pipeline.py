@@ -254,6 +254,76 @@ class TestAdvertisementPipeline:
         # Empty path stored as None or ""
         assert contact.last_path in (None, "")
 
+    @pytest.mark.asyncio
+    async def test_advertisement_keeps_shorter_path_within_window(self, test_db, captured_broadcasts):
+        """When receiving echoed advertisements, keep the shortest path within 60s window."""
+        from app.packet_processor import _process_advertisement
+        from app.decoder import parse_packet
+
+        # Create a contact with a longer path (path_len=3)
+        test_pubkey = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        await ContactRepository.upsert({
+            "public_key": test_pubkey,
+            "name": "TestNode",
+            "type": 1,
+            "last_seen": 1000,
+            "last_path_len": 3,
+            "last_path": "aabbcc",  # 3 bytes = 3 hops
+        })
+
+        # Simulate receiving a shorter path (path_len=1) within 60s
+        # We'll call _process_advertisement directly with mock packet_info
+        from unittest.mock import MagicMock
+        from app.decoder import PacketInfo, RouteType, PayloadType, ParsedAdvertisement
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        # Mock packet_info with shorter path
+        short_packet_info = MagicMock()
+        short_packet_info.path_length = 1
+        short_packet_info.path = bytes.fromhex("aa")
+        short_packet_info.payload = b""  # Will be parsed by parse_advertisement
+
+        # Mock parse_advertisement to return our test contact
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_advertisement") as mock_parse:
+                mock_parse.return_value = ParsedAdvertisement(
+                    public_key=test_pubkey,
+                    name="TestNode",
+                    timestamp=1050,
+                    lat=None,
+                    lon=None,
+                    device_role=1,
+                )
+                # Process at timestamp 1050 (within 60s of last_seen=1000)
+                await _process_advertisement(b"", timestamp=1050, packet_info=short_packet_info)
+
+        # Verify the shorter path was stored
+        contact = await ContactRepository.get_by_key(test_pubkey)
+        assert contact.last_path_len == 1  # Updated to shorter path
+
+        # Now simulate receiving a longer path (path_len=5) - should keep the shorter one
+        long_packet_info = MagicMock()
+        long_packet_info.path_length = 5
+        long_packet_info.path = bytes.fromhex("aabbccddee")
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_advertisement") as mock_parse:
+                mock_parse.return_value = ParsedAdvertisement(
+                    public_key=test_pubkey,
+                    name="TestNode",
+                    timestamp=1055,
+                    lat=None,
+                    lon=None,
+                    device_role=1,
+                )
+                # Process at timestamp 1055 (within 60s of last update)
+                await _process_advertisement(b"", timestamp=1055, packet_info=long_packet_info)
+
+        # Verify the shorter path was kept
+        contact = await ContactRepository.get_by_key(test_pubkey)
+        assert contact.last_path_len == 1  # Still the shorter path
+
 
 class TestAckPipeline:
     """Test ACK flow: outgoing message → ACK received → broadcast update."""
