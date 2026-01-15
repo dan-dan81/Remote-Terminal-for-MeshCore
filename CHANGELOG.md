@@ -1,3 +1,8 @@
+## [1.1.0] - 2026-01-14
+
+Bugfix: Use actual pathing data from advertisements, not just always flood (oops)
+Bugfix: Autosync radio clock periodically to prevent drift (would show up most commonly as issues with repeater comms)
+
 ## [1.0.3] - 2026-01-13
 
 Bugfix: Add missing test management packages
