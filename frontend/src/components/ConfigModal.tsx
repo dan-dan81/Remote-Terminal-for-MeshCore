@@ -264,6 +264,7 @@ export function ConfigModal({
                 <Input
                   id="private-key"
                   type="password"
+                  autoComplete="off"
                   value={privateKey}
                   onChange={(e) => setPrivateKey(e.target.value)}
                   placeholder="64-character hex private key"

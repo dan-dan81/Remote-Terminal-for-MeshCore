@@ -104,14 +104,12 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
       e.preventDefault();
       const trimmed = text.trim();
 
-      // For repeater mode, allow empty password via "."
+      // For repeater mode, empty password means guest login
       if (isRepeaterMode) {
         if (sending || disabled) return;
-        // "." means empty password
-        const password = trimmed === '.' ? '' : trimmed;
         setSending(true);
         try {
-          await onSend(password);
+          await onSend(trimmed);
           setText('');
         } catch (err) {
           console.error('Failed to request telemetry:', err);
@@ -156,10 +154,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     [handleSubmit]
   );
 
-  // For repeater mode, enable submit if there's text OR if it's just "." for empty password
-  const canSubmit = isRepeaterMode
-    ? text.trim().length > 0 || text === '.'
-    : text.trim().length > 0;
+  // For repeater mode, always allow submit (empty = guest login)
+  const canSubmit = isRepeaterMode ? true : text.trim().length > 0;
 
   // Show character counter for messages (not repeater mode or raw)
   const showCharCounter = !isRepeaterMode && limits !== null;
@@ -170,12 +166,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         <Input
           ref={inputRef}
           type={isRepeaterMode ? 'password' : 'text'}
+          autoComplete={isRepeaterMode ? 'off' : undefined}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
             placeholder ||
-            (isRepeaterMode ? 'Enter password (or . for none)...' : 'Type a message...')
+            (isRepeaterMode ? 'Enter password for admin login...' : 'Type a message...')
           }
           disabled={disabled || sending}
           className="flex-1 min-w-0"
@@ -187,10 +184,12 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         >
           {sending
             ? isRepeaterMode
-              ? 'Fetching...'
+              ? 'Logging in...'
               : 'Sending...'
             : isRepeaterMode
-              ? 'Fetch'
+              ? text.trim()
+                ? 'Log in with password'
+                : 'Log in as guest/use repeater ACLs'
               : 'Send'}
         </Button>
       </div>

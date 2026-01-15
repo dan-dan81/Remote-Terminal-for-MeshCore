@@ -5,7 +5,7 @@
  * regress if the code is modified:
  *
  * 1. Repeater messages should NOT have sender parsed from text (colons are common in CLI output)
- * 2. Password field "." should convert to empty string (for repeaters with no password)
+ * 2. Empty password field = guest login, password field with text = password login
  */
 
 import { describe, it, expect } from 'vitest';
@@ -91,42 +91,40 @@ describe('Repeater message sender parsing', () => {
   });
 });
 
-describe('Repeater password handling', () => {
+describe('Repeater login behavior', () => {
   /**
-   * The "." password convention allows users to specify an empty password
-   * for repeaters that don't require authentication. Without this, users
-   * couldn't submit an empty password through the form.
+   * Repeater login has two modes:
+   * - Empty password field = guest login (uses repeater's ACL permissions)
+   * - Password in field = admin login attempt
    */
 
-  it('"." converts to empty password', () => {
+  it('empty input results in empty password (guest login)', () => {
     // This is the logic in MessageInput.tsx handleSubmit
-    const trimmed = '.';
-    const password = trimmed === '.' ? '' : trimmed;
-
-    expect(password).toBe('');
-  });
-
-  it('normal password is passed through unchanged', () => {
-    const trimmed: string = 'mySecretPassword';
-    const password = trimmed === '.' ? '' : trimmed;
-
-    expect(password).toBe('mySecretPassword');
-  });
-
-  it('"." with surrounding whitespace still works after trim', () => {
-    // In MessageInput, text.trim() is called before the check
-    const text = '  .  ';
+    const text = '';
     const trimmed = text.trim();
-    const password = trimmed === '.' ? '' : trimmed;
 
-    expect(password).toBe('');
+    // Empty string is passed directly to onSend
+    expect(trimmed).toBe('');
   });
 
-  it('".." is NOT converted (only single dot)', () => {
-    const trimmed: string = '..';
-    const password = trimmed === '.' ? '' : trimmed;
+  it('password is passed through unchanged', () => {
+    const text = 'mySecretPassword';
+    const trimmed = text.trim();
 
-    // Double dot is passed through as-is (it's a valid password)
-    expect(password).toBe('..');
+    expect(trimmed).toBe('mySecretPassword');
+  });
+
+  it('whitespace-only input is treated as empty (guest login)', () => {
+    const text = '   ';
+    const trimmed = text.trim();
+
+    expect(trimmed).toBe('');
+  });
+
+  it('password with surrounding whitespace is trimmed', () => {
+    const text = '  secret123  ';
+    const trimmed = text.trim();
+
+    expect(trimmed).toBe('secret123');
   });
 });
