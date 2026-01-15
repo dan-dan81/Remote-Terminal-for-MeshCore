@@ -172,9 +172,8 @@ export function Sidebar({
     ? sortedChannels.filter((c) => c.name.toLowerCase().includes(query))
     : sortedChannels;
   const filteredContacts = query
-    ? sortedContacts.filter((c) =>
-        (c.name?.toLowerCase().includes(query)) ||
-        c.public_key.toLowerCase().includes(query)
+    ? sortedContacts.filter(
+        (c) => c.name?.toLowerCase().includes(query) || c.public_key.toLowerCase().includes(query)
       )
     : sortedContacts;
 
@@ -220,8 +219,8 @@ export function Sidebar({
         {!query && (
           <div
             className={cn(
-              "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
-              isActive('raw', 'raw') && "bg-accent border-l-primary"
+              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+              isActive('raw', 'raw') && 'bg-accent border-l-primary'
             )}
             onClick={() =>
               handleSelectConversation({
@@ -240,8 +239,8 @@ export function Sidebar({
         {!query && (
           <div
             className={cn(
-              "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
-              isActive('map', 'map') && "bg-accent border-l-primary"
+              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+              isActive('map', 'map') && 'bg-accent border-l-primary'
             )}
             onClick={() =>
               handleSelectConversation({
@@ -260,18 +259,20 @@ export function Sidebar({
         {!query && (
           <div
             className={cn(
-              "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
-              showCracker && "bg-accent border-l-primary"
+              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+              showCracker && 'bg-accent border-l-primary'
             )}
             onClick={onToggleCracker}
           >
             <span className="text-muted-foreground text-xs">🔓</span>
             <span className="flex-1 truncate">
               {showCracker ? 'Hide' : 'Show'} Cracker
-              <span className={cn(
-                "ml-1 text-xs",
-                crackerRunning ? "text-green-500" : "text-muted-foreground"
-              )}>
+              <span
+                className={cn(
+                  'ml-1 text-xs',
+                  crackerRunning ? 'text-green-500' : 'text-muted-foreground'
+                )}
+              >
                 ({crackerRunning ? 'running' : 'stopped'})
               </span>
             </span>
@@ -309,9 +310,9 @@ export function Sidebar({
                 <div
                   key={`chan-${channel.key}`}
                   className={cn(
-                    "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
-                    isActive('channel', channel.key) && "bg-accent border-l-primary",
-                    unreadCount > 0 && "[&_.name]:font-bold [&_.name]:text-foreground"
+                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+                    isActive('channel', channel.key) && 'bg-accent border-l-primary',
+                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
                   )}
                   onClick={() =>
                     handleSelectConversation({
@@ -324,12 +325,14 @@ export function Sidebar({
                   <span className="text-muted-foreground text-xs">#</span>
                   <span className="name flex-1 truncate">{channel.name}</span>
                   {unreadCount > 0 && (
-                    <span className={cn(
-                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
-                      isMention
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-primary text-primary-foreground"
-                    )}>
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                        isMention
+                          ? 'bg-destructive text-destructive-foreground'
+                          : 'bg-primary text-primary-foreground'
+                      )}
+                    >
                       {unreadCount}
                     </span>
                   )}
@@ -361,9 +364,9 @@ export function Sidebar({
                 <div
                   key={contact.public_key}
                   className={cn(
-                    "px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent",
-                    isActive('contact', contact.public_key) && "bg-accent border-l-primary",
-                    unreadCount > 0 && "[&_.name]:font-bold [&_.name]:text-foreground"
+                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+                    isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
+                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
                   )}
                   onClick={() =>
                     handleSelectConversation({
@@ -373,17 +376,24 @@ export function Sidebar({
                     })
                   }
                 >
-                  <ContactAvatar name={contact.name} publicKey={contact.public_key} size={24} contactType={contact.type} />
+                  <ContactAvatar
+                    name={contact.name}
+                    publicKey={contact.public_key}
+                    size={24}
+                    contactType={contact.type}
+                  />
                   <span className="name flex-1 truncate">
                     {getContactDisplayName(contact.name, contact.public_key)}
                   </span>
                   {unreadCount > 0 && (
-                    <span className={cn(
-                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
-                      isMention
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-primary text-primary-foreground"
-                    )}>
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                        isMention
+                          ? 'bg-destructive text-destructive-foreground'
+                          : 'bg-primary text-primary-foreground'
+                      )}
+                    >
                       {unreadCount}
                     </span>
                   )}

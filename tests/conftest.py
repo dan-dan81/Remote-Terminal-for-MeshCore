@@ -13,4 +13,5 @@ def sample_channel_key():
 def sample_hashtag_key():
     """A channel key derived from hashtag name '#test'."""
     import hashlib
+
     return hashlib.sha256(b"#test").digest()[:16]

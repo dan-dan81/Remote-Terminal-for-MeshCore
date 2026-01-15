@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import type { HealthStatus } from '../types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -90,7 +85,8 @@ export function MaintenanceModal({
 
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Current database size: <span className="font-medium">{health?.database_size_mb ?? '?'} MB</span>
+            Current database size:{' '}
+            <span className="font-medium">{health?.database_size_mb ?? '?'} MB</span>
           </p>
 
           <div className="space-y-3">
@@ -101,7 +97,9 @@ export function MaintenanceModal({
             </p>
             <div className="flex gap-2 items-end">
               <div className="space-y-1">
-                <Label htmlFor="retention-days" className="text-xs">Days to retain</Label>
+                <Label htmlFor="retention-days" className="text-xs">
+                  Days to retain
+                </Label>
                 <Input
                   id="retention-days"
                   type="number"
@@ -112,11 +110,7 @@ export function MaintenanceModal({
                   className="w-20"
                 />
               </div>
-              <Button
-                variant="outline"
-                onClick={handleCleanup}
-                disabled={cleaning}
-              >
+              <Button variant="outline" onClick={handleCleanup} disabled={cleaning}>
                 {cleaning ? 'Cleaning...' : 'Cleanup'}
               </Button>
             </div>
@@ -128,11 +122,7 @@ export function MaintenanceModal({
               Remove packets with duplicate payloads (same message received via different paths).
               Runs in background and may take a long time.
             </p>
-            <Button
-              variant="outline"
-              onClick={handleDedup}
-              disabled={deduping}
-            >
+            <Button variant="outline" onClick={handleDedup} disabled={deduping}>
               {deduping ? 'Starting...' : 'Remove Duplicates'}
             </Button>
           </div>

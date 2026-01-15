@@ -96,9 +96,14 @@ def broadcast_health(radio_connected: bool, serial_port: str | None = None) -> N
     except OSError:
         pass
 
-    asyncio.create_task(ws_manager.broadcast("health", {
-        "status": "ok" if radio_connected else "degraded",
-        "radio_connected": radio_connected,
-        "serial_port": serial_port,
-        "database_size_mb": db_size_mb,
-    }))
+    asyncio.create_task(
+        ws_manager.broadcast(
+            "health",
+            {
+                "status": "ok" if radio_connected else "degraded",
+                "radio_connected": radio_connected,
+                "serial_port": serial_port,
+                "database_size_mb": db_size_mb,
+            },
+        )
+    )

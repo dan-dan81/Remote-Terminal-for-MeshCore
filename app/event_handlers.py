@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from meshcore import EventType
 
 from app.models import Contact
-from app.packet_processor import process_raw_packet, track_pending_repeat
+from app.packet_processor import process_raw_packet
 from app.repository import ContactRepository, MessageRepository
 from app.websocket import broadcast_event
 
@@ -22,14 +22,19 @@ _pending_acks: dict[str, tuple[int, float, int]] = {}
 def track_pending_ack(expected_ack: str, message_id: int, timeout_ms: int) -> None:
     """Track a pending ACK for a direct message."""
     _pending_acks[expected_ack] = (message_id, time.time(), timeout_ms)
-    logger.debug("Tracking pending ACK %s for message %d (timeout %dms)", expected_ack, message_id, timeout_ms)
+    logger.debug(
+        "Tracking pending ACK %s for message %d (timeout %dms)",
+        expected_ack,
+        message_id,
+        timeout_ms,
+    )
 
 
 def _cleanup_expired_acks() -> None:
     """Remove expired pending ACKs."""
     now = time.time()
     expired = []
-    for code, (msg_id, created_at, timeout_ms) in _pending_acks.items():
+    for code, (_msg_id, created_at, timeout_ms) in _pending_acks.items():
         if now - created_at > (timeout_ms / 1000) * 2:  # 2x timeout as buffer
             expired.append(code)
     for code in expired:
@@ -82,19 +87,22 @@ async def on_contact_message(event: "Event") -> None:
         return
 
     # Broadcast only genuinely new messages
-    broadcast_event("message", {
-        "id": msg_id,
-        "type": "PRIV",
-        "conversation_key": sender_pubkey,
-        "text": payload.get("text", ""),
-        "sender_timestamp": payload.get("sender_timestamp"),
-        "received_at": received_at,
-        "path_len": payload.get("path_len"),
-        "txt_type": payload.get("txt_type", 0),
-        "signature": payload.get("signature"),
-        "outgoing": False,
-        "acked": False,
-    })
+    broadcast_event(
+        "message",
+        {
+            "id": msg_id,
+            "type": "PRIV",
+            "conversation_key": sender_pubkey,
+            "text": payload.get("text", ""),
+            "sender_timestamp": payload.get("sender_timestamp"),
+            "received_at": received_at,
+            "path_len": payload.get("path_len"),
+            "txt_type": payload.get("txt_type", 0),
+            "signature": payload.get("signature"),
+            "outgoing": False,
+            "acked": False,
+        },
+    )
 
     # Update contact last_seen and last_contacted
     contact = await ContactRepository.get_by_key_prefix(sender_pubkey)

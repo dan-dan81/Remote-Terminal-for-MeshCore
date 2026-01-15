@@ -50,7 +50,9 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
     #     applied += 1
 
     if applied > 0:
-        logger.info("Applied %d migration(s), schema now at version %d", applied, await get_version(conn))
+        logger.info(
+            "Applied %d migration(s), schema now at version %d", applied, await get_version(conn)
+        )
     else:
         logger.debug("Schema up to date at version %d", version)
 

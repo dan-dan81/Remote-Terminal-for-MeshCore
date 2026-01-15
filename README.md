@@ -105,6 +105,26 @@ npm run build    # Production build to dist/
 
 Run both the backend and `npm run dev` for hot-reloading frontend development.
 
+### Code Quality
+
+Please lint, format, and quality check your code before PRing or committing. At the least, run a lint + autoformat + type check on the bakend, and a lint + autoformat on the frontend,
+
+<details>
+<summary>But how?</summary>
+
+```bash
+# python
+uv run ruff check app/ tests/ --fix  # lint + auto-fix
+uv run ruff format app/ tests/       # format (always writes)
+uv run pyright app/                  # warnings only permitted!
+
+# frontend
+cd frontend
+npm run lint:fix                     # esLint + auto-fix (warnings permitted)
+npm run format                       # prettier (always writes)
+```
+</details>
+
 ## Configuration
 
 | Variable | Default | Description |

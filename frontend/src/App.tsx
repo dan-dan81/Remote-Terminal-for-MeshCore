@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from './api';
 import { useWebSocket } from './useWebSocket';
-import { useRepeaterMode, useUnreadCounts, useConversationMessages, getMessageContentKey } from './hooks';
+import {
+  useRepeaterMode,
+  useUnreadCounts,
+  useConversationMessages,
+  getMessageContentKey,
+} from './hooks';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { MessageList } from './components/MessageList';
@@ -103,118 +108,121 @@ export function App() {
   } = useRepeaterMode(activeConversation, contacts, setMessages);
 
   // WebSocket handlers - memoized to prevent reconnection loops
-  const wsHandlers = useMemo(() => ({
-    onHealth: (data: HealthStatus) => {
-      const prev = prevHealthRef.current;
-      prevHealthRef.current = data;
-      setHealth(data);
+  const wsHandlers = useMemo(
+    () => ({
+      onHealth: (data: HealthStatus) => {
+        const prev = prevHealthRef.current;
+        prevHealthRef.current = data;
+        setHealth(data);
 
-      // Show toast on connection status change
-      if (prev !== null && prev.radio_connected !== data.radio_connected) {
-        if (data.radio_connected) {
-          toast.success('Radio connected', {
-            description: data.serial_port ? `Connected to ${data.serial_port}` : undefined,
-          });
-        } else {
-          toast.error('Radio disconnected', {
-            description: 'Check radio connection and power',
-          });
+        // Show toast on connection status change
+        if (prev !== null && prev.radio_connected !== data.radio_connected) {
+          if (data.radio_connected) {
+            toast.success('Radio connected', {
+              description: data.serial_port ? `Connected to ${data.serial_port}` : undefined,
+            });
+          } else {
+            toast.error('Radio disconnected', {
+              description: 'Check radio connection and power',
+            });
+          }
         }
-      }
-    },
-    onError: (error: { message: string; details?: string }) => {
-      toast.error(error.message, {
-        description: error.details,
-      });
-    },
-    onContacts: (data: Contact[]) => setContacts(data),
-    onChannels: (data: Channel[]) => setChannels(data),
-    onMessage: (msg: Message) => {
-      const activeConv = activeConversationRef.current;
+      },
+      onError: (error: { message: string; details?: string }) => {
+        toast.error(error.message, {
+          description: error.details,
+        });
+      },
+      onContacts: (data: Contact[]) => setContacts(data),
+      onChannels: (data: Channel[]) => setChannels(data),
+      onMessage: (msg: Message) => {
+        const activeConv = activeConversationRef.current;
 
-      // Check if message belongs to the active conversation
-      const isForActiveConversation = (() => {
-        if (!activeConv) return false;
-        if (msg.type === 'CHAN' && activeConv.type === 'channel') {
-          return msg.conversation_key === activeConv.id;
-        }
-        if (msg.type === 'PRIV' && activeConv.type === 'contact') {
-          return msg.conversation_key && pubkeysMatch(activeConv.id, msg.conversation_key);
-        }
-        return false;
-      })();
+        // Check if message belongs to the active conversation
+        const isForActiveConversation = (() => {
+          if (!activeConv) return false;
+          if (msg.type === 'CHAN' && activeConv.type === 'channel') {
+            return msg.conversation_key === activeConv.id;
+          }
+          if (msg.type === 'PRIV' && activeConv.type === 'contact') {
+            return msg.conversation_key && pubkeysMatch(activeConv.id, msg.conversation_key);
+          }
+          return false;
+        })();
 
-      // Only add to message list if it's for the active conversation
-      if (isForActiveConversation) {
-        addMessageIfNew(msg);
-      }
-
-      // Track for unread counts and sorting
-      trackNewMessage(msg);
-
-      // Count unread for non-active, incoming messages (with deduplication)
-      if (!msg.outgoing && !isForActiveConversation) {
-        // Skip if we've already seen this message content (prevents duplicate increments
-        // when the same message arrives via multiple mesh paths)
-        const contentKey = getMessageContentKey(msg);
-        if (seenMessageContentRef.current.has(contentKey)) {
-          return;
-        }
-        seenMessageContentRef.current.add(contentKey);
-
-        // Limit set size to prevent memory issues
-        if (seenMessageContentRef.current.size > 1000) {
-          const keys = Array.from(seenMessageContentRef.current);
-          seenMessageContentRef.current = new Set(keys.slice(-500));
+        // Only add to message list if it's for the active conversation
+        if (isForActiveConversation) {
+          addMessageIfNew(msg);
         }
 
-        let stateKey: string | null = null;
-        if (msg.type === 'CHAN' && msg.conversation_key) {
-          stateKey = getStateKey('channel', msg.conversation_key);
-        } else if (msg.type === 'PRIV' && msg.conversation_key) {
-          stateKey = getStateKey('contact', msg.conversation_key);
+        // Track for unread counts and sorting
+        trackNewMessage(msg);
+
+        // Count unread for non-active, incoming messages (with deduplication)
+        if (!msg.outgoing && !isForActiveConversation) {
+          // Skip if we've already seen this message content (prevents duplicate increments
+          // when the same message arrives via multiple mesh paths)
+          const contentKey = getMessageContentKey(msg);
+          if (seenMessageContentRef.current.has(contentKey)) {
+            return;
+          }
+          seenMessageContentRef.current.add(contentKey);
+
+          // Limit set size to prevent memory issues
+          if (seenMessageContentRef.current.size > 1000) {
+            const keys = Array.from(seenMessageContentRef.current);
+            seenMessageContentRef.current = new Set(keys.slice(-500));
+          }
+
+          let stateKey: string | null = null;
+          if (msg.type === 'CHAN' && msg.conversation_key) {
+            stateKey = getStateKey('channel', msg.conversation_key);
+          } else if (msg.type === 'PRIV' && msg.conversation_key) {
+            stateKey = getStateKey('contact', msg.conversation_key);
+          }
+          if (stateKey) {
+            const hasMention = checkMention(msg.text);
+            incrementUnread(stateKey, hasMention);
+          }
         }
-        if (stateKey) {
-          const hasMention = checkMention(msg.text);
-          incrementUnread(stateKey, hasMention);
-        }
-      }
-    },
-    onContact: (contact: Contact) => {
-      setContacts((prev) => {
-        const idx = prev.findIndex((c) => c.public_key === contact.public_key);
-        if (idx >= 0) {
-          const updated = [...prev];
-          const existing = prev[idx];
-          updated[idx] = {
-            ...existing,
-            ...contact,
-            name: contact.name ?? existing.name,
-            last_path: contact.last_path ?? existing.last_path,
-            lat: contact.lat ?? existing.lat,
-            lon: contact.lon ?? existing.lon,
-          };
+      },
+      onContact: (contact: Contact) => {
+        setContacts((prev) => {
+          const idx = prev.findIndex((c) => c.public_key === contact.public_key);
+          if (idx >= 0) {
+            const updated = [...prev];
+            const existing = prev[idx];
+            updated[idx] = {
+              ...existing,
+              ...contact,
+              name: contact.name ?? existing.name,
+              last_path: contact.last_path ?? existing.last_path,
+              lat: contact.lat ?? existing.lat,
+              lon: contact.lon ?? existing.lon,
+            };
+            return updated;
+          }
+          return [...prev, contact as Contact];
+        });
+      },
+      onRawPacket: (packet: RawPacket) => {
+        setRawPackets((prev) => {
+          if (prev.some((p) => p.id === packet.id)) {
+            return prev;
+          }
+          const updated = [...prev, packet];
+          if (updated.length > MAX_RAW_PACKETS) {
+            return updated.slice(-MAX_RAW_PACKETS);
+          }
           return updated;
-        }
-        return [...prev, contact as Contact];
-      });
-    },
-    onRawPacket: (packet: RawPacket) => {
-      setRawPackets((prev) => {
-        if (prev.some((p) => p.id === packet.id)) {
-          return prev;
-        }
-        const updated = [...prev, packet];
-        if (updated.length > MAX_RAW_PACKETS) {
-          return updated.slice(-MAX_RAW_PACKETS);
-        }
-        return updated;
-      });
-    },
-    onMessageAcked: (messageId: number, ackCount: number) => {
-      updateMessageAck(messageId, ackCount);
-    },
-  }), [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck, checkMention]);
+        });
+      },
+      onMessageAcked: (messageId: number, ackCount: number) => {
+        updateMessageAck(messageId, ackCount);
+      },
+    }),
+    [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck, checkMention]
+  );
 
   // Connect to WebSocket
   useWebSocket(wsHandlers);
@@ -265,13 +273,17 @@ export function App() {
       return { type: 'raw', id: 'raw', name: 'Raw Packet Feed' };
     }
     if (hashConv.type === 'channel') {
-      const channel = channels.find(c => c.name === hashConv.name || c.name === `#${hashConv.name}`);
+      const channel = channels.find(
+        (c) => c.name === hashConv.name || c.name === `#${hashConv.name}`
+      );
       if (channel) {
         return { type: 'channel', id: channel.key, name: channel.name };
       }
     }
     if (hashConv.type === 'contact') {
-      const contact = contacts.find(c => getContactDisplayName(c.name, c.public_key) === hashConv.name);
+      const contact = contacts.find(
+        (c) => getContactDisplayName(c.name, c.public_key) === hashConv.name
+      );
       if (contact) {
         return {
           type: 'contact',
@@ -296,7 +308,7 @@ export function App() {
       return;
     }
 
-    const publicChannel = channels.find(c => c.name === 'Public');
+    const publicChannel = channels.find((c) => c.name === 'Public');
     if (publicChannel) {
       setActiveConversation({
         type: 'channel',
@@ -331,29 +343,36 @@ export function App() {
   );
 
   // Config save handler
-  const handleSaveConfig = useCallback(async (update: RadioConfigUpdate) => {
-    await api.updateRadioConfig(update);
-    await fetchConfig();
-  }, [fetchConfig]);
+  const handleSaveConfig = useCallback(
+    async (update: RadioConfigUpdate) => {
+      await api.updateRadioConfig(update);
+      await fetchConfig();
+    },
+    [fetchConfig]
+  );
 
   // App settings save handler
-  const handleSaveAppSettings = useCallback(async (update: AppSettingsUpdate) => {
-    await api.updateSettings(update);
-    await fetchAppSettings();
-  }, [fetchAppSettings]);
+  const handleSaveAppSettings = useCallback(
+    async (update: AppSettingsUpdate) => {
+      await api.updateSettings(update);
+      await fetchAppSettings();
+    },
+    [fetchAppSettings]
+  );
 
   // Set private key handler
-  const handleSetPrivateKey = useCallback(async (key: string) => {
-    await api.setPrivateKey(key);
-    await fetchConfig();
-  }, [fetchConfig]);
+  const handleSetPrivateKey = useCallback(
+    async (key: string) => {
+      await api.setPrivateKey(key);
+      await fetchConfig();
+    },
+    [fetchConfig]
+  );
 
   // Reboot radio handler
   const handleReboot = useCallback(async () => {
     await api.rebootRadio();
-    setHealth((prev) =>
-      prev ? { ...prev, radio_connected: false } : prev
-    );
+    setHealth((prev) => (prev ? { ...prev, radio_connected: false } : prev));
     const pollUntilReconnected = async () => {
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000));
@@ -545,9 +564,7 @@ export function App() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop sidebar - hidden on mobile */}
-        <div className="hidden md:block">
-          {sidebarContent}
-        </div>
+        <div className="hidden md:block">{sidebarContent}</div>
 
         {/* Mobile sidebar - Sheet that slides in */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -555,9 +572,7 @@ export function App() {
             <SheetHeader className="sr-only">
               <SheetTitle>Navigation</SheetTitle>
             </SheetHeader>
-            <div className="flex-1 overflow-hidden">
-              {sidebarContent}
-            </div>
+            <div className="flex-1 overflow-hidden">{sidebarContent}</div>
           </SheetContent>
         </Sheet>
 
@@ -565,14 +580,18 @@ export function App() {
           {activeConversation ? (
             activeConversation.type === 'map' ? (
               <>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">Node Map</div>
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">
+                  Node Map
+                </div>
                 <div className="flex-1 overflow-hidden">
                   <MapView contacts={contacts} />
                 </div>
               </>
             ) : activeConversation.type === 'raw' ? (
               <>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">Raw Packet Feed</div>
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">
+                  Raw Packet Feed
+                </div>
                 <div className="flex-1 overflow-hidden">
                   <RawPacketList packets={rawPackets} />
                 </div>
@@ -582,34 +601,42 @@ export function App() {
                 <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium gap-2">
                   <span className="flex flex-col sm:flex-row sm:items-center sm:gap-2 min-w-0 flex-1">
                     <span className="truncate">
-                      {activeConversation.type === 'channel' && !activeConversation.name.startsWith('#') ? '#' : ''}
+                      {activeConversation.type === 'channel' &&
+                      !activeConversation.name.startsWith('#')
+                        ? '#'
+                        : ''}
                       {activeConversation.name}
                     </span>
                     <span className="font-normal text-xs text-muted-foreground font-mono truncate">
                       {activeConversation.id}
-                      {activeConversation.type === 'contact' && (() => {
-                        const contact = contacts.find(c => c.public_key === activeConversation.id);
-                        if (!contact) return null;
-                        const parts: string[] = [];
-                        if (contact.last_seen) {
-                          parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
-                        }
-                        if (contact.last_path_len === -1) {
-                          parts.push('flood');
-                        } else if (contact.last_path_len === 0) {
-                          parts.push('direct');
-                        } else if (contact.last_path_len > 0) {
-                          parts.push(`${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`);
-                        }
-                        return parts.length > 0 ? (
-                          <span className="ml-2 font-sans">
-                            ({parts.join(', ')})
-                          </span>
-                        ) : null;
-                      })()}
+                      {activeConversation.type === 'contact' &&
+                        (() => {
+                          const contact = contacts.find(
+                            (c) => c.public_key === activeConversation.id
+                          );
+                          if (!contact) return null;
+                          const parts: string[] = [];
+                          if (contact.last_seen) {
+                            parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
+                          }
+                          if (contact.last_path_len === -1) {
+                            parts.push('flood');
+                          } else if (contact.last_path_len === 0) {
+                            parts.push('direct');
+                          } else if (contact.last_path_len > 0) {
+                            parts.push(
+                              `${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`
+                            );
+                          }
+                          return parts.length > 0 ? (
+                            <span className="ml-2 font-sans">({parts.join(', ')})</span>
+                          ) : null;
+                        })()}
                     </span>
                   </span>
-                  {!(activeConversation.type === 'channel' && activeConversation.name === 'Public') && (
+                  {!(
+                    activeConversation.type === 'channel' && activeConversation.name === 'Public'
+                  ) && (
                     <button
                       className="py-1 px-3 bg-destructive/20 border border-destructive/30 text-destructive rounded text-xs cursor-pointer hover:bg-destructive/30 flex-shrink-0"
                       onClick={() => {
@@ -630,7 +657,9 @@ export function App() {
                   loading={messagesLoading}
                   loadingOlder={loadingOlder}
                   hasOlderMessages={hasOlderMessages}
-                  onSenderClick={activeConversation.type === 'channel' ? handleSenderClick : undefined}
+                  onSenderClick={
+                    activeConversation.type === 'channel' ? handleSenderClick : undefined
+                  }
                   onLoadOlder={fetchOlderMessages}
                   radioName={config?.name}
                 />
@@ -638,7 +667,9 @@ export function App() {
                   ref={messageInputRef}
                   onSend={
                     activeContactIsRepeater
-                      ? (repeaterLoggedIn ? handleRepeaterCommand : handleTelemetryRequest)
+                      ? repeaterLoggedIn
+                        ? handleRepeaterCommand
+                        : handleTelemetryRequest
                       : handleSendMessage
                   }
                   disabled={!health?.radio_connected}
@@ -649,9 +680,9 @@ export function App() {
                     !health?.radio_connected
                       ? 'Radio not connected'
                       : activeContactIsRepeater
-                        ? (repeaterLoggedIn
-                            ? 'Send CLI command (requires admin login)...'
-                            : `Enter password for ${activeConversation.name} (or . for none)...`)
+                        ? repeaterLoggedIn
+                          ? 'Send CLI command (requires admin login)...'
+                          : `Enter password for ${activeConversation.name} (or . for none)...`
                         : `Message ${activeConversation.name}...`
                   }
                 />
@@ -668,8 +699,8 @@ export function App() {
       {/* Global Cracker Panel - always rendered to maintain state */}
       <div
         className={cn(
-          "border-t border-border bg-background transition-all duration-200 overflow-hidden",
-          showCracker ? "h-[275px]" : "h-0"
+          'border-t border-border bg-background transition-all duration-200 overflow-hidden',
+          showCracker ? 'h-[275px]' : 'h-0'
         )}
       >
         <CrackerPanel

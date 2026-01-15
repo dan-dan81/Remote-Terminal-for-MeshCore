@@ -79,6 +79,7 @@ class Database:
 
         # Run any pending migrations
         from app.migrations import run_migrations
+
         await run_migrations(self._connection)
 
     async def disconnect(self) -> None:

@@ -10,15 +10,38 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}=== RemoteTerm for MeshCore Publish Script ===${NC}"
 echo
 
+# Run backend linting and type checking
+echo -e "${YELLOW}Running backend lint (Ruff)...${NC}"
+uv run ruff check app/ tests/
+uv run ruff format --check app/ tests/
+echo -e "${GREEN}Backend lint passed!${NC}"
+echo
+
+echo -e "${YELLOW}Running backend type check (Pyright)...${NC}"
+uv run pyright app/
+echo -e "${GREEN}Backend type check passed!${NC}"
+echo
+
 # Run backend tests
 echo -e "${YELLOW}Running backend tests...${NC}"
 PYTHONPATH=. uv run pytest tests/ -v
 echo -e "${GREEN}Backend tests passed!${NC}"
 echo
 
+# Run frontend linting and formatting check
+echo -e "${YELLOW}Running frontend lint (ESLint)...${NC}"
+cd frontend
+npm run lint
+echo -e "${GREEN}Frontend lint passed!${NC}"
+echo
+
+echo -e "${YELLOW}Checking frontend formatting (Prettier)...${NC}"
+npm run format:check
+echo -e "${GREEN}Frontend formatting OK!${NC}"
+echo
+
 # Run frontend tests and build
 echo -e "${YELLOW}Running frontend tests...${NC}"
-cd frontend
 npm run test:run
 echo -e "${GREEN}Frontend tests passed!${NC}"
 echo

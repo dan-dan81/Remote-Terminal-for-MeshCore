@@ -20,7 +20,17 @@ from app.radio_sync import (
     sync_and_offload_all,
     sync_radio_time,
 )
-from app.routers import channels, contacts, health, messages, packets, radio, read_state, settings, ws
+from app.routers import (
+    channels,
+    contacts,
+    health,
+    messages,
+    packets,
+    radio,
+    read_state,
+    settings,
+    ws,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)

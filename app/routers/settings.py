@@ -10,7 +10,9 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 class AppSettingsResponse(BaseModel):
-    max_radio_contacts: int = Field(description="Maximum non-repeater contacts to keep on radio for DM ACKs")
+    max_radio_contacts: int = Field(
+        description="Maximum non-repeater contacts to keep on radio for DM ACKs"
+    )
 
 
 class AppSettingsUpdate(BaseModel):
@@ -18,7 +20,7 @@ class AppSettingsUpdate(BaseModel):
         default=None,
         ge=1,
         le=1000,
-        description="Maximum non-repeater contacts to keep on radio (1-1000)"
+        description="Maximum non-repeater contacts to keep on radio (1-1000)",
     )
 
 
@@ -38,10 +40,13 @@ async def update_settings(update: AppSettingsUpdate) -> AppSettingsResponse:
     Set MESHCORE_MAX_RADIO_CONTACTS environment variable for persistent changes.
     """
     if update.max_radio_contacts is not None:
-        logger.info("Updating max_radio_contacts from %d to %d",
-                    settings.max_radio_contacts, update.max_radio_contacts)
+        logger.info(
+            "Updating max_radio_contacts from %d to %d",
+            settings.max_radio_contacts,
+            update.max_radio_contacts,
+        )
         # Pydantic settings are mutable, we can update them directly
-        object.__setattr__(settings, 'max_radio_contacts', update.max_radio_contacts)
+        object.__setattr__(settings, "max_radio_contacts", update.max_radio_contacts)
 
     return AppSettingsResponse(
         max_radio_contacts=settings.max_radio_contacts,

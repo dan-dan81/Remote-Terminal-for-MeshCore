@@ -53,10 +53,9 @@ export const api = {
       body: JSON.stringify({ private_key: privateKey }),
     }),
   sendAdvertisement: (flood = true) =>
-    fetchJson<{ status: string; flood: boolean }>(
-      `/radio/advertise?flood=${flood}`,
-      { method: 'POST' }
-    ),
+    fetchJson<{ status: string; flood: boolean }>(`/radio/advertise?flood=${flood}`, {
+      method: 'POST',
+    }),
   rebootRadio: () =>
     fetchJson<{ status: string; message: string }>('/radio/reboot', {
       method: 'POST',
@@ -70,8 +69,7 @@ export const api = {
   getContacts: (limit = 100, offset = 0) =>
     fetchJson<Contact[]>(`/contacts?limit=${limit}&offset=${offset}`),
   getContact: (publicKey: string) => fetchJson<Contact>(`/contacts/${publicKey}`),
-  syncContacts: () =>
-    fetchJson<{ synced: number }>('/contacts/sync', { method: 'POST' }),
+  syncContacts: () => fetchJson<{ synced: number }>('/contacts/sync', { method: 'POST' }),
   addContactToRadio: (publicKey: string) =>
     fetchJson<{ status: string }>(`/contacts/${publicKey}/add-to-radio`, {
       method: 'POST',
@@ -107,8 +105,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name, key }),
     }),
-  syncChannels: () =>
-    fetchJson<{ synced: number }>('/channels/sync', { method: 'POST' }),
+  syncChannels: () => fetchJson<{ synced: number }>('/channels/sync', { method: 'POST' }),
   deleteChannel: (key: string) =>
     fetchJson<{ status: string }>(`/channels/${key}`, { method: 'DELETE' }),
   markChannelRead: (key: string) =>
@@ -127,8 +124,7 @@ export const api = {
     if (params?.limit) searchParams.set('limit', params.limit.toString());
     if (params?.offset) searchParams.set('offset', params.offset.toString());
     if (params?.type) searchParams.set('type', params.type);
-    if (params?.conversation_key)
-      searchParams.set('conversation_key', params.conversation_key);
+    if (params?.conversation_key) searchParams.set('conversation_key', params.conversation_key);
     const query = searchParams.toString();
     return fetchJson<Message[]>(`/messages${query ? `?${query}` : ''}`);
   },
@@ -155,8 +151,7 @@ export const api = {
     }),
 
   // Packets
-  getUndecryptedPacketCount: () =>
-    fetchJson<{ count: number }>('/packets/undecrypted/count'),
+  getUndecryptedPacketCount: () => fetchJson<{ count: number }>('/packets/undecrypted/count'),
   decryptHistoricalPackets: (params: {
     key_type: 'channel' | 'contact';
     channel_key?: string;
@@ -171,8 +166,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ prune_undecrypted_days: pruneUndecryptedDays }),
     }),
-  deduplicatePackets: () =>
-    fetchJson<DedupResult>('/packets/dedup', { method: 'POST' }),
+  deduplicatePackets: () => fetchJson<DedupResult>('/packets/dedup', { method: 'POST' }),
 
   // Read State
   markAllRead: () =>

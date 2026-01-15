@@ -6,15 +6,20 @@ from meshcore import EventType
 
 from app.dependencies import require_connected
 from app.models import (
-    Contact,
-    TelemetryRequest,
-    TelemetryResponse,
-    NeighborInfo,
+    CONTACT_TYPE_REPEATER,
     AclEntry,
     CommandRequest,
     CommandResponse,
-    CONTACT_TYPE_REPEATER,
+    Contact,
+    NeighborInfo,
+    TelemetryRequest,
+    TelemetryResponse,
 )
+from app.radio import radio_manager
+from app.radio_sync import pause_polling
+from app.repository import ContactRepository
+
+logger = logging.getLogger(__name__)
 
 # ACL permission level names
 ACL_PERMISSION_NAMES = {
@@ -23,11 +28,6 @@ ACL_PERMISSION_NAMES = {
     2: "Read-write",
     3: "Admin",
 }
-from app.radio import radio_manager
-from app.radio_sync import pause_polling
-from app.repository import ContactRepository
-
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Delay between repeater radio operations to allow key exchange and path establishment
@@ -54,10 +54,7 @@ async def prepare_repeater_connection(mc, contact: Contact, password: str) -> No
     login_result = await mc.commands.send_login(contact.public_key, password)
 
     if login_result.type == EventType.ERROR:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Login failed: {login_result.payload}"
-        )
+        raise HTTPException(status_code=401, detail=f"Login failed: {login_result.payload}")
 
     # Wait for key exchange to complete before sending requests
     logger.debug("Waiting %.1fs for key exchange to complete", REPEATER_OP_DELAY_SECONDS)
@@ -92,10 +89,7 @@ async def sync_contacts_from_radio() -> dict:
     result = await mc.commands.get_contacts()
 
     if result.type == EventType.ERROR:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get contacts: {result.payload}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get contacts: {result.payload}")
 
     contacts = result.payload
     count = 0
@@ -131,10 +125,7 @@ async def remove_contact_from_radio(public_key: str) -> dict:
     result = await mc.commands.remove_contact(radio_contact)
 
     if result.type == EventType.ERROR:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to remove contact: {result.payload}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to remove contact: {result.payload}")
 
     await ContactRepository.set_on_radio(contact.public_key, False)
     return {"status": "ok"}
@@ -159,10 +150,7 @@ async def add_contact_to_radio(public_key: str) -> dict:
     result = await mc.commands.add_contact(contact.to_radio_dict())
 
     if result.type == EventType.ERROR:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to add contact: {result.payload}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to add contact: {result.payload}")
 
     await ContactRepository.set_on_radio(contact.public_key, True)
     return {"status": "ok"}
@@ -222,7 +210,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
     if contact.type != CONTACT_TYPE_REPEATER:
         raise HTTPException(
             status_code=400,
-            detail=f"Contact is not a repeater (type={contact.type}, expected {CONTACT_TYPE_REPEATER})"
+            detail=f"Contact is not a repeater (type={contact.type}, expected {CONTACT_TYPE_REPEATER})",
         )
 
     # Prepare connection (add/remove dance + login)
@@ -233,20 +221,13 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
     status = None
     for attempt in range(1, 4):
         logger.debug("Status request attempt %d/3", attempt)
-        status = await mc.commands.req_status_sync(
-            contact.public_key,
-            timeout=10.0,
-            min_timeout=5.0
-        )
+        status = await mc.commands.req_status_sync(contact.public_key, timeout=10, min_timeout=5)
         if status:
             break
         logger.debug("Status request timeout, retrying...")
 
     if not status:
-        raise HTTPException(
-            status_code=504,
-            detail="No response from repeater after 3 attempts"
-        )
+        raise HTTPException(status_code=504, detail="No response from repeater after 3 attempts")
 
     logger.info("Received telemetry from %s: %s", contact.public_key[:12], status)
 
@@ -256,9 +237,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
     for attempt in range(1, 4):
         logger.debug("Neighbors request attempt %d/3", attempt)
         neighbors_data = await mc.commands.fetch_all_neighbours(
-            contact.public_key,
-            timeout=10.0,
-            min_timeout=5.0
+            contact.public_key, timeout=10, min_timeout=5
         )
         if neighbors_data:
             break
@@ -272,23 +251,21 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
             pubkey_prefix = n.get("pubkey", "")
             # Try to resolve to a contact name from our database
             resolved_contact = await ContactRepository.get_by_key_prefix(pubkey_prefix)
-            neighbors.append(NeighborInfo(
-                pubkey_prefix=pubkey_prefix,
-                name=resolved_contact.name if resolved_contact else None,
-                snr=n.get("snr", 0.0),
-                last_heard_seconds=n.get("secs_ago", 0),
-            ))
+            neighbors.append(
+                NeighborInfo(
+                    pubkey_prefix=pubkey_prefix,
+                    name=resolved_contact.name if resolved_contact else None,
+                    snr=n.get("snr", 0.0),
+                    last_heard_seconds=n.get("secs_ago", 0),
+                )
+            )
 
     # Fetch ACL
     logger.info("Fetching ACL from repeater %s", contact.public_key[:12])
     acl_data = None
     for attempt in range(1, 4):
         logger.debug("ACL request attempt %d/3", attempt)
-        acl_data = await mc.commands.req_acl_sync(
-            contact.public_key,
-            timeout=10.0,
-            min_timeout=5.0
-        )
+        acl_data = await mc.commands.req_acl_sync(contact.public_key, timeout=10, min_timeout=5)
         if acl_data:
             break
         logger.debug("ACL request timeout, retrying...")
@@ -302,12 +279,14 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
             perm = entry.get("perm", 0)
             # Try to resolve to a contact name from our database
             resolved_contact = await ContactRepository.get_by_key_prefix(pubkey_prefix)
-            acl_entries.append(AclEntry(
-                pubkey_prefix=pubkey_prefix,
-                name=resolved_contact.name if resolved_contact else None,
-                permission=perm,
-                permission_name=ACL_PERMISSION_NAMES.get(perm, f"Unknown({perm})"),
-            ))
+            acl_entries.append(
+                AclEntry(
+                    pubkey_prefix=pubkey_prefix,
+                    name=resolved_contact.name if resolved_contact else None,
+                    permission=perm,
+                    permission_name=ACL_PERMISSION_NAMES.get(perm, f"Unknown({perm})"),
+                )
+            )
 
     # Convert raw telemetry to response format
     # bat is in mV, convert to V (e.g., 3775 -> 3.775)
@@ -364,7 +343,7 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
     if contact.type != CONTACT_TYPE_REPEATER:
         raise HTTPException(
             status_code=400,
-            detail=f"Contact is not a repeater (type={contact.type}, expected {CONTACT_TYPE_REPEATER})"
+            detail=f"Contact is not a repeater (type={contact.type}, expected {CONTACT_TYPE_REPEATER})",
         )
 
     # Pause message polling to prevent it from stealing our response
@@ -380,8 +359,7 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
         if send_result.type == EventType.ERROR:
             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to send command: {send_result.payload}"
+                status_code=500, detail=f"Failed to send command: {send_result.payload}"
             )
 
         # Wait for response (MESSAGES_WAITING event, then get_msg)
@@ -390,18 +368,21 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
             if wait_result is None:
                 # Timeout - no response received
-                logger.warning("No response from repeater %s for command: %s", contact.public_key[:12], request.command)
+                logger.warning(
+                    "No response from repeater %s for command: %s",
+                    contact.public_key[:12],
+                    request.command,
+                )
                 return CommandResponse(
                     command=request.command,
-                    response="(no response - command may have been processed)"
+                    response="(no response - command may have been processed)",
                 )
 
             response_event = await mc.commands.get_msg()
 
             if response_event.type == EventType.ERROR:
                 return CommandResponse(
-                    command=request.command,
-                    response=f"(error: {response_event.payload})"
+                    command=request.command, response=f"(error: {response_event.payload})"
                 )
 
             # Extract the response text and timestamp from the payload
@@ -417,6 +398,5 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
         except Exception as e:
             logger.error("Error waiting for response: %s", e)
             return CommandResponse(
-                command=request.command,
-                response=f"(error waiting for response: {e})"
+                command=request.command, response=f"(error waiting for response: {e})"
             )

@@ -6,7 +6,6 @@ from pydantic import BaseModel
 from app.config import settings
 from app.radio import radio_manager
 
-
 router = APIRouter(tags=["health"])
 
 

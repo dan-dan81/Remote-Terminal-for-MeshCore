@@ -36,9 +36,8 @@ export function getConversationHash(conv: Conversation | null): string {
   if (conv.type === 'raw') return '#raw';
   if (conv.type === 'map') return '#map';
   // Strip leading # from channel names for cleaner URLs
-  const name = conv.type === 'channel' && conv.name.startsWith('#')
-    ? conv.name.slice(1)
-    : conv.name;
+  const name =
+    conv.type === 'channel' && conv.name.startsWith('#') ? conv.name.slice(1) : conv.name;
   return `#${conv.type}/${encodeURIComponent(name)}`;
 }
 

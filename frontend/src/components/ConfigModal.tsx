@@ -1,12 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { AppSettings, AppSettingsUpdate, RadioConfig, RadioConfigUpdate } from '../types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -119,7 +113,9 @@ export function ConfigModal({
   };
 
   const handleReboot = async () => {
-    if (!confirm('Are you sure you want to reboot the radio? The connection will drop temporarily.')) {
+    if (
+      !confirm('Are you sure you want to reboot the radio? The connection will drop temporarily.')
+    ) {
       return;
     }
     setError('');
@@ -143,9 +139,7 @@ export function ConfigModal({
         </DialogHeader>
 
         {!config ? (
-          <div className="py-8 text-center text-muted-foreground">
-            Loading configuration...
-          </div>
+          <div className="py-8 text-center text-muted-foreground">Loading configuration...</div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -155,11 +149,7 @@ export function ConfigModal({
 
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -279,10 +269,7 @@ export function ConfigModal({
                   placeholder="64-character hex private key"
                   className="flex-1"
                 />
-                <Button
-                  onClick={handleSetPrivateKey}
-                  disabled={loading || !privateKey.trim()}
-                >
+                <Button onClick={handleSetPrivateKey} disabled={loading || !privateKey.trim()}>
                   Set
                 </Button>
               </div>
@@ -294,8 +281,8 @@ export function ConfigModal({
               <Label>Reboot Radio</Label>
               <Alert variant="warning">
                 <AlertDescription>
-                  Some configuration changes (like name) require a radio reboot to take effect.
-                  The connection will temporarily drop and automatically reconnect.
+                  Some configuration changes (like name) require a radio reboot to take effect. The
+                  connection will temporarily drop and automatically reconnect.
                 </AlertDescription>
               </Alert>
               <Button
@@ -308,9 +295,7 @@ export function ConfigModal({
               </Button>
             </div>
 
-            {error && (
-              <div className="text-sm text-destructive">{error}</div>
-            )}
+            {error && <div className="text-sm text-destructive">{error}</div>}
           </div>
         )}
 

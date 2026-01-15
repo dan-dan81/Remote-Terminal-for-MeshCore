@@ -18,12 +18,17 @@ import time
 
 from app.decoder import (
     PayloadType,
-    parse_packet,
     parse_advertisement,
+    parse_packet,
     try_decrypt_packet_with_channel_key,
 )
 from app.models import CONTACT_TYPE_REPEATER, RawPacketBroadcast, RawPacketDecryptedInfo
-from app.repository import ChannelRepository, ContactRepository, MessageRepository, RawPacketRepository
+from app.repository import (
+    ChannelRepository,
+    ContactRepository,
+    MessageRepository,
+    RawPacketRepository,
+)
 from app.websocket import broadcast_event
 
 logger = logging.getLogger(__name__)
@@ -62,6 +67,7 @@ async def create_message_from_decrypted(
     Returns the message ID if created, None if duplicate.
     """
     import time as time_module
+
     received = received_at or int(time_module.time())
 
     # Format the message text with sender prefix if present
@@ -88,7 +94,8 @@ async def create_message_from_decrypted(
         )
         logger.debug(
             "Duplicate message detected for channel %s (existing id=%s)",
-            channel_key_normalized[:8], existing_id
+            channel_key_normalized[:8],
+            existing_id,
         )
         if existing_id:
             await RawPacketRepository.mark_decrypted(packet_id, existing_id)
@@ -100,19 +107,22 @@ async def create_message_from_decrypted(
     await RawPacketRepository.mark_decrypted(packet_id, msg_id)
 
     # Broadcast new message to connected clients
-    broadcast_event("message", {
-        "id": msg_id,
-        "type": "CHAN",
-        "conversation_key": channel_key_normalized,
-        "text": text,
-        "sender_timestamp": timestamp,
-        "received_at": received,
-        "path_len": path_len,
-        "txt_type": 0,
-        "signature": None,
-        "outgoing": False,
-        "acked": 0,
-    })
+    broadcast_event(
+        "message",
+        {
+            "id": msg_id,
+            "type": "CHAN",
+            "conversation_key": channel_key_normalized,
+            "text": text,
+            "sender_timestamp": timestamp,
+            "received_at": received,
+            "path_len": path_len,
+            "txt_type": 0,
+            "signature": None,
+            "outgoing": False,
+            "acked": 0,
+        },
+    )
 
     return msg_id
 
@@ -196,7 +206,9 @@ async def process_raw_packet(
         decrypted_info=RawPacketDecryptedInfo(
             channel_name=result["channel_name"],
             sender=result["sender"],
-        ) if result["decrypted"] else None,
+        )
+        if result["decrypted"]
+        else None,
     )
     broadcast_event("raw_packet", broadcast_payload.model_dump())
 
@@ -231,10 +243,7 @@ async def _process_group_text(
             continue
 
         # Successfully decrypted!
-        logger.debug(
-            "Decrypted GroupText for channel %s: %s",
-            channel.name, decrypted.message[:50]
-        )
+        logger.debug("Decrypted GroupText for channel %s: %s", channel.name, decrypted.message[:50])
 
         # Check for repeat detection (our own message echoed back)
         is_repeat = False
@@ -322,18 +331,22 @@ async def _process_advertisement(
 
     if existing and existing.last_seen:
         path_age = timestamp - existing.last_seen
-        existing_path_len = existing.last_path_len if existing.last_path_len >= 0 else float('inf')
+        existing_path_len = existing.last_path_len if existing.last_path_len >= 0 else float("inf")
 
         # Keep existing path if it's fresh and shorter (or equal)
         if path_age <= PATH_FRESHNESS_SECONDS and existing_path_len <= new_path_len:
             use_existing_path = True
             logger.debug(
                 "Keeping existing shorter path for %s (existing=%d, new=%d, age=%ds)",
-                advert.public_key[:12], existing_path_len, new_path_len, path_age
+                advert.public_key[:12],
+                existing_path_len,
+                new_path_len,
+                path_age,
             )
 
     if use_existing_path:
-        path_len = existing.last_path_len
+        assert existing is not None  # Guaranteed by the conditions that set use_existing_path
+        path_len = existing.last_path_len if existing.last_path_len is not None else -1
         path_hex = existing.last_path or ""
     else:
         path_len = new_path_len
@@ -341,12 +354,19 @@ async def _process_advertisement(
 
     logger.debug(
         "Parsed advertisement from %s: %s (role=%d, lat=%s, lon=%s, path_len=%d)",
-        advert.public_key[:12], advert.name, advert.device_role, advert.lat, advert.lon, path_len
+        advert.public_key[:12],
+        advert.name,
+        advert.device_role,
+        advert.lat,
+        advert.lon,
+        path_len,
     )
 
     # Use device_role from advertisement for contact type (1=Chat, 2=Repeater, 3=Room, 4=Sensor)
     # Use advert.timestamp for last_advert (sender's timestamp), receive timestamp for last_seen
-    contact_type = advert.device_role if advert.device_role > 0 else (existing.type if existing else 0)
+    contact_type = (
+        advert.device_role if advert.device_role > 0 else (existing.type if existing else 0)
+    )
 
     contact_data = {
         "public_key": advert.public_key,
@@ -363,23 +383,27 @@ async def _process_advertisement(
     await ContactRepository.upsert(contact_data)
 
     # Broadcast contact update to connected clients
-    broadcast_event("contact", {
-        "public_key": advert.public_key,
-        "name": advert.name,
-        "type": contact_type,
-        "flags": existing.flags if existing else 0,
-        "last_path": path_hex,
-        "last_path_len": path_len,
-        "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
-        "lat": advert.lat,
-        "lon": advert.lon,
-        "last_seen": timestamp,
-        "on_radio": existing.on_radio if existing else False,
-    })
+    broadcast_event(
+        "contact",
+        {
+            "public_key": advert.public_key,
+            "name": advert.name,
+            "type": contact_type,
+            "flags": existing.flags if existing else 0,
+            "last_path": path_hex,
+            "last_path_len": path_len,
+            "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
+            "lat": advert.lat,
+            "lon": advert.lon,
+            "last_seen": timestamp,
+            "on_radio": existing.on_radio if existing else False,
+        },
+    )
 
     # If this is not a repeater, trigger recent contacts sync to radio
     # This ensures we can auto-ACK DMs from recent contacts
     if contact_type != CONTACT_TYPE_REPEATER:
         # Import here to avoid circular import
         from app.radio_sync import sync_recent_contacts_to_radio
+
         asyncio.create_task(sync_recent_contacts_to_radio())

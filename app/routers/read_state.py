@@ -21,14 +21,8 @@ async def mark_all_read() -> dict:
     now = int(time.time())
 
     # Update all contacts and channels in one transaction
-    await db.conn.execute(
-        "UPDATE contacts SET last_read_at = ?",
-        (now,)
-    )
-    await db.conn.execute(
-        "UPDATE channels SET last_read_at = ?",
-        (now,)
-    )
+    await db.conn.execute("UPDATE contacts SET last_read_at = ?", (now,))
+    await db.conn.execute("UPDATE channels SET last_read_at = ?", (now,))
     await db.conn.commit()
 
     logger.info("Marked all contacts and channels as read at %d", now)

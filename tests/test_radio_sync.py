@@ -4,11 +4,11 @@ These tests verify the polling pause mechanism that prevents
 message polling from interfering with repeater CLI operations.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.radio_sync import (
-    _polling_pause_count,
     is_polling_paused,
     pause_polling,
     sync_radio_time,
@@ -19,6 +19,7 @@ from app.radio_sync import (
 def reset_polling_state():
     """Reset polling pause state before and after each test."""
     import app.radio_sync as radio_sync
+
     radio_sync._polling_pause_count = 0
     yield
     radio_sync._polling_pause_count = 0
@@ -143,6 +144,7 @@ class TestSyncRadioTime:
             # Verify timestamp is reasonable (within last few seconds)
             call_args = mock_mc.commands.set_time.call_args[0][0]
             import time
+
             assert abs(call_args - int(time.time())) < 5
 
     @pytest.mark.asyncio

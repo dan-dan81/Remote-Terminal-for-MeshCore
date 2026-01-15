@@ -1,9 +1,9 @@
 """Tests for database migrations."""
 
-import pytest
 import aiosqlite
+import pytest
 
-from app.migrations import get_version, set_version, run_migrations
+from app.migrations import get_version, run_migrations, set_version
 
 
 class TestMigrationSystem:
@@ -76,24 +76,22 @@ class TestMigration001:
             # Verify columns exist by inserting and selecting
             await conn.execute(
                 "INSERT INTO contacts (public_key, name, last_read_at) VALUES (?, ?, ?)",
-                ("abc123", "Test", 12345)
+                ("abc123", "Test", 12345),
             )
             await conn.execute(
                 "INSERT INTO channels (key, name, last_read_at) VALUES (?, ?, ?)",
-                ("KEY123", "#test", 67890)
+                ("KEY123", "#test", 67890),
             )
             await conn.commit()
 
             cursor = await conn.execute(
-                "SELECT last_read_at FROM contacts WHERE public_key = ?",
-                ("abc123",)
+                "SELECT last_read_at FROM contacts WHERE public_key = ?", ("abc123",)
             )
             row = await cursor.fetchone()
             assert row["last_read_at"] == 12345
 
             cursor = await conn.execute(
-                "SELECT last_read_at FROM channels WHERE key = ?",
-                ("KEY123",)
+                "SELECT last_read_at FROM channels WHERE key = ?", ("KEY123",)
             )
             row = await cursor.fetchone()
             assert row["last_read_at"] == 67890
@@ -186,11 +184,11 @@ class TestMigration001:
             """)
             await conn.execute(
                 "INSERT INTO contacts (public_key, name, type) VALUES (?, ?, ?)",
-                ("existingkey", "ExistingContact", 1)
+                ("existingkey", "ExistingContact", 1),
             )
             await conn.execute(
                 "INSERT INTO channels (key, name, is_hashtag) VALUES (?, ?, ?)",
-                ("EXISTINGCHAN", "#existing", 1)
+                ("EXISTINGCHAN", "#existing", 1),
             )
             await conn.commit()
 
@@ -200,7 +198,7 @@ class TestMigration001:
             # Verify data is preserved
             cursor = await conn.execute(
                 "SELECT public_key, name, type, last_read_at FROM contacts WHERE public_key = ?",
-                ("existingkey",)
+                ("existingkey",),
             )
             row = await cursor.fetchone()
             assert row["public_key"] == "existingkey"
@@ -210,7 +208,7 @@ class TestMigration001:
 
             cursor = await conn.execute(
                 "SELECT key, name, is_hashtag, last_read_at FROM channels WHERE key = ?",
-                ("EXISTINGCHAN",)
+                ("EXISTINGCHAN",),
             )
             row = await cursor.fetchone()
             assert row["key"] == "EXISTINGCHAN"

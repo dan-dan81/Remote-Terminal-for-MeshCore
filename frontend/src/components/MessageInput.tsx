@@ -1,4 +1,13 @@
-import { useState, useCallback, useImperativeHandle, forwardRef, useRef, useMemo, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useState,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+  useMemo,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { toast } from './ui/sonner';
@@ -31,8 +40,10 @@ export interface MessageInputHandle {
   appendText: (text: string) => void;
 }
 
-export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
-  function MessageInput({ onSend, disabled, placeholder, isRepeaterMode, conversationType, senderName }, ref) {
+export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput(
+  { onSend, disabled, placeholder, isRepeaterMode, conversationType, senderName },
+  ref
+) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -162,14 +173,25 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || (isRepeaterMode ? 'Enter password (or . for none)...' : 'Type a message...')}
+          placeholder={
+            placeholder ||
+            (isRepeaterMode ? 'Enter password (or . for none)...' : 'Type a message...')
+          }
           disabled={disabled || sending}
           className="flex-1 min-w-0"
         />
-        <Button type="submit" disabled={disabled || sending || !canSubmit} className="flex-shrink-0">
+        <Button
+          type="submit"
+          disabled={disabled || sending || !canSubmit}
+          className="flex-shrink-0"
+        >
           {sending
-            ? (isRepeaterMode ? 'Fetching...' : 'Sending...')
-            : (isRepeaterMode ? 'Fetch' : 'Send')}
+            ? isRepeaterMode
+              ? 'Fetching...'
+              : 'Sending...'
+            : isRepeaterMode
+              ? 'Fetch'
+              : 'Send'}
         </Button>
       </div>
       {showCharCounter && (

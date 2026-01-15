@@ -231,6 +231,7 @@ class RadioManager:
                         if await self.reconnect():
                             # Re-register event handlers after successful reconnect
                             from app.event_handlers import register_event_handlers
+
                             if self._meshcore:
                                 register_event_handlers(self._meshcore)
                                 await self._meshcore.start_auto_message_fetching()

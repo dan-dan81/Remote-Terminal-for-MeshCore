@@ -56,10 +56,7 @@ export function setLastMessageTime(stateKey: string, timestamp: number): Convers
  * The 12-char prefix for contacts ensures consistent matching regardless
  * of whether we have a full 64-char pubkey or just a prefix.
  */
-export function getStateKey(
-  type: 'channel' | 'contact',
-  id: string
-): string {
+export function getStateKey(type: 'channel' | 'contact', id: string): string {
   if (type === 'channel') {
     return `channel-${id}`;
   }

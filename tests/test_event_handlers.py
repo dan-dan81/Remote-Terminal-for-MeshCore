@@ -86,7 +86,9 @@ class TestRepeatTracking:
     def test_track_pending_repeat_stores_correctly(self):
         """Pending repeats are stored with channel key, text hash, and timestamp."""
         channel_key = "0123456789ABCDEF0123456789ABCDEF"
-        track_pending_repeat(channel_key=channel_key, text="Hello", timestamp=1700000000, message_id=99)
+        track_pending_repeat(
+            channel_key=channel_key, text="Hello", timestamp=1700000000, message_id=99
+        )
 
         # Key is (channel_key, text_hash, timestamp)
         text_hash = str(hash("Hello"))
@@ -97,8 +99,18 @@ class TestRepeatTracking:
 
     def test_same_message_different_channels_tracked_separately(self):
         """Same message on different channels creates separate entries."""
-        track_pending_repeat(channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", text="Test", timestamp=1000, message_id=1)
-        track_pending_repeat(channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2", text="Test", timestamp=1000, message_id=2)
+        track_pending_repeat(
+            channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
+            text="Test",
+            timestamp=1000,
+            message_id=1,
+        )
+        track_pending_repeat(
+            channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2",
+            text="Test",
+            timestamp=1000,
+            message_id=2,
+        )
 
         assert len(_pending_repeats) == 2
 
@@ -141,8 +153,10 @@ class TestAckEventHandler:
         track_pending_ack("deadbeef", message_id=123, timeout_ms=10000)
 
         # Mock dependencies
-        with patch("app.event_handlers.MessageRepository") as mock_repo, \
-             patch("app.event_handlers.broadcast_event") as mock_broadcast:
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
             mock_repo.increment_ack_count = AsyncMock(return_value=1)
 
             # Create mock event
@@ -155,7 +169,9 @@ class TestAckEventHandler:
             mock_repo.increment_ack_count.assert_called_once_with(123)
 
             # Verify broadcast sent with ack_count
-            mock_broadcast.assert_called_once_with("message_acked", {"message_id": 123, "ack_count": 1})
+            mock_broadcast.assert_called_once_with(
+                "message_acked", {"message_id": 123, "ack_count": 1}
+            )
 
             # Verify pending ACK removed
             assert "deadbeef" not in _pending_acks
@@ -167,8 +183,10 @@ class TestAckEventHandler:
 
         track_pending_ack("expected", message_id=1, timeout_ms=10000)
 
-        with patch("app.event_handlers.MessageRepository") as mock_repo, \
-             patch("app.event_handlers.broadcast_event") as mock_broadcast:
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
             mock_repo.increment_ack_count = AsyncMock()
 
             class MockEvent:
@@ -209,9 +227,11 @@ class TestContactMessageCLIFiltering:
         """CLI responses (txt_type=1) are not stored in database."""
         from app.event_handlers import on_contact_message
 
-        with patch("app.event_handlers.MessageRepository") as mock_repo, \
-             patch("app.event_handlers.ContactRepository") as mock_contact_repo, \
-             patch("app.event_handlers.broadcast_event") as mock_broadcast:
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
 
             class MockEvent:
                 payload = {
@@ -235,10 +255,11 @@ class TestContactMessageCLIFiltering:
         """Normal messages (txt_type=0) are still processed normally."""
         from app.event_handlers import on_contact_message
 
-        with patch("app.event_handlers.MessageRepository") as mock_repo, \
-             patch("app.event_handlers.ContactRepository") as mock_contact_repo, \
-             patch("app.event_handlers.broadcast_event") as mock_broadcast:
-
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
             mock_repo.create = AsyncMock(return_value=42)
             mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
 
@@ -262,10 +283,11 @@ class TestContactMessageCLIFiltering:
         """Messages without txt_type field are treated as normal (not filtered)."""
         from app.event_handlers import on_contact_message
 
-        with patch("app.event_handlers.MessageRepository") as mock_repo, \
-             patch("app.event_handlers.ContactRepository") as mock_contact_repo, \
-             patch("app.event_handlers.broadcast_event") as mock_broadcast:
-
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event"),
+        ):
             mock_repo.create = AsyncMock(return_value=42)
             mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
 

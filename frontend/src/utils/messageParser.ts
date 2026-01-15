@@ -36,4 +36,3 @@ export function formatTime(timestamp: number): string {
   const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   return `${dateStr} ${time}`;
 }
-

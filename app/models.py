@@ -83,6 +83,7 @@ class Message(BaseModel):
 
 class RawPacket(BaseModel):
     """Raw packet as stored in the database."""
+
     id: int
     timestamp: int
     data: str = Field(description="Hex-encoded packet data")
@@ -94,6 +95,7 @@ class RawPacket(BaseModel):
 
 class RawPacketDecryptedInfo(BaseModel):
     """Decryption info for a raw packet (when successfully decrypted)."""
+
     channel_name: str | None = None
     sender: str | None = None
 
@@ -104,6 +106,7 @@ class RawPacketBroadcast(BaseModel):
     This extends the database model with runtime-computed fields
     like payload_type, snr, rssi, and decryption info.
     """
+
     id: int
     timestamp: int
     data: str = Field(description="Hex-encoded packet data")
@@ -127,11 +130,14 @@ class SendChannelMessageRequest(SendMessageRequest):
 
 
 class TelemetryRequest(BaseModel):
-    password: str = Field(default="", description="Repeater password (empty string for no password)")
+    password: str = Field(
+        default="", description="Repeater password (empty string for no password)"
+    )
 
 
 class NeighborInfo(BaseModel):
     """Information about a neighbor seen by a repeater."""
+
     pubkey_prefix: str = Field(description="Public key prefix (4-12 chars)")
     name: str | None = Field(default=None, description="Resolved contact name if known")
     snr: float = Field(description="Signal-to-noise ratio in dB")
@@ -140,14 +146,18 @@ class NeighborInfo(BaseModel):
 
 class AclEntry(BaseModel):
     """Access control list entry for a repeater."""
+
     pubkey_prefix: str = Field(description="Public key prefix (12 chars)")
     name: str | None = Field(default=None, description="Resolved contact name if known")
-    permission: int = Field(description="Permission level: 0=Guest, 1=Read-only, 2=Read-write, 3=Admin")
+    permission: int = Field(
+        description="Permission level: 0=Guest, 1=Read-only, 2=Read-write, 3=Admin"
+    )
     permission_name: str = Field(description="Human-readable permission name")
 
 
 class TelemetryResponse(BaseModel):
     """Telemetry data from a repeater, formatted for human readability."""
+
     pubkey_prefix: str = Field(description="12-char public key prefix")
     battery_volts: float = Field(description="Battery voltage in volts")
     tx_queue_len: int = Field(description="Transmit queue length")
@@ -166,17 +176,23 @@ class TelemetryResponse(BaseModel):
     flood_dups: int = Field(description="Duplicate flood packets")
     direct_dups: int = Field(description="Duplicate direct packets")
     full_events: int = Field(description="Full event queue count")
-    neighbors: list[NeighborInfo] = Field(default_factory=list, description="List of neighbors seen by repeater")
+    neighbors: list[NeighborInfo] = Field(
+        default_factory=list, description="List of neighbors seen by repeater"
+    )
     acl: list[AclEntry] = Field(default_factory=list, description="Access control list")
 
 
 class CommandRequest(BaseModel):
     """Request to send a CLI command to a repeater."""
+
     command: str = Field(min_length=1, description="CLI command to send")
 
 
 class CommandResponse(BaseModel):
     """Response from a repeater CLI command."""
+
     command: str = Field(description="The command that was sent")
     response: str = Field(description="Response from the repeater")
-    sender_timestamp: int | None = Field(default=None, description="Timestamp from the repeater's response")
+    sender_timestamp: int | None = Field(
+        default=None, description="Timestamp from the repeater's response"
+    )

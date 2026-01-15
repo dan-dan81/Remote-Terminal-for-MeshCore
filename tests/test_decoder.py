@@ -7,12 +7,9 @@ which is critical for correctly interpreting mesh network messages.
 import hashlib
 import hmac
 
-import pytest
 from Crypto.Cipher import AES
 
 from app.decoder import (
-    DecryptedGroupText,
-    PacketInfo,
     PayloadType,
     RouteType,
     calculate_channel_hash,
@@ -113,10 +110,7 @@ class TestGroupTextDecryption:
         """Helper to create a valid encrypted GROUP_TEXT payload."""
         # Build plaintext: timestamp(4) + flags(1) + message + null terminator
         plaintext = (
-            timestamp.to_bytes(4, "little")
-            + bytes([flags])
-            + message.encode("utf-8")
-            + b"\x00"
+            timestamp.to_bytes(4, "little") + bytes([flags]) + message.encode("utf-8") + b"\x00"
         )
 
         # Pad to 16-byte boundary
@@ -269,7 +263,9 @@ class TestAdvertisementParsing:
         result = try_parse_advertisement(packet)
 
         assert result is not None
-        assert result.public_key == "8576dc7f679b493f9ab5ac316173e1a56d3388bc3ba75f583f63ab0d1ba2a8ab"
+        assert (
+            result.public_key == "8576dc7f679b493f9ab5ac316173e1a56d3388bc3ba75f583f63ab0d1ba2a8ab"
+        )
         assert result.name == "Can O Mesh 2 🥫"
         assert result.device_role == 2  # Repeater
         assert result.timestamp > 0  # Has valid timestamp
@@ -295,7 +291,9 @@ class TestAdvertisementParsing:
         result = try_parse_advertisement(packet)
 
         assert result is not None
-        assert result.public_key == "ae92564c5c9884854f04f469bbb2bab8871a078053af6cf4aa2c014b18ce8a83"
+        assert (
+            result.public_key == "ae92564c5c9884854f04f469bbb2bab8871a078053af6cf4aa2c014b18ce8a83"
+        )
         assert result.name == "Flightless🥝"
         assert result.device_role == 1  # Chat node
         assert result.timestamp > 0  # Has valid timestamp
@@ -321,7 +319,9 @@ class TestAdvertisementParsing:
         result = try_parse_advertisement(packet)
 
         assert result is not None
-        assert result.public_key == "2e38c81f7dc0c1cedded6b415b4367cf48f578c5a092ced3490ff0c76efdf1f5"
+        assert (
+            result.public_key == "2e38c81f7dc0c1cedded6b415b4367cf48f578c5a092ced3490ff0c76efdf1f5"
+        )
         assert result.name == "MennisD"
         assert result.device_role == 1  # Chat node
         assert result.timestamp > 0  # Has valid timestamp
@@ -330,7 +330,7 @@ class TestAdvertisementParsing:
 
     def test_parse_advertisement_extracts_public_key(self):
         """Advertisement parsing extracts the public key correctly."""
-        from app.decoder import parse_packet, PayloadType
+        from app.decoder import PayloadType, parse_packet
 
         packet_hex = (
             "1100AE92564C5C9884854F04F469BBB2BAB8871A078053AF6CF4AA2C014B18CE8A83"

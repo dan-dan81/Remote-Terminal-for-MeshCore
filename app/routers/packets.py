@@ -15,8 +15,12 @@ router = APIRouter(prefix="/packets", tags=["packets"])
 
 class DecryptRequest(BaseModel):
     key_type: str = Field(description="Type of key: 'channel' or 'contact'")
-    channel_key: str | None = Field(default=None, description="Channel key as hex (16 bytes = 32 chars)")
-    channel_name: str | None = Field(default=None, description="Channel name (for hashtag channels, key derived from name)")
+    channel_key: str | None = Field(
+        default=None, description="Channel key as hex (16 bytes = 32 chars)"
+    )
+    channel_name: str | None = Field(
+        default=None, description="Channel name (for hashtag channels, key derived from name)"
+    )
 
 
 class DecryptResult(BaseModel):
@@ -45,9 +49,7 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
     processed = 0
     decrypted_count = 0
 
-    _decrypt_progress = DecryptProgress(
-        total=total, processed=0, decrypted=0, in_progress=True
-    )
+    _decrypt_progress = DecryptProgress(total=total, processed=0, decrypted=0, in_progress=True)
 
     logger.info("Starting historical decryption of %d packets", total)
 
@@ -84,9 +86,7 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
         total=total, processed=processed, decrypted=decrypted_count, in_progress=False
     )
 
-    logger.info(
-        "Historical decryption complete: %d/%d packets decrypted", decrypted_count, total
-    )
+    logger.info("Historical decryption complete: %d/%d packets decrypted", decrypted_count, total)
 
 
 @router.get("/undecrypted/count")
@@ -179,8 +179,7 @@ async def get_decrypt_progress() -> DecryptProgress | None:
 
 class MaintenanceRequest(BaseModel):
     prune_undecrypted_days: int = Field(
-        ge=1,
-        description="Delete undecrypted packets older than this many days"
+        ge=1, description="Delete undecrypted packets older than this many days"
     )
 
 
@@ -197,7 +196,9 @@ async def run_maintenance(request: MaintenanceRequest) -> MaintenanceResult:
     - Deletes undecrypted packets older than the specified number of days
     - Runs VACUUM to reclaim disk space
     """
-    logger.info("Running maintenance: pruning packets older than %d days", request.prune_undecrypted_days)
+    logger.info(
+        "Running maintenance: pruning packets older than %d days", request.prune_undecrypted_days
+    )
 
     # Prune old undecrypted packets
     deleted = await RawPacketRepository.prune_old_undecrypted(request.prune_undecrypted_days)
@@ -264,14 +265,12 @@ async def _run_payload_dedup() -> None:
 
     # Delete duplicates (keep the first/oldest packet in each group)
     duplicates_removed = 0
-    for payload_hash, packet_ids in payload_groups.items():
+    for packet_ids in payload_groups.values():
         if len(packet_ids) > 1:
             # Keep the first one, delete the rest
             ids_to_delete = packet_ids[1:]
             for packet_id in ids_to_delete:
-                await db.conn.execute(
-                    "DELETE FROM raw_packets WHERE id = ?", (packet_id,)
-                )
+                await db.conn.execute("DELETE FROM raw_packets WHERE id = ?", (packet_id,))
                 duplicates_removed += 1
 
             _dedup_progress = DedupProgress(

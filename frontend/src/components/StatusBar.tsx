@@ -13,7 +13,14 @@ interface StatusBarProps {
   onMenuClick?: () => void;
 }
 
-export function StatusBar({ health, config, onConfigClick, onMaintenanceClick, onAdvertise, onMenuClick }: StatusBarProps) {
+export function StatusBar({
+  health,
+  config,
+  onConfigClick,
+  onMaintenanceClick,
+  onAdvertise,
+  onMenuClick,
+}: StatusBarProps) {
   const connected = health?.radio_connected ?? false;
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -50,7 +57,9 @@ export function StatusBar({ health, config, onConfigClick, onMaintenanceClick, o
 
       <div className="flex items-center gap-1 text-[#888]">
         <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#4caf50]' : 'bg-[#666]'}`} />
-        <span className="hidden lg:inline text-[#e0e0e0]">{connected ? 'Connected' : 'Disconnected'}</span>
+        <span className="hidden lg:inline text-[#e0e0e0]">
+          {connected ? 'Connected' : 'Disconnected'}
+        </span>
       </div>
 
       {health?.serial_port && (
@@ -94,13 +103,18 @@ export function StatusBar({ health, config, onConfigClick, onMaintenanceClick, o
         className="px-2 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
         title="Database Maintenance"
       >
-        <span role="img" aria-label="Settings">&#9881;&#65039;</span>
+        <span role="img" aria-label="Settings">
+          &#9881;&#65039;
+        </span>
       </button>
       <button
         onClick={onConfigClick}
         className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
       >
-        <span role="img" aria-label="Radio">&#128251;</span> Config
+        <span role="img" aria-label="Radio">
+          &#128251;
+        </span>{' '}
+        Config
       </button>
     </div>
   );

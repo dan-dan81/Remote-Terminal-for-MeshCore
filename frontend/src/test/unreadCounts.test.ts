@@ -35,7 +35,10 @@ function shouldIncrementUnread(
     // Use 12-char prefix for contact key
     const key = `contact-${getPubkeyPrefix(msg.conversation_key)}`;
     // Don't count if this contact is active (compare by prefix)
-    if (activeConversation?.type === 'contact' && pubkeysMatch(activeConversation.id, msg.conversation_key)) {
+    if (
+      activeConversation?.type === 'contact' &&
+      pubkeysMatch(activeConversation.id, msg.conversation_key)
+    ) {
       return null;
     }
     return { key };
@@ -78,8 +81,15 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns key for incoming channel message when not viewing that channel', () => {
-    const msg = createMessage({ type: 'CHAN', conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3' });
-    const activeConversation: Conversation = { type: 'channel', id: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5', name: 'other' };
+    const msg = createMessage({
+      type: 'CHAN',
+      conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3',
+    });
+    const activeConversation: Conversation = {
+      type: 'channel',
+      id: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5',
+      name: 'other',
+    };
 
     const result = shouldIncrementUnread(msg, activeConversation);
 
@@ -87,8 +97,15 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns null for incoming channel message when viewing that channel', () => {
-    const msg = createMessage({ type: 'CHAN', conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3' });
-    const activeConversation: Conversation = { type: 'channel', id: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3', name: '#test' };
+    const msg = createMessage({
+      type: 'CHAN',
+      conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3',
+    });
+    const activeConversation: Conversation = {
+      type: 'channel',
+      id: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3',
+      name: '#test',
+    };
 
     const result = shouldIncrementUnread(msg, activeConversation);
 
@@ -96,7 +113,11 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns null for outgoing messages', () => {
-    const msg = createMessage({ type: 'CHAN', conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3', outgoing: true });
+    const msg = createMessage({
+      type: 'CHAN',
+      conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3',
+      outgoing: true,
+    });
 
     const result = shouldIncrementUnread(msg, null);
 
@@ -104,8 +125,15 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns key for incoming direct message when not viewing that contact', () => {
-    const msg = createMessage({ type: 'PRIV', conversation_key: 'abc123456789012345678901234567890123456789012345678901234567' });
-    const activeConversation: Conversation = { type: 'contact', id: 'xyz999999999012345678901234567890123456789012345678901234567', name: 'other' };
+    const msg = createMessage({
+      type: 'PRIV',
+      conversation_key: 'abc123456789012345678901234567890123456789012345678901234567',
+    });
+    const activeConversation: Conversation = {
+      type: 'contact',
+      id: 'xyz999999999012345678901234567890123456789012345678901234567',
+      name: 'other',
+    };
 
     const result = shouldIncrementUnread(msg, activeConversation);
 
@@ -113,7 +141,10 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns null for incoming direct message when viewing that contact', () => {
-    const msg = createMessage({ type: 'PRIV', conversation_key: 'abc123456789012345678901234567890123456789012345678901234567' });
+    const msg = createMessage({
+      type: 'PRIV',
+      conversation_key: 'abc123456789012345678901234567890123456789012345678901234567',
+    });
     const activeConversation: Conversation = {
       type: 'contact',
       id: 'abc123456789fullkey12345678901234567890123456789012345678',
@@ -126,7 +157,10 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns key when no conversation is active', () => {
-    const msg = createMessage({ type: 'CHAN', conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0' });
+    const msg = createMessage({
+      type: 'CHAN',
+      conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0',
+    });
 
     const result = shouldIncrementUnread(msg, null);
 
@@ -134,7 +168,10 @@ describe('shouldIncrementUnread', () => {
   });
 
   it('returns key when viewing raw packet feed', () => {
-    const msg = createMessage({ type: 'CHAN', conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1' });
+    const msg = createMessage({
+      type: 'CHAN',
+      conversation_key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1',
+    });
     const activeConversation: Conversation = { type: 'raw', id: 'raw', name: 'Packets' };
 
     const result = shouldIncrementUnread(msg, activeConversation);
@@ -160,7 +197,9 @@ describe('getUnreadCount', () => {
     const counts = { 'contact-abc123456789': 5 };
 
     // Full public key lookup should match the prefix
-    expect(getUnreadCount('contact', 'abc123456789fullpublickey123456789012345678901234', counts)).toBe(5);
+    expect(
+      getUnreadCount('contact', 'abc123456789fullpublickey123456789012345678901234', counts)
+    ).toBe(5);
   });
 
   it('handles contact key shorter than 12 chars', () => {
@@ -172,7 +211,9 @@ describe('getUnreadCount', () => {
   it('returns 0 for contact with no unread', () => {
     const counts = { 'contact-abc123456789': 5 };
 
-    expect(getUnreadCount('contact', 'xyz999999999fullkey12345678901234567890123456789', counts)).toBe(0);
+    expect(
+      getUnreadCount('contact', 'xyz999999999fullkey12345678901234567890123456789', counts)
+    ).toBe(0);
   });
 });
 

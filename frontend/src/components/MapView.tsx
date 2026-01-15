@@ -17,10 +17,10 @@ function getMarkerColor(lastSeen: number): string {
   const hour = 3600;
   const day = 86400;
 
-  if (age < hour) return '#22c55e';      // Bright green - less than 1 hour
-  if (age < day) return '#4ade80';       // Light green - less than 1 day
-  if (age < 3 * day) return '#a3e635';   // Yellow-green - less than 3 days
-  return '#9ca3af';                       // Gray - older (up to 7 days)
+  if (age < hour) return '#22c55e'; // Bright green - less than 1 hour
+  if (age < day) return '#4ade80'; // Light green - less than 1 day
+  if (age < 3 * day) return '#a3e635'; // Yellow-green - less than 3 days
+  return '#9ca3af'; // Gray - older (up to 7 days)
 }
 
 // Component to handle map bounds fitting
@@ -47,7 +47,9 @@ function MapBoundsHandler({ contacts }: { contacts: Contact[] }) {
       }
 
       // Multiple contacts - fit bounds
-      const bounds: LatLngBoundsExpression = contacts.map(c => [c.lat!, c.lon!] as [number, number]);
+      const bounds: LatLngBoundsExpression = contacts.map(
+        (c) => [c.lat!, c.lon!] as [number, number]
+      );
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
       setHasInitialized(true);
     };
@@ -79,11 +81,8 @@ export function MapView({ contacts }: MapViewProps) {
   // Filter to contacts with GPS coordinates, heard within the last 7 days
   const mappableContacts = useMemo(() => {
     const sevenDaysAgo = Date.now() / 1000 - 7 * 24 * 60 * 60;
-    return contacts.filter(c =>
-      c.lat != null &&
-      c.lon != null &&
-      c.last_seen != null &&
-      c.last_seen > sevenDaysAgo
+    return contacts.filter(
+      (c) => c.lat != null && c.lon != null && c.last_seen != null && c.last_seen > sevenDaysAgo
     );
   }, [contacts]);
 
@@ -92,7 +91,8 @@ export function MapView({ contacts }: MapViewProps) {
       {/* Info bar */}
       <div className="px-4 py-2 bg-muted/50 text-xs text-muted-foreground flex items-center justify-between">
         <span>
-          Showing {mappableContacts.length} contact{mappableContacts.length !== 1 ? 's' : ''} heard in the last 7 days
+          Showing {mappableContacts.length} contact{mappableContacts.length !== 1 ? 's' : ''} heard
+          in the last 7 days
         </span>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">

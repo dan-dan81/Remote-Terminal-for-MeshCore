@@ -1,6 +1,13 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { api } from '../api';
-import type { Contact, Conversation, Message, TelemetryResponse, NeighborInfo, AclEntry } from '../types';
+import type {
+  Contact,
+  Conversation,
+  Message,
+  TelemetryResponse,
+  NeighborInfo,
+  AclEntry,
+} from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 
 // Format seconds into human-readable duration (e.g., 1d17h2m, 1h5m, 3m)
@@ -121,7 +128,7 @@ export function useRepeaterMode(
   // Check if active conversation is a repeater
   const activeContactIsRepeater = useMemo(() => {
     if (!activeConversation || activeConversation.type !== 'contact') return false;
-    const contact = contacts.find(c => c.public_key === activeConversation.id);
+    const contact = contacts.find((c) => c.public_key === activeConversation.id);
     return contact?.type === CONTACT_TYPE_REPEATER;
   }, [activeConversation, contacts]);
 
@@ -181,12 +188,7 @@ export function useRepeaterMode(
       if (!activeContactIsRepeater || !repeaterLoggedIn) return;
 
       // Show the command as an outgoing message
-      const commandMessage = createLocalMessage(
-        activeConversation.id,
-        `> ${command}`,
-        true,
-        0
-      );
+      const commandMessage = createLocalMessage(activeConversation.id, `> ${command}`, true, 0);
       setMessages((prev) => [...prev, commandMessage]);
 
       try {

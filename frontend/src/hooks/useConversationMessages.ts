@@ -34,47 +34,56 @@ export function useConversationMessages(
   const seenMessageContent = useRef<Set<string>>(new Set());
 
   // Fetch messages for active conversation
-  const fetchMessages = useCallback(async (showLoading = false) => {
-    if (!activeConversation || activeConversation.type === 'raw') {
-      setMessages([]);
-      setHasOlderMessages(false);
-      return;
-    }
+  const fetchMessages = useCallback(
+    async (showLoading = false) => {
+      if (!activeConversation || activeConversation.type === 'raw') {
+        setMessages([]);
+        setHasOlderMessages(false);
+        return;
+      }
 
-    if (showLoading) {
-      setMessagesLoading(true);
-      // Clear messages first so MessageList resets scroll state for new conversation
-      setMessages([]);
-    }
-    try {
-      const data = await api.getMessages({
-        type: activeConversation.type === 'channel' ? 'CHAN' : 'PRIV',
-        conversation_key: activeConversation.id,
-        limit: MESSAGE_PAGE_SIZE,
-      });
-      setMessages(data);
-      // Track seen content for new messages
-      seenMessageContent.current.clear();
-      for (const msg of data) {
-        seenMessageContent.current.add(getMessageContentKey(msg));
-      }
-      // If we got a full page, there might be more
-      setHasOlderMessages(data.length >= MESSAGE_PAGE_SIZE);
-    } catch (err) {
-      console.error('Failed to fetch messages:', err);
-      toast.error('Failed to load messages', {
-        description: err instanceof Error ? err.message : 'Check your connection',
-      });
-    } finally {
       if (showLoading) {
-        setMessagesLoading(false);
+        setMessagesLoading(true);
+        // Clear messages first so MessageList resets scroll state for new conversation
+        setMessages([]);
       }
-    }
-  }, [activeConversation]);
+      try {
+        const data = await api.getMessages({
+          type: activeConversation.type === 'channel' ? 'CHAN' : 'PRIV',
+          conversation_key: activeConversation.id,
+          limit: MESSAGE_PAGE_SIZE,
+        });
+        setMessages(data);
+        // Track seen content for new messages
+        seenMessageContent.current.clear();
+        for (const msg of data) {
+          seenMessageContent.current.add(getMessageContentKey(msg));
+        }
+        // If we got a full page, there might be more
+        setHasOlderMessages(data.length >= MESSAGE_PAGE_SIZE);
+      } catch (err) {
+        console.error('Failed to fetch messages:', err);
+        toast.error('Failed to load messages', {
+          description: err instanceof Error ? err.message : 'Check your connection',
+        });
+      } finally {
+        if (showLoading) {
+          setMessagesLoading(false);
+        }
+      }
+    },
+    [activeConversation]
+  );
 
   // Fetch older messages (pagination)
   const fetchOlderMessages = useCallback(async () => {
-    if (!activeConversation || activeConversation.type === 'raw' || loadingOlder || !hasOlderMessages) return;
+    if (
+      !activeConversation ||
+      activeConversation.type === 'raw' ||
+      loadingOlder ||
+      !hasOlderMessages
+    )
+      return;
 
     setLoadingOlder(true);
     try {
@@ -87,7 +96,7 @@ export function useConversationMessages(
 
       if (data.length > 0) {
         // Prepend older messages (they come sorted DESC, so older are at the end)
-        setMessages(prev => [...prev, ...data]);
+        setMessages((prev) => [...prev, ...data]);
         // Track seen content
         for (const msg of data) {
           seenMessageContent.current.add(getMessageContentKey(msg));

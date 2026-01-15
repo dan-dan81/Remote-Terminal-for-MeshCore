@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GroupTextCracker, type ProgressReport } from 'meshcore-hashtag-cracker';
 import NoSleep from 'nosleep.js';
 import type { RawPacket, Channel } from '../types';
@@ -64,7 +64,13 @@ interface CrackerPanelProps {
   visible?: boolean;
 }
 
-export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChange, visible = false }: CrackerPanelProps) {
+export function CrackerPanel({
+  packets,
+  channels,
+  onChannelCreate,
+  onRunningChange,
+  visible = false,
+}: CrackerPanelProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [maxLength, setMaxLength] = useState(6);
   const [retryFailedAtNextLength, setRetryFailedAtNextLength] = useState(false);
@@ -130,7 +136,8 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   // Fetch undecrypted packet count
   useEffect(() => {
     const fetchCount = () => {
-      api.getUndecryptedPacketCount()
+      api
+        .getUndecryptedPacketCount()
         .then(({ count }) => setUndecryptedPacketCount(count))
         .catch(() => setUndecryptedPacketCount(null));
     };
@@ -140,19 +147,23 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     return () => clearInterval(interval);
   }, []);
 
-  // Get existing channel keys for filtering
-  const existingChannelKeys = new Set(channels.map(c => c.key.toUpperCase()));
+  // Get existing channel keys for filtering (memoized to avoid recreating on every render)
+  const existingChannelKeys = useMemo(
+    () => new Set(channels.map((c) => c.key.toUpperCase())),
+    [channels]
+  );
 
   // Filter packets to only undecrypted GROUP_TEXT
   const undecryptedGroupText = packets.filter(
-    p => p.payload_type === 'GROUP_TEXT' && !p.decrypted
+    (p) => p.payload_type === 'GROUP_TEXT' && !p.decrypted
   );
 
   // Update queue when packets change (deduplicated by payload)
+  // Note: We intentionally depend on .length only to avoid re-running on every array identity change
   useEffect(() => {
     let newSkipped = 0;
 
-    setQueue(prev => {
+    setQueue((prev) => {
       const newQueue = new Map(prev);
       let changed = false;
 
@@ -189,8 +200,9 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     });
 
     if (newSkipped > 0) {
-      setSkippedDuplicates(prev => prev + newSkipped);
+      setSkippedDuplicates((prev) => prev + newSkipped);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undecryptedGroupText.length]);
 
   // Keep refs in sync with state
@@ -216,7 +228,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
 
   // Keep undecrypted IDs ref in sync - used to skip packets already decrypted by other means
   useEffect(() => {
-    undecryptedIdsRef.current = new Set(undecryptedGroupText.map(p => p.id));
+    undecryptedIdsRef.current = new Set(undecryptedGroupText.map((p) => p.id));
   }, [undecryptedGroupText]);
 
   // Notify parent of running state changes
@@ -225,9 +237,9 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
   }, [isRunning, onRunningChange]);
 
   // Stats (cracking count is implicit - if progress is shown, we're cracking one)
-  const pendingCount = Array.from(queue.values()).filter(q => q.status === 'pending').length;
-  const crackedCount = Array.from(queue.values()).filter(q => q.status === 'cracked').length;
-  const failedCount = Array.from(queue.values()).filter(q => q.status === 'failed').length;
+  const pendingCount = Array.from(queue.values()).filter((q) => q.status === 'pending').length;
+  const crackedCount = Array.from(queue.values()).filter((q) => q.status === 'cracked').length;
+  const failedCount = Array.from(queue.values()).filter((q) => q.status === 'failed').length;
 
   // Process next packet in queue
   const processNext = useCallback(async () => {
@@ -273,7 +285,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     // by historical decrypt when we cracked another packet from the same channel
     if (!undecryptedIdsRef.current.has(nextId)) {
       // Already decrypted by other means, remove from queue and continue
-      setQueue(prev => {
+      setQueue((prev) => {
         const updated = new Map(prev);
         updated.delete(nextId);
         return updated;
@@ -289,9 +301,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
 
     const currentMaxLength = maxLengthRef.current;
     const isRetry = nextItem.lastAttemptLength > 0;
-    const targetLength = isRetry
-      ? nextItem.lastAttemptLength + 1
-      : currentMaxLength;
+    const targetLength = isRetry ? nextItem.lastAttemptLength + 1 : currentMaxLength;
 
     try {
       const result = await crackerRef.current.crack(
@@ -318,7 +328,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
 
       if (result.found && result.roomName && result.key) {
         // Success!
-        setQueue(prev => {
+        setQueue((prev) => {
           const updated = new Map(prev);
           const item = updated.get(nextId!);
           if (item) {
@@ -339,7 +349,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
           message: result.decryptedMessage || '',
           crackedAt: Date.now(),
         };
-        setCrackedRooms(prev => [...prev, newRoom]);
+        setCrackedRooms((prev) => [...prev, newRoom]);
 
         // Auto-add channel if not already exists
         const keyUpper = result.key.toUpperCase();
@@ -350,18 +360,22 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
             // Optionally decrypt any other historical packets with this newly discovered key
             // This prevents wasting cracking cycles on packets from the same channel
             if (decryptHistoricalRef.current) {
-              await api.decryptHistoricalPackets({ key_type: 'channel', channel_name: channelName });
+              await api.decryptHistoricalPackets({
+                key_type: 'channel',
+                channel_name: channelName,
+              });
             }
           } catch (err) {
             console.error('Failed to create channel or decrypt historical:', err);
             toast.error('Failed to save cracked channel', {
-              description: err instanceof Error ? err.message : 'Channel discovered but could not be saved',
+              description:
+                err instanceof Error ? err.message : 'Channel discovered but could not be saved',
             });
           }
         }
       } else {
         // Failed
-        setQueue(prev => {
+        setQueue((prev) => {
           const updated = new Map(prev);
           const item = updated.get(nextId!);
           if (item) {
@@ -377,7 +391,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
       }
     } catch (err) {
       console.error('Cracking error:', err);
-      setQueue(prev => {
+      setQueue((prev) => {
         const updated = new Map(prev);
         const item = updated.get(nextId!);
         if (item) {
@@ -425,25 +439,28 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
     noSleepRef.current?.disable();
   };
 
-
   return (
     <div className="flex flex-col h-full p-3 gap-3 bg-background border-t border-border">
       <p className="text-xs text-muted-foreground leading-relaxed">
-        This will attempt to dictionary attack, then brute force GroupText packets as they arrive, testing room names up to the specified length.
-        <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and pick up messages it couldn't crack, attempting them at one longer length.
-        <strong> Decrypt historical</strong> will run an async job on any room name it finds to see if any historically captured packets will decrypt with that key.
-        <strong> Turbo mode</strong> will push your GPU to the max (target dispatch time of 10s) and may allow accelerated cracking and/or system instability.
+        This will attempt to dictionary attack, then brute force GroupText packets as they arrive,
+        testing room names up to the specified length.
+        <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
+        pick up messages it couldn't crack, attempting them at one longer length.
+        <strong> Decrypt historical</strong> will run an async job on any room name it finds to see
+        if any historically captured packets will decrypt with that key.
+        <strong> Turbo mode</strong> will push your GPU to the max (target dispatch time of 10s) and
+        may allow accelerated cracking and/or system instability.
       </p>
       <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={isRunning ? handleStop : handleStart}
           disabled={!wordlistLoaded || gpuAvailable === false}
           className={cn(
-            "px-4 py-1.5 rounded text-sm font-medium",
+            'px-4 py-1.5 rounded text-sm font-medium',
             isRunning
-              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-primary text-primary-foreground hover:bg-primary/90",
-            "disabled:opacity-50 disabled:cursor-not-allowed"
+              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+              : 'bg-primary text-primary-foreground hover:bg-primary/90',
+            'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
         >
           {isRunning ? 'Stop' : 'Start Cracking'}
@@ -512,7 +529,8 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
         </span>
         {skippedDuplicates > 0 && (
           <span className="text-muted-foreground">
-            Skipped (dup): <span className="text-muted-foreground font-medium">{skippedDuplicates}</span>
+            Skipped (dup):{' '}
+            <span className="text-muted-foreground font-medium">{skippedDuplicates}</span>
           </span>
         )}
       </div>
@@ -522,15 +540,22 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>
-              {progress.phase === 'wordlist' ? 'Dictionary' : progress.phase === 'bruteforce' ? 'Bruteforce' : 'Public Key'}
-              {progress.phase === 'bruteforce' && ` - Length ${progress.currentLength}`}
-              : {progress.currentPosition}
+              {progress.phase === 'wordlist'
+                ? 'Dictionary'
+                : progress.phase === 'bruteforce'
+                  ? 'Bruteforce'
+                  : 'Public Key'}
+              {progress.phase === 'bruteforce' && ` - Length ${progress.currentLength}`}:{' '}
+              {progress.currentPosition}
             </span>
             <span>
               {progress.rateKeysPerSec >= 1e9
                 ? `${(progress.rateKeysPerSec / 1e9).toFixed(2)} Gkeys/s`
-                : `${(progress.rateKeysPerSec / 1e6).toFixed(1)} Mkeys/s`}
-              {' '}• ETA: {progress.etaSeconds < 60 ? `${Math.round(progress.etaSeconds)}s` : `${Math.round(progress.etaSeconds / 60)}m`}
+                : `${(progress.rateKeysPerSec / 1e6).toFixed(1)} Mkeys/s`}{' '}
+              • ETA:{' '}
+              {progress.etaSeconds < 60
+                ? `${Math.round(progress.etaSeconds)}s`
+                : `${Math.round(progress.etaSeconds / 60)}m`}
             </span>
           </div>
           <div className="h-2 bg-muted rounded overflow-hidden">
@@ -549,9 +574,7 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
         </div>
       )}
       {!wordlistLoaded && gpuAvailable !== false && (
-        <div className="text-sm text-muted-foreground">
-          Loading wordlist...
-        </div>
+        <div className="text-sm text-muted-foreground">Loading wordlist...</div>
       )}
 
       {/* Cracked rooms list */}
@@ -560,10 +583,14 @@ export function CrackerPanel({ packets, channels, onChannelCreate, onRunningChan
           <div className="text-xs text-muted-foreground mb-1">Cracked Rooms:</div>
           <div className="space-y-1">
             {crackedRooms.map((room, i) => (
-              <div key={i} className="text-sm bg-green-950/30 border border-green-900/50 rounded px-2 py-1">
+              <div
+                key={i}
+                className="text-sm bg-green-950/30 border border-green-900/50 rounded px-2 py-1"
+              >
                 <span className="text-green-400 font-medium">#{room.roomName}</span>
                 <span className="text-muted-foreground ml-2 text-xs">
-                  "{room.message.slice(0, 50)}{room.message.length > 50 ? '...' : ''}"
+                  "{room.message.slice(0, 50)}
+                  {room.message.length > 50 ? '...' : ''}"
                 </span>
               </div>
             ))}

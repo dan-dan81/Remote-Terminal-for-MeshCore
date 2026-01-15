@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from meshcore import EventType
 
 from app.config import settings
-from app.models import CONTACT_TYPE_REPEATER, Contact
+from app.models import Contact
 from app.radio import radio_manager
 from app.repository import ChannelRepository, ContactRepository
 
@@ -50,6 +50,7 @@ async def pause_polling():
         yield
     finally:
         _polling_pause_count -= 1
+
 
 # Background task handle
 _sync_task: asyncio.Task | None = None
@@ -97,8 +98,7 @@ async def sync_and_offload_contacts() -> dict:
                     removed += 1
                 else:
                     logger.warning(
-                        "Failed to remove contact %s: %s",
-                        public_key[:12], remove_result.payload
+                        "Failed to remove contact %s: %s", public_key[:12], remove_result.payload
                     )
             except Exception as e:
                 logger.warning("Error removing contact %s: %s", public_key[:12], e)
@@ -167,10 +167,7 @@ async def sync_and_offload_channels() -> dict:
                 if clear_result.type == EventType.OK:
                     cleared += 1
                 else:
-                    logger.warning(
-                        "Failed to clear channel %d: %s",
-                        idx, clear_result.payload
-                    )
+                    logger.warning("Failed to clear channel %d: %s", idx, clear_result.payload)
             except Exception as e:
                 logger.warning("Error clearing channel %d: %s", idx, e)
 
@@ -446,8 +443,7 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
                 else:
                     failed += 1
                     logger.warning(
-                        "Failed to load contact %s: %s",
-                        contact.public_key[:12], result.payload
+                        "Failed to load contact %s: %s", contact.public_key[:12], result.payload
                     )
             except Exception as e:
                 failed += 1
@@ -456,7 +452,9 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
         if loaded > 0 or failed > 0:
             logger.info(
                 "Contact sync: loaded %d, already on radio %d, failed %d",
-                loaded, already_on_radio, failed
+                loaded,
+                already_on_radio,
+                failed,
             )
 
         return {

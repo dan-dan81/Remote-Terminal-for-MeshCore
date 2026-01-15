@@ -32,7 +32,9 @@ class ContactRepository:
                 contact.get("type", 0),
                 contact.get("flags", 0),
                 contact.get("last_path") or contact.get("out_path"),
-                contact.get("last_path_len") if "last_path_len" in contact else contact.get("out_path_len", -1),
+                contact.get("last_path_len")
+                if "last_path_len" in contact
+                else contact.get("out_path_len", -1),
                 contact.get("last_advert"),
                 contact.get("lat") or contact.get("adv_lat"),
                 contact.get("lon") or contact.get("adv_lon"),
@@ -64,9 +66,7 @@ class ContactRepository:
 
     @staticmethod
     async def get_by_key(public_key: str) -> Contact | None:
-        cursor = await db.conn.execute(
-            "SELECT * FROM contacts WHERE public_key = ?", (public_key,)
-        )
+        cursor = await db.conn.execute("SELECT * FROM contacts WHERE public_key = ?", (public_key,))
         row = await cursor.fetchone()
         return ContactRepository._row_to_contact(row) if row else None
 
@@ -207,7 +207,7 @@ class ChannelRepository:
         """Get a channel by its key (32-char hex string)."""
         cursor = await db.conn.execute(
             "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE key = ?",
-            (key.upper(),)
+            (key.upper(),),
         )
         row = await cursor.fetchone()
         if row:
@@ -241,7 +241,8 @@ class ChannelRepository:
     async def get_by_name(name: str) -> Channel | None:
         """Get a channel by name."""
         cursor = await db.conn.execute(
-            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE name = ?", (name,)
+            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE name = ?",
+            (name,),
         )
         row = await cursor.fetchone()
         if row:
@@ -303,8 +304,17 @@ class MessageRepository:
                                             received_at, path_len, txt_type, signature, outgoing)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (msg_type, conversation_key, text, sender_timestamp, received_at,
-             path_len, txt_type, signature, outgoing),
+            (
+                msg_type,
+                conversation_key,
+                text,
+                sender_timestamp,
+                received_at,
+                path_len,
+                txt_type,
+                signature,
+                outgoing,
+            ),
         )
         await db.conn.commit()
         # rowcount is 0 if INSERT was ignored due to UNIQUE constraint violation
@@ -355,13 +365,9 @@ class MessageRepository:
     @staticmethod
     async def increment_ack_count(message_id: int) -> int:
         """Increment ack count and return the new value."""
-        await db.conn.execute(
-            "UPDATE messages SET acked = acked + 1 WHERE id = ?", (message_id,)
-        )
+        await db.conn.execute("UPDATE messages SET acked = acked + 1 WHERE id = ?", (message_id,))
         await db.conn.commit()
-        cursor = await db.conn.execute(
-            "SELECT acked FROM messages WHERE id = ?", (message_id,)
-        )
+        cursor = await db.conn.execute("SELECT acked FROM messages WHERE id = ?", (message_id,))
         row = await cursor.fetchone()
         return row["acked"] if row else 1
 
@@ -457,6 +463,7 @@ class RawPacketRepository:
             (ts, data),
         )
         await db.conn.commit()
+        assert cursor.lastrowid is not None  # INSERT always returns a row ID
         return cursor.lastrowid
 
     @staticmethod

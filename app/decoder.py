@@ -3,8 +3,8 @@ MeshCore packet decoder for historical packet decryption.
 Based on https://github.com/michaelhart/meshcore-decoder
 """
 
-import hmac
 import hashlib
+import hmac
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
@@ -153,7 +153,7 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
         # Extract path data
         if len(raw_packet) < offset + path_length:
             return None
-        path = raw_packet[offset:offset + path_length]
+        path = raw_packet[offset : offset + path_length]
         offset += path_length
 
         # Rest is payload
@@ -171,9 +171,7 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
         return None
 
 
-def decrypt_group_text(
-    payload: bytes, channel_key: bytes
-) -> DecryptedGroupText | None:
+def decrypt_group_text(payload: bytes, channel_key: bytes) -> DecryptedGroupText | None:
     """
     Decrypt a GroupText payload using the channel key.
 
@@ -344,8 +342,8 @@ def parse_advertisement(payload: bytes) -> ParsedAdvertisement | None:
                 lon=None,
                 device_role=device_role,
             )
-        lat_raw = int.from_bytes(payload[offset:offset + 4], byteorder="little", signed=True)
-        lon_raw = int.from_bytes(payload[offset + 4:offset + 8], byteorder="little", signed=True)
+        lat_raw = int.from_bytes(payload[offset : offset + 4], byteorder="little", signed=True)
+        lon_raw = int.from_bytes(payload[offset + 4 : offset + 8], byteorder="little", signed=True)
         lat = lat_raw / 1_000_000
         lon = lon_raw / 1_000_000
         offset += 8

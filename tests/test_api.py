@@ -4,8 +4,9 @@ These tests verify the REST API behavior for critical operations.
 Uses FastAPI's TestClient for synchronous testing.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestHealthEndpoint:
@@ -20,6 +21,7 @@ class TestHealthEndpoint:
             mock_rm.port = "/dev/ttyUSB0"
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.get("/api/health")
@@ -38,6 +40,7 @@ class TestHealthEndpoint:
             mock_rm.port = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.get("/api/health")
@@ -60,11 +63,11 @@ class TestMessagesEndpoint:
             mock_rm.meshcore = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.post(
-                "/api/messages/direct",
-                json={"destination": "abc123", "text": "Hello"}
+                "/api/messages/direct", json={"destination": "abc123", "text": "Hello"}
             )
 
             assert response.status_code == 503
@@ -79,11 +82,12 @@ class TestMessagesEndpoint:
             mock_rm.meshcore = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.post(
                 "/api/messages/channel",
-                json={"channel_key": "0123456789ABCDEF0123456789ABCDEF", "text": "Hello"}
+                json={"channel_key": "0123456789ABCDEF0123456789ABCDEF", "text": "Hello"},
             )
 
             assert response.status_code == 503
@@ -95,18 +99,22 @@ class TestMessagesEndpoint:
         mock_mc = MagicMock()
         mock_mc.get_contact_by_key_prefix.return_value = None
 
-        with patch("app.dependencies.radio_manager") as mock_rm, \
-             patch("app.repository.ContactRepository.get_by_key_or_prefix", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.dependencies.radio_manager") as mock_rm,
+            patch(
+                "app.repository.ContactRepository.get_by_key_or_prefix", new_callable=AsyncMock
+            ) as mock_get,
+        ):
             mock_rm.is_connected = True
             mock_rm.meshcore = mock_mc
             mock_get.return_value = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.post(
-                "/api/messages/direct",
-                json={"destination": "nonexistent", "text": "Hello"}
+                "/api/messages/direct", json={"destination": "nonexistent", "text": "Hello"}
             )
 
             assert response.status_code == 404
@@ -120,7 +128,8 @@ class TestChannelsEndpoint:
     async def test_create_hashtag_channel_derives_key(self):
         """Creating hashtag channel derives key from name and stores in DB."""
         import hashlib
-        from app.routers.channels import create_channel, CreateChannelRequest
+
+        from app.routers.channels import CreateChannelRequest, create_channel
 
         with patch("app.routers.channels.ChannelRepository") as mock_repo:
             mock_repo.upsert = AsyncMock()
@@ -145,7 +154,7 @@ class TestChannelsEndpoint:
     @pytest.mark.asyncio
     async def test_create_channel_with_explicit_key(self):
         """Creating channel with explicit key uses provided key."""
-        from app.routers.channels import create_channel, CreateChannelRequest
+        from app.routers.channels import CreateChannelRequest, create_channel
 
         with patch("app.routers.channels.ChannelRepository") as mock_repo:
             mock_repo.upsert = AsyncMock()
@@ -177,6 +186,7 @@ class TestPacketsEndpoint:
             mock_repo.get_undecrypted_count = AsyncMock(return_value=42)
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.get("/api/packets/undecrypted/count")
@@ -191,10 +201,12 @@ class TestReadStateEndpoints:
     @pytest.mark.asyncio
     async def test_mark_contact_read_updates_timestamp(self):
         """Marking contact as read updates last_read_at in database."""
-        import aiosqlite
         import time
-        from app.repository import ContactRepository
+
+        import aiosqlite
+
         from app.database import db
+        from app.repository import ContactRepository
 
         # Use in-memory database for testing
         conn = await aiosqlite.connect(":memory:")
@@ -222,7 +234,7 @@ class TestReadStateEndpoints:
         # Insert a test contact
         await conn.execute(
             "INSERT INTO contacts (public_key, name) VALUES (?, ?)",
-            ("abc123def456789012345678901234567890123456789012345678901234", "TestContact")
+            ("abc123def456789012345678901234567890123456789012345678901234", "TestContact"),
         )
         await conn.commit()
 
@@ -253,10 +265,12 @@ class TestReadStateEndpoints:
     @pytest.mark.asyncio
     async def test_mark_channel_read_updates_timestamp(self):
         """Marking channel as read updates last_read_at in database."""
-        import aiosqlite
         import time
-        from app.repository import ChannelRepository
+
+        import aiosqlite
+
         from app.database import db
+        from app.repository import ChannelRepository
 
         # Use in-memory database for testing
         conn = await aiosqlite.connect(":memory:")
@@ -276,7 +290,7 @@ class TestReadStateEndpoints:
         # Insert a test channel
         await conn.execute(
             "INSERT INTO channels (key, name) VALUES (?, ?)",
-            ("0123456789ABCDEF0123456789ABCDEF", "#testchannel")
+            ("0123456789ABCDEF0123456789ABCDEF", "#testchannel"),
         )
         await conn.commit()
 
@@ -294,9 +308,7 @@ class TestReadStateEndpoints:
             assert updated is True
 
             # Verify the timestamp was set
-            channel = await ChannelRepository.get_by_key(
-                "0123456789ABCDEF0123456789ABCDEF"
-            )
+            channel = await ChannelRepository.get_by_key("0123456789ABCDEF0123456789ABCDEF")
             assert channel is not None
             assert channel.last_read_at is not None
             assert channel.last_read_at >= before_time
@@ -308,8 +320,9 @@ class TestReadStateEndpoints:
     async def test_mark_nonexistent_contact_returns_false(self):
         """Marking nonexistent contact returns False."""
         import aiosqlite
-        from app.repository import ContactRepository
+
         from app.database import db
+        from app.repository import ContactRepository
 
         # Use in-memory database for testing
         conn = await aiosqlite.connect(":memory:")
@@ -348,10 +361,13 @@ class TestReadStateEndpoints:
         """Mark-read endpoint returns 404 for nonexistent contact."""
         from fastapi.testclient import TestClient
 
-        with patch("app.repository.ContactRepository.get_by_key_or_prefix", new_callable=AsyncMock) as mock_get:
+        with patch(
+            "app.repository.ContactRepository.get_by_key_or_prefix", new_callable=AsyncMock
+        ) as mock_get:
             mock_get.return_value = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.post("/api/contacts/nonexistent/mark-read")
@@ -363,10 +379,13 @@ class TestReadStateEndpoints:
         """Mark-read endpoint returns 404 for nonexistent channel."""
         from fastapi.testclient import TestClient
 
-        with patch("app.repository.ChannelRepository.get_by_key", new_callable=AsyncMock) as mock_get:
+        with patch(
+            "app.repository.ChannelRepository.get_by_key", new_callable=AsyncMock
+        ) as mock_get:
             mock_get.return_value = None
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.post("/api/channels/NONEXISTENT/mark-read")
@@ -377,8 +396,10 @@ class TestReadStateEndpoints:
     @pytest.mark.asyncio
     async def test_mark_all_read_updates_all_conversations(self):
         """Bulk mark-all-read updates all contacts and channels."""
-        import aiosqlite
         import time
+
+        import aiosqlite
+
         from app.database import db
 
         conn = await aiosqlite.connect(":memory:")
@@ -401,8 +422,12 @@ class TestReadStateEndpoints:
         """)
 
         # Insert test data with NULL last_read_at
-        await conn.execute("INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact1", "Alice"))
-        await conn.execute("INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact2", "Bob"))
+        await conn.execute(
+            "INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact1", "Alice")
+        )
+        await conn.execute(
+            "INSERT INTO contacts (public_key, name) VALUES (?, ?)", ("contact2", "Bob")
+        )
         await conn.execute("INSERT INTO channels (key, name) VALUES (?, ?)", ("CHAN1", "#test1"))
         await conn.execute("INSERT INTO channels (key, name) VALUES (?, ?)", ("CHAN2", "#test2"))
         await conn.commit()
@@ -415,6 +440,7 @@ class TestReadStateEndpoints:
 
             # Call the endpoint
             from app.routers.read_state import mark_all_read
+
             result = await mark_all_read()
 
             assert result["status"] == "ok"
@@ -443,8 +469,9 @@ class TestRawPacketRepository:
     async def test_create_returns_id_for_new_packet(self):
         """First insert of packet data returns a valid ID."""
         import aiosqlite
-        from app.repository import RawPacketRepository
+
         from app.database import db
+        from app.repository import RawPacketRepository
 
         # Use in-memory database for testing
         conn = await aiosqlite.connect(":memory:")
@@ -482,8 +509,9 @@ class TestRawPacketRepository:
     async def test_different_packets_both_stored(self):
         """Different packet data both get stored with unique IDs."""
         import aiosqlite
-        from app.repository import RawPacketRepository
+
         from app.database import db
+        from app.repository import RawPacketRepository
 
         # Use in-memory database for testing
         conn = await aiosqlite.connect(":memory:")
@@ -524,10 +552,12 @@ class TestRawPacketRepository:
     @pytest.mark.asyncio
     async def test_prune_old_undecrypted_deletes_old_packets(self):
         """Prune deletes undecrypted packets older than specified days."""
-        import aiosqlite
         import time
-        from app.repository import RawPacketRepository
+
+        import aiosqlite
+
         from app.database import db
+        from app.repository import RawPacketRepository
 
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
@@ -551,17 +581,17 @@ class TestRawPacketRepository:
         # Insert old undecrypted packet
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
-            (old_timestamp, b"\x01\x02\x03")
+            (old_timestamp, b"\x01\x02\x03"),
         )
         # Insert recent undecrypted packet
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
-            (recent_timestamp, b"\x04\x05\x06")
+            (recent_timestamp, b"\x04\x05\x06"),
         )
         # Insert old but decrypted packet (should NOT be deleted)
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 1)",
-            (old_timestamp, b"\x07\x08\x09")
+            (old_timestamp, b"\x07\x08\x09"),
         )
         await conn.commit()
 
@@ -585,10 +615,12 @@ class TestRawPacketRepository:
     @pytest.mark.asyncio
     async def test_prune_old_undecrypted_returns_zero_when_nothing_to_delete(self):
         """Prune returns 0 when no packets match criteria."""
-        import aiosqlite
         import time
-        from app.repository import RawPacketRepository
+
+        import aiosqlite
+
         from app.database import db
+        from app.repository import RawPacketRepository
 
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
@@ -611,7 +643,7 @@ class TestRawPacketRepository:
         # Insert only recent packet
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
-            (recent_timestamp, b"\x01\x02\x03")
+            (recent_timestamp, b"\x01\x02\x03"),
         )
         await conn.commit()
 
@@ -633,11 +665,12 @@ class TestMaintenanceEndpoint:
     @pytest.mark.asyncio
     async def test_maintenance_prunes_and_vacuums(self):
         """Maintenance endpoint prunes old packets and runs vacuum."""
-        import aiosqlite
         import time
-        from app.repository import RawPacketRepository
+
+        import aiosqlite
+
         from app.database import db
-        from app.routers.packets import run_maintenance, MaintenanceRequest
+        from app.routers.packets import MaintenanceRequest, run_maintenance
 
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
@@ -660,11 +693,11 @@ class TestMaintenanceEndpoint:
         # Insert old undecrypted packets
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
-            (old_timestamp, b"\x01\x02\x03")
+            (old_timestamp, b"\x01\x02\x03"),
         )
         await conn.execute(
             "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
-            (old_timestamp, b"\x04\x05\x06")
+            (old_timestamp, b"\x04\x05\x06"),
         )
         await conn.commit()
 
@@ -687,16 +720,20 @@ class TestHealthEndpointDatabaseSize:
 
     def test_health_includes_database_size(self):
         """Health endpoint includes database_size_mb field."""
-        from fastapi.testclient import TestClient
         from unittest.mock import patch
 
-        with patch("app.routers.health.radio_manager") as mock_rm, \
-             patch("app.routers.health.os.path.getsize") as mock_getsize:
+        from fastapi.testclient import TestClient
+
+        with (
+            patch("app.routers.health.radio_manager") as mock_rm,
+            patch("app.routers.health.os.path.getsize") as mock_getsize,
+        ):
             mock_rm.is_connected = True
             mock_rm.port = "/dev/ttyUSB0"
             mock_getsize.return_value = 10 * 1024 * 1024  # 10 MB
 
             from app.main import app
+
             client = TestClient(app)
 
             response = client.get("/api/health")

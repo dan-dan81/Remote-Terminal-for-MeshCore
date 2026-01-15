@@ -52,8 +52,8 @@ function handleMessageEvent(
   let unreadIncremented = false;
 
   // Check if message is for active conversation
-  const isForActiveConversation = activeConversationKey !== null &&
-    msg.conversation_key === activeConversationKey;
+  const isForActiveConversation =
+    activeConversationKey !== null && msg.conversation_key === activeConversationKey;
 
   // Add to messages if for active conversation (with deduplication)
   if (isForActiveConversation) {
@@ -65,9 +65,10 @@ function handleMessageEvent(
   }
 
   // Update last message time
-  const stateKey = msg.type === 'CHAN'
-    ? getStateKey('channel', msg.conversation_key)
-    : getStateKey('contact', msg.conversation_key);
+  const stateKey =
+    msg.type === 'CHAN'
+      ? getStateKey('channel', msg.conversation_key)
+      : getStateKey('contact', msg.conversation_key);
 
   state.lastMessageTimes[stateKey] = msg.received_at;
 
@@ -88,7 +89,7 @@ function handleMessageEvent(
  * Simulate handling a contact WebSocket event.
  */
 function handleContactEvent(state: MockState, contact: Contact): void {
-  const idx = state.contacts.findIndex(c => c.public_key === contact.public_key);
+  const idx = state.contacts.findIndex((c) => c.public_key === contact.public_key);
   if (idx >= 0) {
     // Update existing contact
     state.contacts[idx] = { ...state.contacts[idx], ...contact };
@@ -101,19 +102,14 @@ function handleContactEvent(state: MockState, contact: Contact): void {
 /**
  * Simulate handling a message_acked WebSocket event.
  */
-function handleMessageAckedEvent(
-  state: MockState,
-  messageId: number,
-  ackCount: number
-): boolean {
-  const idx = state.messages.findIndex(m => m.id === messageId);
+function handleMessageAckedEvent(state: MockState, messageId: number, ackCount: number): boolean {
+  const idx = state.messages.findIndex((m) => m.id === messageId);
   if (idx >= 0) {
     state.messages[idx] = { ...state.messages[idx], acked: ackCount };
     return true;
   }
   return false;
 }
-
 
 describe('Integration: Channel Message Events', () => {
   const fixture = fixtures.channel_message;
@@ -170,7 +166,6 @@ describe('Integration: Channel Message Events', () => {
   });
 });
 
-
 describe('Integration: Duplicate Message Handling', () => {
   // Note: duplicate_channel_message fixture references the same packet data as channel_message
 
@@ -186,7 +181,7 @@ describe('Integration: Duplicate Message Handling', () => {
     const result2 = handleMessageEvent(state, msg2, msg2.conversation_key);
 
     expect(result1.added).toBe(true);
-    expect(result2.added).toBe(false);  // Deduplicated
+    expect(result2.added).toBe(false); // Deduplicated
     expect(state.messages).toHaveLength(1);
   });
 
@@ -201,13 +196,12 @@ describe('Integration: Duplicate Message Handling', () => {
     const result2 = handleMessageEvent(state, msg2, 'other_conversation');
 
     expect(result1.unreadIncremented).toBe(true);
-    expect(result2.unreadIncremented).toBe(false);  // Deduplicated
+    expect(result2.unreadIncremented).toBe(false); // Deduplicated
 
     const stateKey = getStateKey('channel', msg1.conversation_key);
-    expect(state.unreadCounts[stateKey]).toBe(1);  // Only incremented once
+    expect(state.unreadCounts[stateKey]).toBe(1); // Only incremented once
   });
 });
-
 
 describe('Integration: Contact/Advertisement Events', () => {
   const fixture = fixtures.advertisement_with_gps;
@@ -221,7 +215,7 @@ describe('Integration: Contact/Advertisement Events', () => {
     expect(state.contacts).toHaveLength(1);
     expect(state.contacts[0].public_key).toBe(contact.public_key);
     expect(state.contacts[0].name).toBe('Can O Mesh 2 🥫');
-    expect(state.contacts[0].type).toBe(2);  // Repeater
+    expect(state.contacts[0].type).toBe(2); // Repeater
     expect(state.contacts[0].lat).toBeCloseTo(49.02056, 4);
     expect(state.contacts[0].lon).toBeCloseTo(-123.82935, 4);
   });
@@ -243,8 +237,8 @@ describe('Integration: Contact/Advertisement Events', () => {
     handleContactEvent(state, contact);
 
     expect(state.contacts).toHaveLength(1);
-    expect(state.contacts[0].name).toBe('Can O Mesh 2 🥫');  // Updated
-    expect(state.contacts[0].type).toBe(2);  // Updated
+    expect(state.contacts[0].name).toBe('Can O Mesh 2 🥫'); // Updated
+    expect(state.contacts[0].type).toBe(2); // Updated
   });
 
   it('preserves contact GPS from chat node advertisement', () => {
@@ -256,10 +250,9 @@ describe('Integration: Contact/Advertisement Events', () => {
 
     expect(state.contacts[0].lat).toBeCloseTo(47.786038, 4);
     expect(state.contacts[0].lon).toBeCloseTo(-122.344096, 4);
-    expect(state.contacts[0].type).toBe(1);  // Chat node
+    expect(state.contacts[0].type).toBe(1); // Chat node
   });
 });
-
 
 describe('Integration: ACK Events', () => {
   const fixture = fixtures.message_acked;
@@ -324,7 +317,6 @@ describe('Integration: ACK Events', () => {
   });
 });
 
-
 describe('Integration: Message Content Key Contract', () => {
   it('generates consistent keys for deduplication', () => {
     const msg = fixtures.channel_message.expected_ws_event.data as unknown as Message;
@@ -347,7 +339,6 @@ describe('Integration: Message Content Key Contract', () => {
     expect(key).toContain(String(msg.sender_timestamp));
   });
 });
-
 
 describe('Integration: State Key Contract', () => {
   it('generates correct channel state key', () => {

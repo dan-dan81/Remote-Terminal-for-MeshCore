@@ -109,7 +109,7 @@ export interface RawPacket {
   timestamp: number;
   data: string; // hex
   payload_type: string;
-  snr: number | null;  // Signal-to-noise ratio in dB
+  snr: number | null; // Signal-to-noise ratio in dB
   rssi: number | null; // Received signal strength in dBm
   decrypted: boolean;
   decrypted_info: {

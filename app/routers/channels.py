@@ -18,7 +18,7 @@ class CreateChannelRequest(BaseModel):
     name: str = Field(min_length=1, max_length=32)
     key: str | None = Field(
         default=None,
-        description="Channel key as hex string (32 chars = 16 bytes). If omitted or name starts with #, key is derived from name hash."
+        description="Channel key as hex string (32 chars = 16 bytes). If omitted or name starts with #, key is derived from name hash.",
     )
 
 
@@ -54,11 +54,10 @@ async def create_channel(request: CreateChannelRequest) -> Channel:
             key_bytes = bytes.fromhex(request.key)
             if len(key_bytes) != 16:
                 raise HTTPException(
-                    status_code=400,
-                    detail="Channel key must be exactly 16 bytes (32 hex chars)"
+                    status_code=400, detail="Channel key must be exactly 16 bytes (32 hex chars)"
                 )
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid hex string for key")
+            raise HTTPException(status_code=400, detail="Invalid hex string for key") from None
     else:
         # Derive key from name hash (same as meshcore library does)
         key_bytes = sha256(request.name.encode("utf-8")).digest()[:16]
@@ -83,9 +82,7 @@ async def create_channel(request: CreateChannelRequest) -> Channel:
 
 
 @router.post("/sync")
-async def sync_channels_from_radio(
-    max_channels: int = Query(default=40, ge=1, le=40)
-) -> dict:
+async def sync_channels_from_radio(max_channels: int = Query(default=40, ge=1, le=40)) -> dict:
     """Sync channels from the radio to the database."""
     mc = require_connected()
 

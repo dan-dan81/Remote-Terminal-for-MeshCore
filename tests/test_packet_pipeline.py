@@ -9,13 +9,17 @@ between backend and frontend - both sides test against the same data.
 
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.database import Database
-from app.repository import ChannelRepository, MessageRepository, ContactRepository, RawPacketRepository
-
+from app.repository import (
+    ChannelRepository,
+    ContactRepository,
+    MessageRepository,
+    RawPacketRepository,
+)
 
 # Load shared fixtures
 FIXTURES_PATH = Path(__file__).parent / "fixtures" / "websocket_events.json"
@@ -62,7 +66,9 @@ class TestChannelMessagePipeline:
     """Test channel message flow: packet → decrypt → store → broadcast."""
 
     @pytest.mark.asyncio
-    async def test_channel_message_creates_message_and_broadcasts(self, test_db, captured_broadcasts):
+    async def test_channel_message_creates_message_and_broadcasts(
+        self, test_db, captured_broadcasts
+    ):
         """A decryptable channel packet creates a message and broadcasts it."""
         from app.packet_processor import process_raw_packet
 
@@ -71,9 +77,7 @@ class TestChannelMessagePipeline:
 
         # Create the channel in DB first using upsert
         await ChannelRepository.upsert(
-            key=fixture["channel_key_hex"].upper(),
-            name=fixture["channel_name"],
-            is_hashtag=True
+            key=fixture["channel_key_hex"].upper(), name=fixture["channel_name"], is_hashtag=True
         )
 
         broadcasts, mock_broadcast = captured_broadcasts
@@ -87,9 +91,7 @@ class TestChannelMessagePipeline:
 
         # Verify message was stored in database
         messages = await MessageRepository.get_all(
-            msg_type="CHAN",
-            conversation_key=fixture["channel_key_hex"].upper(),
-            limit=10
+            msg_type="CHAN", conversation_key=fixture["channel_key_hex"].upper(), limit=10
         )
         assert len(messages) == 1
         msg = messages[0]
@@ -105,7 +107,9 @@ class TestChannelMessagePipeline:
         assert broadcast["data"]["type"] == expected["type"]
         assert broadcast["data"]["conversation_key"] == expected["conversation_key"]
         assert broadcast["data"]["outgoing"] == expected["outgoing"]
-        assert expected["text"][:30] in broadcast["data"]["text"]  # Check text contains expected content
+        assert (
+            expected["text"][:30] in broadcast["data"]["text"]
+        )  # Check text contains expected content
 
     @pytest.mark.asyncio
     async def test_duplicate_packet_not_broadcast_twice(self, test_db, captured_broadcasts):
@@ -118,9 +122,7 @@ class TestChannelMessagePipeline:
 
         # Create the channel in DB first
         await ChannelRepository.upsert(
-            key=channel_key_hex,
-            name=fixture["channel_name"],
-            is_hashtag=True
+            key=channel_key_hex, name=fixture["channel_name"], is_hashtag=True
         )
 
         broadcasts, mock_broadcast = captured_broadcasts
@@ -139,9 +141,7 @@ class TestChannelMessagePipeline:
 
         # Only ONE message should exist in database
         messages = await MessageRepository.get_all(
-            msg_type="CHAN",
-            conversation_key=channel_key_hex,
-            limit=10
+            msg_type="CHAN", conversation_key=channel_key_hex, limit=10
         )
         assert len(messages) == 1
 
@@ -191,7 +191,7 @@ class TestAdvertisementPipeline:
 
         with patch("app.packet_processor.broadcast_event", mock_broadcast):
             # Process the advertisement packet through the normal pipeline
-            result = await process_raw_packet(packet_bytes, timestamp=1700000000)
+            await process_raw_packet(packet_bytes, timestamp=1700000000)
 
         # Verify contact was created in database
         expected = fixture["expected_ws_event"]["data"]
@@ -229,13 +229,15 @@ class TestAdvertisementPipeline:
         expected = fixture["expected_ws_event"]["data"]
 
         # Create existing contact with different/missing data
-        await ContactRepository.upsert({
-            "public_key": expected["public_key"],
-            "name": "OldName",
-            "type": 0,
-            "lat": None,
-            "lon": None
-        })
+        await ContactRepository.upsert(
+            {
+                "public_key": expected["public_key"],
+                "name": "OldName",
+                "type": 0,
+                "lat": None,
+                "lon": None,
+            }
+        )
 
         broadcasts, mock_broadcast = captured_broadcasts
 
@@ -255,26 +257,30 @@ class TestAdvertisementPipeline:
         assert contact.last_path in (None, "")
 
     @pytest.mark.asyncio
-    async def test_advertisement_keeps_shorter_path_within_window(self, test_db, captured_broadcasts):
+    async def test_advertisement_keeps_shorter_path_within_window(
+        self, test_db, captured_broadcasts
+    ):
         """When receiving echoed advertisements, keep the shortest path within 60s window."""
         from app.packet_processor import _process_advertisement
-        from app.decoder import parse_packet
 
         # Create a contact with a longer path (path_len=3)
         test_pubkey = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        await ContactRepository.upsert({
-            "public_key": test_pubkey,
-            "name": "TestNode",
-            "type": 1,
-            "last_seen": 1000,
-            "last_path_len": 3,
-            "last_path": "aabbcc",  # 3 bytes = 3 hops
-        })
+        await ContactRepository.upsert(
+            {
+                "public_key": test_pubkey,
+                "name": "TestNode",
+                "type": 1,
+                "last_seen": 1000,
+                "last_path_len": 3,
+                "last_path": "aabbcc",  # 3 bytes = 3 hops
+            }
+        )
 
         # Simulate receiving a shorter path (path_len=1) within 60s
         # We'll call _process_advertisement directly with mock packet_info
         from unittest.mock import MagicMock
-        from app.decoder import PacketInfo, RouteType, PayloadType, ParsedAdvertisement
+
+        from app.decoder import ParsedAdvertisement
 
         broadcasts, mock_broadcast = captured_broadcasts
 
@@ -341,7 +347,7 @@ class TestAckPipeline:
             conversation_key="abc123def456789012345678901234567890123456789012345678901234",
             sender_timestamp=1700000000,
             received_at=1700000000,
-            outgoing=True
+            outgoing=True,
         )
 
         # Track pending ACK
@@ -363,7 +369,7 @@ class TestAckPipeline:
         messages = await MessageRepository.get_all(
             msg_type="PRIV",
             conversation_key="abc123def456789012345678901234567890123456789012345678901234",
-            limit=10
+            limit=10,
         )
         assert len(messages) == 1
         assert messages[0].acked == 1
@@ -372,7 +378,6 @@ class TestAckPipeline:
         ack_broadcasts = [b for b in broadcasts if b["type"] == "message_acked"]
         assert len(ack_broadcasts) == 1
 
-        expected = FIXTURES["message_acked"]["expected_ws_event"]["data"]
         broadcast = ack_broadcasts[0]
         assert "message_id" in broadcast["data"]
         assert "ack_count" in broadcast["data"]
@@ -408,9 +413,7 @@ class TestCreateMessageFromDecrypted:
 
         # Verify message was stored in database
         messages = await MessageRepository.get_all(
-            msg_type="CHAN",
-            conversation_key="ABC123DEF456",
-            limit=10
+            msg_type="CHAN", conversation_key="ABC123DEF456", limit=10
         )
         assert len(messages) == 1
         assert messages[0].text == "TestSender: Hello world"
@@ -454,9 +457,7 @@ class TestCreateMessageFromDecrypted:
 
         # Verify text is stored without sender prefix
         messages = await MessageRepository.get_all(
-            msg_type="CHAN",
-            conversation_key="ABC123DEF456",
-            limit=10
+            msg_type="CHAN", conversation_key="ABC123DEF456", limit=10
         )
         assert len(messages) == 1
         assert messages[0].text == "System message"  # No "None: " prefix
@@ -509,7 +510,7 @@ class TestCreateMessageFromDecrypted:
         broadcasts, mock_broadcast = captured_broadcasts
 
         with patch("app.packet_processor.broadcast_event", mock_broadcast):
-            msg_id = await create_message_from_decrypted(
+            await create_message_from_decrypted(
                 packet_id=packet_id,
                 channel_key="ABC123DEF456",
                 sender="Sender",
@@ -537,9 +538,7 @@ class TestMessageBroadcastStructure:
         channel_key_hex = fixture["channel_key_hex"].upper()
 
         await ChannelRepository.upsert(
-            key=channel_key_hex,
-            name=fixture["channel_name"],
-            is_hashtag=True
+            key=channel_key_hex, name=fixture["channel_name"], is_hashtag=True
         )
 
         broadcasts, mock_broadcast = captured_broadcasts
@@ -570,15 +569,13 @@ class TestRawPacketStorage:
 
         # Create channel so packet can be decrypted
         await ChannelRepository.upsert(
-            key=channel_key_hex,
-            name=fixture["channel_name"],
-            is_hashtag=True
+            key=channel_key_hex, name=fixture["channel_name"], is_hashtag=True
         )
 
         broadcasts, mock_broadcast = captured_broadcasts
 
         with patch("app.packet_processor.broadcast_event", mock_broadcast):
-            result = await process_raw_packet(packet_bytes, timestamp=1700000000)
+            await process_raw_packet(packet_bytes, timestamp=1700000000)
 
         # Verify raw_packet broadcast was sent
         raw_broadcasts = [b for b in broadcasts if b["type"] == "raw_packet"]

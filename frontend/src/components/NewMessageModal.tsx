@@ -1,13 +1,7 @@
 import { useState, useRef } from 'react';
 import type { Contact, Conversation } from '../types';
 import { getContactDisplayName } from '../utils/pubkey';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -135,9 +129,7 @@ export function NewMessageModal({
           <TabsContent value="existing" className="mt-4">
             <div className="max-h-[300px] overflow-y-auto rounded-md border">
               {contacts.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground">
-                  No contacts available
-                </div>
+                <div className="p-4 text-center text-muted-foreground">No contacts available</div>
               ) : (
                 contacts.map((contact) => (
                   <div
@@ -226,7 +218,8 @@ export function NewMessageModal({
                 htmlFor="try-historical"
                 className="text-sm text-muted-foreground cursor-pointer"
               >
-                Try decrypting {undecryptedCount.toLocaleString()} stored packet{undecryptedCount !== 1 ? 's' : ''}
+                Try decrypting {undecryptedCount.toLocaleString()} stored packet
+                {undecryptedCount !== 1 ? 's' : ''}
               </Label>
               <Checkbox
                 id="try-historical"
@@ -242,9 +235,7 @@ export function NewMessageModal({
           </div>
         )}
 
-        {error && (
-          <div className="text-sm text-destructive">{error}</div>
-        )}
+        {error && <div className="text-sm text-destructive">{error}</div>}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

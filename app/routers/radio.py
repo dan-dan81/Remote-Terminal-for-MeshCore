@@ -114,13 +114,15 @@ async def set_private_key(update: PrivateKeyUpdate) -> dict:
     try:
         key_bytes = bytes.fromhex(update.private_key)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid hex string for private key")
+        raise HTTPException(status_code=400, detail="Invalid hex string for private key") from None
 
     logger.info("Importing private key")
     result = await mc.commands.import_private_key(key_bytes)
 
     if result.type == EventType.ERROR:
-        raise HTTPException(status_code=500, detail=f"Failed to import private key: {result.payload}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to import private key: {result.payload}"
+        )
 
     return {"status": "ok"}
 
@@ -134,7 +136,9 @@ async def send_advertisement(flood: bool = True) -> dict:
     result = await mc.commands.send_advert(flood=flood)
 
     if result.type == EventType.ERROR:
-        raise HTTPException(status_code=500, detail=f"Failed to send advertisement: {result.payload}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to send advertisement: {result.payload}"
+        )
 
     return {"status": "ok", "flood": flood}
 
@@ -164,7 +168,11 @@ async def reconnect_radio() -> dict:
         return {"status": "ok", "message": "Already connected", "connected": True}
 
     if radio_manager.is_reconnecting:
-        return {"status": "pending", "message": "Reconnection already in progress", "connected": False}
+        return {
+            "status": "pending",
+            "message": "Reconnection already in progress",
+            "connected": False,
+        }
 
     logger.info("Manual reconnect requested")
     success = await radio_manager.reconnect()
@@ -172,6 +180,7 @@ async def reconnect_radio() -> dict:
     if success:
         # Re-register event handlers after successful reconnect
         from app.event_handlers import register_event_handlers
+
         if radio_manager.meshcore:
             register_event_handlers(radio_manager.meshcore)
             # Restart auto message fetching
@@ -181,6 +190,5 @@ async def reconnect_radio() -> dict:
         return {"status": "ok", "message": "Reconnected successfully", "connected": True}
     else:
         raise HTTPException(
-            status_code=503,
-            detail="Failed to reconnect. Check radio connection and power."
+            status_code=503, detail="Failed to reconnect. Check radio connection and power."
         )
