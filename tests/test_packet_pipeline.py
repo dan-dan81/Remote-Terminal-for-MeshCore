@@ -204,6 +204,10 @@ class TestAdvertisementPipeline:
         assert contact.lon is not None
         assert abs(contact.lat - expected["lat"]) < 0.001
         assert abs(contact.lon - expected["lon"]) < 0.001
+        # This advertisement has path_len=6 (6 hops through repeaters)
+        assert contact.last_path_len == 6
+        assert contact.last_path is not None
+        assert len(contact.last_path) == 12  # 6 bytes = 12 hex chars
 
         # Verify WebSocket broadcast
         contact_broadcasts = [b for b in broadcasts if b["type"] == "contact"]
@@ -213,6 +217,7 @@ class TestAdvertisementPipeline:
         assert broadcast["data"]["public_key"] == expected["public_key"]
         assert broadcast["data"]["name"] == expected["name"]
         assert broadcast["data"]["type"] == expected["type"]
+        assert broadcast["data"]["last_path_len"] == 6
 
     @pytest.mark.asyncio
     async def test_advertisement_updates_existing_contact(self, test_db, captured_broadcasts):
@@ -244,6 +249,10 @@ class TestAdvertisementPipeline:
         assert contact.type == expected["type"]  # Type updated
         assert contact.lat is not None  # GPS added
         assert contact.lon is not None
+        # This advertisement has path_len=0 (direct neighbor)
+        assert contact.last_path_len == 0
+        # Empty path stored as None or ""
+        assert contact.last_path in (None, "")
 
 
 class TestAckPipeline:

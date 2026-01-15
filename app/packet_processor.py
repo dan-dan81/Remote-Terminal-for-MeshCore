@@ -19,8 +19,8 @@ import time
 from app.decoder import (
     PayloadType,
     parse_packet,
+    parse_advertisement,
     try_decrypt_packet_with_channel_key,
-    try_parse_advertisement,
 )
 from app.models import CONTACT_TYPE_REPEATER, RawPacketBroadcast, RawPacketDecryptedInfo
 from app.repository import ChannelRepository, ContactRepository, MessageRepository, RawPacketRepository
@@ -176,7 +176,7 @@ async def process_raw_packet(
             result.update(decrypt_result)
 
     elif payload_type == PayloadType.ADVERT:
-        await _process_advertisement(raw_bytes, ts)
+        await _process_advertisement(raw_bytes, ts, packet_info)
 
     # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
     # elif payload_type == PayloadType.TEXT_MESSAGE:
@@ -288,6 +288,7 @@ async def _process_group_text(
 async def _process_advertisement(
     raw_bytes: bytes,
     timestamp: int,
+    packet_info=None,
 ) -> None:
     """
     Process an advertisement packet.
@@ -295,14 +296,25 @@ async def _process_advertisement(
     Extracts contact info and updates the database/broadcasts to clients.
     For non-repeater contacts, triggers sync of recent contacts to radio for DM ACK support.
     """
-    advert = try_parse_advertisement(raw_bytes)
-    if not advert:
+    # Parse packet to get path info if not already provided
+    if packet_info is None:
+        packet_info = parse_packet(raw_bytes)
+    if packet_info is None:
         logger.debug("Failed to parse advertisement packet")
         return
 
+    advert = parse_advertisement(packet_info.payload)
+    if not advert:
+        logger.debug("Failed to parse advertisement payload")
+        return
+
+    # Extract path info from packet
+    path_len = packet_info.path_length
+    path_hex = packet_info.path.hex() if packet_info.path else ""
+
     logger.debug(
-        "Parsed advertisement from %s: %s (role=%d, lat=%s, lon=%s)",
-        advert.public_key[:12], advert.name, advert.device_role, advert.lat, advert.lon
+        "Parsed advertisement from %s: %s (role=%d, lat=%s, lon=%s, path_len=%d)",
+        advert.public_key[:12], advert.name, advert.device_role, advert.lat, advert.lon, path_len
     )
 
     # Try to find existing contact
@@ -320,6 +332,8 @@ async def _process_advertisement(
         "lon": advert.lon,
         "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
         "last_seen": timestamp,
+        "last_path": path_hex,
+        "last_path_len": path_len,
     }
 
     await ContactRepository.upsert(contact_data)
@@ -330,8 +344,8 @@ async def _process_advertisement(
         "name": advert.name,
         "type": contact_type,
         "flags": existing.flags if existing else 0,
-        "last_path": existing.last_path if existing else None,
-        "last_path_len": existing.last_path_len if existing else -1,
+        "last_path": path_hex,
+        "last_path_len": path_len,
         "last_advert": advert.timestamp if advert.timestamp > 0 else timestamp,
         "lat": advert.lat,
         "lon": advert.lon,

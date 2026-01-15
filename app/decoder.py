@@ -68,6 +68,7 @@ class PacketInfo:
     payload_type: PayloadType
     payload_version: int
     path_length: int
+    path: bytes  # The routing path (empty if path_length is 0)
     payload: bytes
 
 
@@ -149,9 +150,10 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
         path_length = raw_packet[offset]
         offset += 1
 
-        # Skip path data
+        # Extract path data
         if len(raw_packet) < offset + path_length:
             return None
+        path = raw_packet[offset:offset + path_length]
         offset += path_length
 
         # Rest is payload
@@ -162,6 +164,7 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
             payload_type=payload_type,
             payload_version=payload_version,
             path_length=path_length,
+            path=path,
             payload=payload,
         )
     except (ValueError, IndexError):
