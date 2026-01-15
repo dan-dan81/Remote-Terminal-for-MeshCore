@@ -4,6 +4,7 @@ import { getStateKey, type ConversationTimes } from '../utils/conversationState'
 import { getPubkeyPrefix, getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
+import { UNREAD_FETCH_LIMIT } from '../api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,11 @@ interface SidebarProps {
   crackerRunning: boolean;
   onToggleCracker: () => void;
   onMarkAllRead: () => void;
+}
+
+/** Format unread count, showing "X+" if at the fetch limit (indicating there may be more) */
+function formatUnreadCount(count: number): string {
+  return count >= UNREAD_FETCH_LIMIT ? `${count}+` : `${count}`;
 }
 
 // Load sort preference from localStorage (default to 'recent')
@@ -333,7 +339,7 @@ export function Sidebar({
                           : 'bg-primary text-primary-foreground'
                       )}
                     >
-                      {unreadCount}
+                      {formatUnreadCount(unreadCount)}
                     </span>
                   )}
                 </div>
@@ -394,7 +400,7 @@ export function Sidebar({
                           : 'bg-primary text-primary-foreground'
                       )}
                     >
-                      {unreadCount}
+                      {formatUnreadCount(unreadCount)}
                     </span>
                   )}
                 </div>

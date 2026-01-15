@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { api } from '../api';
+import { api, UNREAD_FETCH_LIMIT } from '../api';
 import {
   getLastMessageTimes,
   setLastMessageTime,
@@ -71,7 +71,7 @@ export function useUnreadCounts(
       if (conversations.length === 0) return;
 
       try {
-        const bulkMessages = await api.getMessagesBulk(conversations, 100);
+        const bulkMessages = await api.getMessagesBulk(conversations, UNREAD_FETCH_LIMIT);
         const newUnreadCounts: Record<string, number> = {};
         const newMentions: Record<string, boolean> = {};
         const newLastMessageTimes: Record<string, number> = {};

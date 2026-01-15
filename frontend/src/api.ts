@@ -15,6 +15,9 @@ import type {
 
 const API_BASE = '/api';
 
+/** Max messages fetched per conversation for unread counting. If count equals this, there may be more. */
+export const UNREAD_FETCH_LIMIT = 100;
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
     ...options,
@@ -130,7 +133,7 @@ export const api = {
   },
   getMessagesBulk: (
     conversations: Array<{ type: 'PRIV' | 'CHAN'; conversation_key: string }>,
-    limitPerConversation: number = 100
+    limitPerConversation: number = UNREAD_FETCH_LIMIT
   ) =>
     fetchJson<Record<string, Message[]>>(
       `/messages/bulk?limit_per_conversation=${limitPerConversation}`,
