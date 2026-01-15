@@ -18,6 +18,7 @@ from app.radio_sync import (
     stop_message_polling,
     stop_periodic_sync,
     sync_and_offload_all,
+    sync_radio_time,
 )
 from app.routers import channels, contacts, health, messages, packets, radio, read_state, settings, ws
 
@@ -36,6 +37,9 @@ async def lifespan(app: FastAPI):
         logger.info("Connected to radio")
         if radio_manager.meshcore:
             register_event_handlers(radio_manager.meshcore)
+
+            # Sync radio clock with system time
+            await sync_radio_time()
 
             # Sync contacts/channels from radio to DB and clear radio
             logger.info("Syncing and offloading radio data...")

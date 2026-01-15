@@ -332,6 +332,26 @@ async def stop_message_polling():
         logger.info("Stopped periodic message polling")
 
 
+async def sync_radio_time() -> bool:
+    """Sync the radio's clock with the system time.
+
+    Returns True if successful, False otherwise.
+    """
+    mc = radio_manager.meshcore
+    if not mc:
+        logger.debug("Cannot sync time: radio not connected")
+        return False
+
+    try:
+        now = int(time.time())
+        await mc.commands.set_time(now)
+        logger.debug("Synced radio time to %d", now)
+        return True
+    except Exception as e:
+        logger.warning("Failed to sync radio time: %s", e)
+        return False
+
+
 async def _periodic_sync_loop():
     """Background task that periodically syncs and offloads."""
     while True:
@@ -339,6 +359,7 @@ async def _periodic_sync_loop():
             await asyncio.sleep(SYNC_INTERVAL)
             logger.debug("Running periodic radio sync")
             await sync_and_offload_all()
+            await sync_radio_time()
         except asyncio.CancelledError:
             logger.info("Periodic sync task cancelled")
             break

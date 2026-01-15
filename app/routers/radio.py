@@ -1,11 +1,11 @@
 import logging
-import time
 
 from fastapi import APIRouter, HTTPException
 from meshcore import EventType
 from pydantic import BaseModel, Field
 
 from app.dependencies import require_connected
+from app.radio_sync import sync_radio_time
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/radio", tags=["radio"])
@@ -101,9 +101,7 @@ async def update_radio_config(update: RadioConfigUpdate) -> RadioConfigResponse:
         )
 
     # Sync time with system clock
-    now = int(time.time())
-    logger.debug("Syncing radio time to %d", now)
-    await mc.commands.set_time(now)
+    await sync_radio_time()
 
     return await get_radio_config()
 

@@ -5,11 +5,13 @@ message polling from interfering with repeater CLI operations.
 """
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.radio_sync import (
     _polling_pause_count,
     is_polling_paused,
     pause_polling,
+    sync_radio_time,
 )
 
 
@@ -113,3 +115,44 @@ class TestPollingPause:
             assert radio_sync._polling_pause_count == 1
 
         assert radio_sync._polling_pause_count == 0
+
+
+class TestSyncRadioTime:
+    """Test the radio time sync function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_not_connected(self):
+        """sync_radio_time returns False when radio is not connected."""
+        with patch("app.radio_sync.radio_manager") as mock_manager:
+            mock_manager.meshcore = None
+            result = await sync_radio_time()
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_success(self):
+        """sync_radio_time returns True when time is set successfully."""
+        mock_mc = MagicMock()
+        mock_mc.commands.set_time = AsyncMock()
+
+        with patch("app.radio_sync.radio_manager") as mock_manager:
+            mock_manager.meshcore = mock_mc
+            result = await sync_radio_time()
+
+            assert result is True
+            mock_mc.commands.set_time.assert_called_once()
+            # Verify timestamp is reasonable (within last few seconds)
+            call_args = mock_mc.commands.set_time.call_args[0][0]
+            import time
+            assert abs(call_args - int(time.time())) < 5
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_exception(self):
+        """sync_radio_time returns False and doesn't raise on error."""
+        mock_mc = MagicMock()
+        mock_mc.commands.set_time = AsyncMock(side_effect=Exception("Radio error"))
+
+        with patch("app.radio_sync.radio_manager") as mock_manager:
+            mock_manager.meshcore = mock_mc
+            result = await sync_radio_time()
+
+            assert result is False
