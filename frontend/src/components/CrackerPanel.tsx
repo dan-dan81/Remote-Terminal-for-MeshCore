@@ -308,6 +308,7 @@ export function CrackerPanel({
         nextItem.packet.data,
         {
           maxLength: targetLength,
+          useSenderFilter: true,
           useTimestampFilter: true,
           useUtf8Filter: true,
           ...(turboModeRef.current && { gpuDispatchMs: 10000 }),
