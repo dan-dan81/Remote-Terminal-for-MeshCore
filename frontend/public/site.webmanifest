@@ -1,7 +1,6 @@
 {
-  "name": "remoteterm-meshcore",
-  "short_name": "remoteterm-meshcore",
-  "description": "Web interface for serial MeshCore radios",
+  "name": "Remote Terminal for MeshCore",
+  "short_name": "RemoteTerm",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
@@ -16,9 +15,7 @@
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#0a0a0a",
-  "background_color": "#0a0a0a",
-  "display": "standalone",
-  "start_url": "/",
-  "scope": "/"
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "display": "standalone"
 }
