@@ -23,6 +23,7 @@ import { getStateKey } from './utils/conversationState';
 import { formatTime } from './utils/messageParser';
 import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
 import { parseHashConversation, updateUrlHash } from './utils/urlHash';
+import { loadFavorites, toggleFavorite, isFavorite, type Favorite } from './utils/favorites';
 import { cn } from '@/lib/utils';
 import type {
   AppSettings,
@@ -59,6 +60,7 @@ export function App() {
   const [undecryptedCount, setUndecryptedCount] = useState(0);
   const [showCracker, setShowCracker] = useState(false);
   const [crackerRunning, setCrackerRunning] = useState(false);
+  const [favorites, setFavorites] = useState<Favorite[]>(loadFavorites);
 
   // Track previous health status to detect changes
   const prevHealthRef = useRef<HealthStatus | null>(null);
@@ -415,6 +417,11 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  // Toggle favorite status for a conversation
+  const handleToggleFavorite = useCallback((type: 'channel' | 'contact', id: string) => {
+    setFavorites(toggleFavorite(type, id));
+  }, []);
+
   // Delete channel handler
   const handleDeleteChannel = useCallback(async (key: string) => {
     if (!confirm('Delete this channel? Message history will be preserved.')) return;
@@ -548,6 +555,7 @@ export function App() {
       crackerRunning={crackerRunning}
       onToggleCracker={() => setShowCracker((prev) => !prev)}
       onMarkAllRead={markAllRead}
+      favorites={favorites}
     />
   );
 
@@ -580,7 +588,7 @@ export function App() {
           {activeConversation ? (
             activeConversation.type === 'map' ? (
               <>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
                   Node Map
                 </div>
                 <div className="flex-1 overflow-hidden">
@@ -589,7 +597,7 @@ export function App() {
               </>
             ) : activeConversation.type === 'raw' ? (
               <>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium">
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
                   Raw Packet Feed
                 </div>
                 <div className="flex-1 overflow-hidden">
@@ -598,16 +606,16 @@ export function App() {
               </>
             ) : (
               <>
-                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium gap-2">
-                  <span className="flex flex-col sm:flex-row sm:items-center sm:gap-2 min-w-0 flex-1">
-                    <span className="truncate">
+                <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg gap-2">
+                  <span className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
+                    <span className="flex-shrink-0">
                       {activeConversation.type === 'channel' &&
                       !activeConversation.name.startsWith('#')
                         ? '#'
                         : ''}
                       {activeConversation.name}
                     </span>
-                    <span className="font-normal text-xs text-muted-foreground font-mono truncate">
+                    <span className="font-normal text-sm text-muted-foreground font-mono truncate">
                       {activeConversation.id}
                       {activeConversation.type === 'contact' &&
                         (() => {
@@ -634,22 +642,58 @@ export function App() {
                         })()}
                     </span>
                   </span>
-                  {!(
-                    activeConversation.type === 'channel' && activeConversation.name === 'Public'
-                  ) && (
-                    <button
-                      className="py-1 px-3 bg-destructive/20 border border-destructive/30 text-destructive rounded text-xs cursor-pointer hover:bg-destructive/30 flex-shrink-0"
-                      onClick={() => {
-                        if (activeConversation.type === 'channel') {
-                          handleDeleteChannel(activeConversation.id);
-                        } else {
-                          handleDeleteContact(activeConversation.id);
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Favorite button */}
+                    {(activeConversation.type === 'channel' ||
+                      activeConversation.type === 'contact') && (
+                      <button
+                        className="p-1.5 rounded hover:bg-accent text-xl leading-none"
+                        onClick={() =>
+                          handleToggleFavorite(
+                            activeConversation.type as 'channel' | 'contact',
+                            activeConversation.id
+                          )
                         }
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
+                        title={
+                          isFavorite(
+                            favorites,
+                            activeConversation.type as 'channel' | 'contact',
+                            activeConversation.id
+                          )
+                            ? 'Remove from favorites'
+                            : 'Add to favorites'
+                        }
+                      >
+                        {isFavorite(
+                          favorites,
+                          activeConversation.type as 'channel' | 'contact',
+                          activeConversation.id
+                        ) ? (
+                          <span className="text-yellow-500">&#9733;</span>
+                        ) : (
+                          <span className="text-muted-foreground">&#9734;</span>
+                        )}
+                      </button>
+                    )}
+                    {/* Delete button */}
+                    {!(
+                      activeConversation.type === 'channel' && activeConversation.name === 'Public'
+                    ) && (
+                      <button
+                        className="p-1.5 rounded hover:bg-destructive/20 text-destructive text-xl leading-none"
+                        onClick={() => {
+                          if (activeConversation.type === 'channel') {
+                            handleDeleteChannel(activeConversation.id);
+                          } else {
+                            handleDeleteContact(activeConversation.id);
+                          }
+                        }}
+                        title="Delete"
+                      >
+                        &#128465;
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <MessageList
                   messages={messages}

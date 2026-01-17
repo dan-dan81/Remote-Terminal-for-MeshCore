@@ -4,6 +4,7 @@ import { getStateKey, type ConversationTimes } from '../utils/conversationState'
 import { getPubkeyPrefix, getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
+import { isFavorite, type Favorite } from '../utils/favorites';
 import { UNREAD_FETCH_LIMIT } from '../api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -25,6 +26,7 @@ interface SidebarProps {
   crackerRunning: boolean;
   onToggleCracker: () => void;
   onMarkAllRead: () => void;
+  favorites: Favorite[];
 }
 
 /** Format unread count, showing "X+" if at the fetch limit (indicating there may be more) */
@@ -64,6 +66,7 @@ export function Sidebar({
   crackerRunning,
   onToggleCracker,
   onMarkAllRead,
+  favorites,
 }: SidebarProps) {
   const [sortOrder, setSortOrder] = useState<SortOrder>(loadSortOrder);
   const [searchQuery, setSearchQuery] = useState('');
@@ -183,6 +186,43 @@ export function Sidebar({
       )
     : sortedContacts;
 
+  // Separate favorites from regular items
+  const favoriteChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
+  const favoriteContacts = filteredContacts.filter((c) =>
+    isFavorite(favorites, 'contact', c.public_key)
+  );
+  const nonFavoriteChannels = filteredChannels.filter(
+    (c) => !isFavorite(favorites, 'channel', c.key)
+  );
+  const nonFavoriteContacts = filteredContacts.filter(
+    (c) => !isFavorite(favorites, 'contact', c.public_key)
+  );
+
+  // Combine and sort favorites by most recent message (always recent order)
+  type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
+
+  const favoriteItems: FavoriteItem[] = [
+    ...favoriteChannels.map((channel) => ({ type: 'channel' as const, channel })),
+    ...favoriteContacts.map((contact) => ({ type: 'contact' as const, contact })),
+  ].sort((a, b) => {
+    const timeA =
+      a.type === 'channel'
+        ? getLastMessageTime('channel', a.channel.key)
+        : getLastMessageTime('contact', a.contact.public_key);
+    const timeB =
+      b.type === 'channel'
+        ? getLastMessageTime('channel', b.channel.key)
+        : getLastMessageTime('contact', b.contact.public_key);
+    // Sort by most recent first
+    if (timeA && timeB) return timeB - timeA;
+    if (timeA && !timeB) return -1;
+    if (!timeA && timeB) return 1;
+    // Fall back to name comparison
+    const nameA = a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
+    const nameB = b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
+    return nameA.localeCompare(nameB);
+  });
+
   return (
     <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">
       {/* Header */}
@@ -296,8 +336,99 @@ export function Sidebar({
           </div>
         )}
 
+        {/* Favorites */}
+        {favoriteItems.length > 0 && (
+          <>
+            <div className="flex justify-between items-center px-3 py-2 pt-3">
+              <span className="text-[11px] uppercase text-muted-foreground">Favorites</span>
+            </div>
+            {favoriteItems.map((item) => {
+              if (item.type === 'channel') {
+                const channel = item.channel;
+                const unreadCount = getUnreadCount('channel', channel.key);
+                const isMention = hasMention('channel', channel.key);
+                return (
+                  <div
+                    key={`fav-chan-${channel.key}`}
+                    className={cn(
+                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+                      isActive('channel', channel.key) && 'bg-accent border-l-primary',
+                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
+                    )}
+                    onClick={() =>
+                      handleSelectConversation({
+                        type: 'channel',
+                        id: channel.key,
+                        name: channel.name,
+                      })
+                    }
+                  >
+                    <span className="text-muted-foreground text-xs">#</span>
+                    <span className="name flex-1 truncate">{channel.name}</span>
+                    {unreadCount > 0 && (
+                      <span
+                        className={cn(
+                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                          isMention
+                            ? 'bg-destructive text-destructive-foreground'
+                            : 'bg-primary text-primary-foreground'
+                        )}
+                      >
+                        {formatUnreadCount(unreadCount)}
+                      </span>
+                    )}
+                  </div>
+                );
+              } else {
+                const contact = item.contact;
+                const unreadCount = getUnreadCount('contact', contact.public_key);
+                const isMention = hasMention('contact', contact.public_key);
+                return (
+                  <div
+                    key={`fav-contact-${contact.public_key}`}
+                    className={cn(
+                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+                      isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
+                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
+                    )}
+                    onClick={() =>
+                      handleSelectConversation({
+                        type: 'contact',
+                        id: contact.public_key,
+                        name: getContactDisplayName(contact.name, contact.public_key),
+                      })
+                    }
+                  >
+                    <ContactAvatar
+                      name={contact.name}
+                      publicKey={contact.public_key}
+                      size={24}
+                      contactType={contact.type}
+                    />
+                    <span className="name flex-1 truncate">
+                      {getContactDisplayName(contact.name, contact.public_key)}
+                    </span>
+                    {unreadCount > 0 && (
+                      <span
+                        className={cn(
+                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                          isMention
+                            ? 'bg-destructive text-destructive-foreground'
+                            : 'bg-primary text-primary-foreground'
+                        )}
+                      >
+                        {formatUnreadCount(unreadCount)}
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+            })}
+          </>
+        )}
+
         {/* Channels */}
-        {filteredChannels.length > 0 && (
+        {nonFavoriteChannels.length > 0 && (
           <>
             <div className="flex justify-between items-center px-3 py-2 pt-3">
               <span className="text-[11px] uppercase text-muted-foreground">Channels</span>
@@ -309,7 +440,7 @@ export function Sidebar({
                 {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
               </button>
             </div>
-            {filteredChannels.map((channel) => {
+            {nonFavoriteChannels.map((channel) => {
               const unreadCount = getUnreadCount('channel', channel.key);
               const isMention = hasMention('channel', channel.key);
               return (
@@ -349,11 +480,11 @@ export function Sidebar({
         )}
 
         {/* Contacts */}
-        {filteredContacts.length > 0 && (
+        {nonFavoriteContacts.length > 0 && (
           <>
             <div className="flex justify-between items-center px-3 py-2 pt-3">
               <span className="text-[11px] uppercase text-muted-foreground">Contacts</span>
-              {filteredChannels.length === 0 && (
+              {nonFavoriteChannels.length === 0 && (
                 <button
                   className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
                   onClick={handleSortToggle}
@@ -363,7 +494,7 @@ export function Sidebar({
                 </button>
               )}
             </div>
-            {filteredContacts.map((contact) => {
+            {nonFavoriteContacts.map((contact) => {
               const unreadCount = getUnreadCount('contact', contact.public_key);
               const isMention = hasMention('contact', contact.public_key);
               return (
@@ -410,11 +541,13 @@ export function Sidebar({
         )}
 
         {/* Empty state */}
-        {filteredContacts.length === 0 && filteredChannels.length === 0 && (
-          <div className="p-5 text-center text-muted-foreground">
-            {query ? 'No matches found' : 'No conversations yet'}
-          </div>
-        )}
+        {nonFavoriteContacts.length === 0 &&
+          nonFavoriteChannels.length === 0 &&
+          favoriteItems.length === 0 && (
+            <div className="p-5 text-center text-muted-foreground">
+              {query ? 'No matches found' : 'No conversations yet'}
+            </div>
+          )}
       </div>
     </div>
   );
