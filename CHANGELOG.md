@@ -1,3 +1,7 @@
+## [1.2.0] - 2026-01-16
+
+Feature: Add favorites
+
 ## [1.1.0] - 2026-01-14
 
 Bugfix: Use actual pathing data from advertisements, not just always flood (oops)
