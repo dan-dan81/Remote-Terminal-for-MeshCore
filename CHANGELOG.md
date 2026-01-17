@@ -1,3 +1,7 @@
+## [1.2.1] - 2026-01-17
+
+Update: Update meshcore-hashtag-cracker to include sender-identification correctness check
+
 ## [1.2.0] - 2026-01-16
 
 Feature: Add favorites
