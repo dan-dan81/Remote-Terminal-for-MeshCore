@@ -1,3 +1,9 @@
+## [1.3.0] - 2026-01-17
+
+Feature: Rework database schema to drop unnecessary columns and dedupe payloads at the DB level
+Feature: Massive frontend settings overhaul. It ain't gorgeous but it's easier to navigate.
+Feature: Drop repeater login wait time; vestigial from debugging a different issue
+
 ## [1.2.1] - 2026-01-17
 
 Update: Update meshcore-hashtag-cracker to include sender-identification correctness check
