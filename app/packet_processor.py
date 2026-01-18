@@ -48,7 +48,7 @@ async def create_message_from_decrypted(
     message_text: str,
     timestamp: int,
     received_at: int | None = None,
-    path_len: int | None = None,
+    path: str | None = None,
 ) -> int | None:
     """Create a message record from decrypted channel packet content.
 
@@ -62,7 +62,7 @@ async def create_message_from_decrypted(
         message_text: The decrypted message content
         timestamp: Sender timestamp from the packet
         received_at: When the packet was received (defaults to now)
-        path_len: Path length from packet routing (None for historical decryption)
+        path: Hex-encoded routing path (None for historical decryption)
 
     Returns the message ID if created, None if duplicate.
     """
@@ -83,6 +83,7 @@ async def create_message_from_decrypted(
         conversation_key=channel_key_normalized,
         sender_timestamp=timestamp,
         received_at=received,
+        path=path,
     )
 
     if msg_id is None:
@@ -111,7 +112,7 @@ async def create_message_from_decrypted(
             "text": text,
             "sender_timestamp": timestamp,
             "received_at": received,
-            "path_len": path_len,
+            "path": path,
             "txt_type": 0,
             "signature": None,
             "outgoing": False,
@@ -283,7 +284,7 @@ async def _process_group_text(
             message_text=decrypted.message,
             timestamp=decrypted.timestamp,
             received_at=timestamp,
-            path_len=packet_info.path_length if packet_info else None,
+            path=packet_info.path.hex() if packet_info else None,
         )
 
         return {

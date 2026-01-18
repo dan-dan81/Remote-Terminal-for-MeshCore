@@ -74,7 +74,7 @@ class Message(BaseModel):
     text: str
     sender_timestamp: int | None = None
     received_at: int
-    path_len: int | None = None
+    path: str | None = Field(default=None, description="Hex-encoded routing path (2 chars per hop)")
     txt_type: int = 0
     signature: str | None = None
     outgoing: bool = False

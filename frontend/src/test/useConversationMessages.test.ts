@@ -16,7 +16,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     text: 'Hello world',
     sender_timestamp: 1700000000,
     received_at: 1700000001,
-    path_len: null,
+    path: null,
     txt_type: 0,
     signature: null,
     outgoing: false,

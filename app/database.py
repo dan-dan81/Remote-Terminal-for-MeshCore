@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT NOT NULL,
     sender_timestamp INTEGER,
     received_at INTEGER NOT NULL,
-    path_len INTEGER,
+    path TEXT,
     txt_type INTEGER DEFAULT 0,
     signature TEXT,
     outgoing INTEGER DEFAULT 0,

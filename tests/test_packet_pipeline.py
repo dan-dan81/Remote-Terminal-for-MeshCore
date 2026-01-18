@@ -430,7 +430,7 @@ class TestCreateMessageFromDecrypted:
         assert broadcast["text"] == "TestSender: Hello world"
         assert broadcast["sender_timestamp"] == 1700000000
         assert broadcast["received_at"] == 1700000001
-        assert broadcast["path_len"] is None  # Historical decryption has no path info
+        assert broadcast["path"] is None  # Historical decryption has no path info
         assert broadcast["outgoing"] is False
         assert broadcast["acked"] == 0
 
@@ -529,8 +529,8 @@ class TestMessageBroadcastStructure:
     """Test that message broadcasts have the correct structure for frontend."""
 
     @pytest.mark.asyncio
-    async def test_realtime_broadcast_includes_path_len(self, test_db, captured_broadcasts):
-        """Real-time packet processing includes path_len in broadcast."""
+    async def test_realtime_broadcast_includes_path(self, test_db, captured_broadcasts):
+        """Real-time packet processing includes path in broadcast."""
         from app.packet_processor import process_raw_packet
 
         fixture = FIXTURES["channel_message"]
@@ -550,9 +550,9 @@ class TestMessageBroadcastStructure:
         assert len(message_broadcasts) == 1
 
         broadcast = message_broadcasts[0]["data"]
-        # Real-time processing extracts path_len from packet (flood packets have path_len=0)
-        assert "path_len" in broadcast
-        # The test packet is a flood packet, so path_len should be 0 or None depending on packet structure
+        # Real-time processing extracts path from packet (flood packets have empty path)
+        assert "path" in broadcast
+        # The test packet is a flood packet, so path should be empty string ""
 
 
 class TestRawPacketStorage:

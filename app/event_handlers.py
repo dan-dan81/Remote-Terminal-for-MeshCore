@@ -80,7 +80,7 @@ async def on_contact_message(event: "Event") -> None:
         conversation_key=sender_pubkey,
         sender_timestamp=payload.get("sender_timestamp"),
         received_at=received_at,
-        path_len=payload.get("path_len"),
+        path=payload.get("path"),
         txt_type=payload.get("txt_type", 0),
         signature=payload.get("signature"),
     )
@@ -100,7 +100,7 @@ async def on_contact_message(event: "Event") -> None:
             "text": payload.get("text", ""),
             "sender_timestamp": payload.get("sender_timestamp"),
             "received_at": received_at,
-            "path_len": payload.get("path_len"),
+            "path": payload.get("path"),
             "txt_type": payload.get("txt_type", 0),
             "signature": payload.get("signature"),
             "outgoing": False,

@@ -188,7 +188,7 @@ messages (
     text TEXT NOT NULL,
     sender_timestamp INTEGER,
     received_at INTEGER NOT NULL,
-    path_len INTEGER,
+    path TEXT,                    -- Hex-encoded routing path (2 chars per hop), null for outgoing
     txt_type INTEGER DEFAULT 0,
     signature TEXT,
     outgoing INTEGER DEFAULT 0,

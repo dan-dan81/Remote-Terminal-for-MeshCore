@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.database import db
-from app.decoder import try_decrypt_packet_with_channel_key
+from app.decoder import parse_packet, try_decrypt_packet_with_channel_key
 from app.packet_processor import create_message_from_decrypted
 from app.repository import RawPacketRepository
 
@@ -65,6 +65,10 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
                 result.message[:50] if result.message else "",
             )
 
+            # Extract path from the raw packet for storage
+            packet_info = parse_packet(packet_data)
+            path_hex = packet_info.path.hex() if packet_info else None
+
             msg_id = await create_message_from_decrypted(
                 packet_id=packet_id,
                 channel_key=channel_key_hex,
@@ -72,6 +76,7 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
                 message_text=result.message,
                 timestamp=result.timestamp,
                 received_at=packet_timestamp,  # Use original packet timestamp for correct ordering
+                path=path_hex,
             )
 
             if msg_id is not None:

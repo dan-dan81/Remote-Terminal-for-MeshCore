@@ -72,6 +72,20 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 5)
         applied += 1
 
+    # Migration 6: Replace path_len with path column in messages
+    if version < 6:
+        logger.info("Applying migration 6: replace path_len with path column")
+        await _migrate_006_replace_path_len_with_path(conn)
+        await set_version(conn, 6)
+        applied += 1
+
+    # Migration 7: Backfill path from raw_packets for decrypted messages
+    if version < 7:
+        logger.info("Applying migration 7: backfill path from raw_packets")
+        await _migrate_007_backfill_message_paths(conn)
+        await set_version(conn, 7)
+        applied += 1
+
     if applied > 0:
         logger.info(
             "Applied %d migration(s), schema now at version %d", applied, await get_version(conn)
@@ -348,3 +362,155 @@ async def _migrate_005_backfill_payload_hashes(conn: aiosqlite.Connection) -> No
             raise
 
     await conn.commit()
+
+
+async def _migrate_006_replace_path_len_with_path(conn: aiosqlite.Connection) -> None:
+    """
+    Replace path_len INTEGER column with path TEXT column in messages table.
+
+    The path column stores the hex-encoded routing path bytes. Path length can
+    be derived from the hex string (2 chars per byte = 1 hop).
+
+    SQLite 3.35.0+ supports ALTER TABLE DROP COLUMN. For older versions,
+    we silently skip the drop (the column will remain but is unused).
+    """
+    # First, add the new path column
+    try:
+        await conn.execute("ALTER TABLE messages ADD COLUMN path TEXT")
+        logger.debug("Added path column to messages table")
+    except aiosqlite.OperationalError as e:
+        if "duplicate column name" in str(e).lower():
+            logger.debug("messages.path already exists, skipping")
+        else:
+            raise
+
+    # Try to drop the old path_len column
+    try:
+        await conn.execute("ALTER TABLE messages DROP COLUMN path_len")
+        logger.debug("Dropped path_len from messages table")
+    except aiosqlite.OperationalError as e:
+        error_msg = str(e).lower()
+        if "no such column" in error_msg:
+            logger.debug("messages.path_len already dropped, skipping")
+        elif "syntax error" in error_msg or "drop column" in error_msg:
+            # SQLite version doesn't support DROP COLUMN - harmless, column stays
+            logger.debug("SQLite doesn't support DROP COLUMN, path_len column will remain")
+        else:
+            raise
+
+    await conn.commit()
+
+
+def _extract_path_from_packet(raw_packet: bytes) -> str | None:
+    """
+    Extract path hex string from a raw packet (migration-local copy of decoder logic).
+
+    Returns the path as a hex string, or None if packet is malformed.
+    """
+    if len(raw_packet) < 2:
+        return None
+
+    try:
+        header = raw_packet[0]
+        route_type = header & 0x03
+        offset = 1
+
+        # Skip transport codes if present (TRANSPORT_FLOOD=0, TRANSPORT_DIRECT=3)
+        if route_type in (0x00, 0x03):
+            if len(raw_packet) < offset + 4:
+                return None
+            offset += 4
+
+        # Get path length
+        if len(raw_packet) < offset + 1:
+            return None
+        path_length = raw_packet[offset]
+        offset += 1
+
+        # Extract path bytes
+        if len(raw_packet) < offset + path_length:
+            return None
+        path_bytes = raw_packet[offset : offset + path_length]
+
+        return path_bytes.hex()
+    except (IndexError, ValueError):
+        return None
+
+
+async def _migrate_007_backfill_message_paths(conn: aiosqlite.Connection) -> None:
+    """
+    Backfill path column for messages that have linked raw_packets.
+
+    For each message with a linked raw_packet (via message_id), extract the
+    path from the raw packet and update the message.
+
+    Only updates incoming messages (outgoing=0) since outgoing messages
+    don't have meaningful path data.
+    """
+    # Get count of messages that need backfill
+    cursor = await conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM messages m
+        JOIN raw_packets rp ON rp.message_id = m.id
+        WHERE m.path IS NULL AND m.outgoing = 0
+        """
+    )
+    row = await cursor.fetchone()
+    total = row[0] if row else 0
+
+    if total == 0:
+        logger.debug("No messages need path backfill")
+        return
+
+    logger.info("Backfilling path for %d messages. This may take a while...", total)
+
+    # Process in batches
+    batch_size = 1000
+    processed = 0
+    updated = 0
+
+    cursor = await conn.execute(
+        """
+        SELECT m.id, rp.data
+        FROM messages m
+        JOIN raw_packets rp ON rp.message_id = m.id
+        WHERE m.path IS NULL AND m.outgoing = 0
+        ORDER BY m.id ASC
+        """
+    )
+
+    updates: list[tuple[str, int]] = []  # (path, message_id)
+
+    while True:
+        rows = await cursor.fetchmany(batch_size)
+        if not rows:
+            break
+
+        for row in rows:
+            message_id = row[0]
+            packet_data = bytes(row[1])
+
+            path_hex = _extract_path_from_packet(packet_data)
+            if path_hex is not None:
+                updates.append((path_hex, message_id))
+
+            processed += 1
+
+        if processed % 10000 == 0:
+            logger.info("Processed %d/%d messages...", processed, total)
+
+    # Apply updates in batches
+    if updates:
+        logger.info("Updating %d messages with path data...", len(updates))
+        for idx, (path_hex, message_id) in enumerate(updates, 1):
+            await conn.execute(
+                "UPDATE messages SET path = ? WHERE id = ?",
+                (path_hex, message_id),
+            )
+            updated += 1
+            if idx % 10000 == 0:
+                logger.info("Updated %d/%d messages...", idx, len(updates))
+
+    await conn.commit()
+    logger.info("Path backfill complete: %d messages updated", updated)

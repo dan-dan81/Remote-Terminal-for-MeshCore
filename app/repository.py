@@ -293,7 +293,7 @@ class MessageRepository:
         received_at: int,
         conversation_key: str,
         sender_timestamp: int | None = None,
-        path_len: int | None = None,
+        path: str | None = None,
         txt_type: int = 0,
         signature: str | None = None,
         outgoing: bool = False,
@@ -307,7 +307,7 @@ class MessageRepository:
         cursor = await db.conn.execute(
             """
             INSERT OR IGNORE INTO messages (type, conversation_key, text, sender_timestamp,
-                                            received_at, path_len, txt_type, signature, outgoing)
+                                            received_at, path, txt_type, signature, outgoing)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -316,7 +316,7 @@ class MessageRepository:
                 text,
                 sender_timestamp,
                 received_at,
-                path_len,
+                path,
                 txt_type,
                 signature,
                 outgoing,
@@ -359,7 +359,7 @@ class MessageRepository:
                 text=row["text"],
                 sender_timestamp=row["sender_timestamp"],
                 received_at=row["received_at"],
-                path_len=row["path_len"],
+                path=row["path"],
                 txt_type=row["txt_type"],
                 signature=row["signature"],
                 outgoing=bool(row["outgoing"]),
@@ -419,7 +419,7 @@ class MessageRepository:
                     text=row["text"],
                     sender_timestamp=row["sender_timestamp"],
                     received_at=row["received_at"],
-                    path_len=row["path_len"],
+                    path=row["path"],
                     txt_type=row["txt_type"],
                     signature=row["signature"],
                     outgoing=bool(row["outgoing"]),

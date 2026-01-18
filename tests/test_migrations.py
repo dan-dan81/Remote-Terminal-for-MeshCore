@@ -78,13 +78,30 @@ class TestMigration001:
                 )
             """)
             await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
+            # Messages table with old schema (for migrations 6 and 7)
+            await conn.execute("""
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    sender_timestamp INTEGER,
+                    received_at INTEGER NOT NULL,
+                    path_len INTEGER,
+                    txt_type INTEGER DEFAULT 0,
+                    signature TEXT,
+                    outgoing INTEGER DEFAULT 0,
+                    acked INTEGER DEFAULT 0,
+                    UNIQUE(type, conversation_key, text, sender_timestamp)
+                )
+            """)
             await conn.commit()
 
             # Run migrations
             applied = await run_migrations(conn)
 
-            assert applied == 5  # All 5 migrations run
-            assert await get_version(conn) == 5
+            assert applied == 7  # All 7 migrations run
+            assert await get_version(conn) == 7
 
             # Verify columns exist by inserting and selecting
             await conn.execute(
@@ -143,15 +160,32 @@ class TestMigration001:
                 )
             """)
             await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
+            # Messages table with old schema (for migrations 6 and 7)
+            await conn.execute("""
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    sender_timestamp INTEGER,
+                    received_at INTEGER NOT NULL,
+                    path_len INTEGER,
+                    txt_type INTEGER DEFAULT 0,
+                    signature TEXT,
+                    outgoing INTEGER DEFAULT 0,
+                    acked INTEGER DEFAULT 0,
+                    UNIQUE(type, conversation_key, text, sender_timestamp)
+                )
+            """)
             await conn.commit()
 
             # Run migrations twice
             applied1 = await run_migrations(conn)
             applied2 = await run_migrations(conn)
 
-            assert applied1 == 5  # All 5 migrations run
+            assert applied1 == 7  # All 7 migrations run
             assert applied2 == 0  # No migrations on second run
-            assert await get_version(conn) == 5
+            assert await get_version(conn) == 7
         finally:
             await conn.close()
 
@@ -189,14 +223,31 @@ class TestMigration001:
                 )
             """)
             await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
+            # Messages table with old schema (for migrations 6 and 7)
+            await conn.execute("""
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    sender_timestamp INTEGER,
+                    received_at INTEGER NOT NULL,
+                    path_len INTEGER,
+                    txt_type INTEGER DEFAULT 0,
+                    signature TEXT,
+                    outgoing INTEGER DEFAULT 0,
+                    acked INTEGER DEFAULT 0,
+                    UNIQUE(type, conversation_key, text, sender_timestamp)
+                )
+            """)
             await conn.commit()
 
             # Run migrations - should not fail
             applied = await run_migrations(conn)
 
-            # All 5 migrations applied (version incremented) but no error
-            assert applied == 5
-            assert await get_version(conn) == 5
+            # All 7 migrations applied (version incremented) but no error
+            assert applied == 7
+            assert await get_version(conn) == 7
         finally:
             await conn.close()
 
@@ -234,6 +285,23 @@ class TestMigration001:
                 )
             """)
             await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
+            # Messages table with old schema (for migrations 6 and 7)
+            await conn.execute("""
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    sender_timestamp INTEGER,
+                    received_at INTEGER NOT NULL,
+                    path_len INTEGER,
+                    txt_type INTEGER DEFAULT 0,
+                    signature TEXT,
+                    outgoing INTEGER DEFAULT 0,
+                    acked INTEGER DEFAULT 0,
+                    UNIQUE(type, conversation_key, text, sender_timestamp)
+                )
+            """)
             await conn.execute(
                 "INSERT INTO contacts (public_key, name, type) VALUES (?, ?, ?)",
                 ("existingkey", "ExistingContact", 1),

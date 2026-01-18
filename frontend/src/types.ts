@@ -82,7 +82,8 @@ export interface Message {
   text: string;
   sender_timestamp: number | null;
   received_at: number;
-  path_len: number | null;
+  /** Hex-encoded routing path (2 chars per hop). Null for outgoing messages. */
+  path: string | null;
   txt_type: number;
   signature: string | null;
   outgoing: boolean;
