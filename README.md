@@ -113,7 +113,7 @@ Run both the backend and `npm run dev` for hot-reloading frontend development.
 
 ### Code Quality
 
-Please lint, format, and quality check your code before PRing or committing. At the least, run a lint + autoformat + type check on the bakend, and a lint + autoformat on the frontend,
+Please lint, format, and quality check your code before PRing or committing. At the least, run a lint + autoformat + pyright check on the bakend, and a lint + autoformat on the frontend.
 
 <details>
 <summary>But how?</summary>
@@ -122,11 +122,11 @@ Please lint, format, and quality check your code before PRing or committing. At 
 # python
 uv run ruff check app/ tests/ --fix  # lint + auto-fix
 uv run ruff format app/ tests/       # format (always writes)
-uv run pyright app/                  # warnings only permitted!
+uv run pyright app/                  # type checking
 
 # frontend
 cd frontend
-npm run lint:fix                     # esLint + auto-fix (warnings permitted)
+npm run lint:fix                     # esLint + auto-fix
 npm run format                       # prettier (always writes)
 ```
 </details>
