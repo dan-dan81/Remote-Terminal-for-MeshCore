@@ -831,3 +831,88 @@ class TestHealthEndpointDatabaseSize:
             data = response.json()
             assert "database_size_mb" in data
             assert data["database_size_mb"] == 10.0
+
+
+class TestHealthEndpointOldestUndecrypted:
+    """Test oldest undecrypted packet timestamp in health endpoint."""
+
+    def test_health_includes_oldest_undecrypted_timestamp(self):
+        """Health endpoint includes oldest_undecrypted_timestamp when packets exist."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastapi.testclient import TestClient
+
+        with (
+            patch("app.routers.health.radio_manager") as mock_rm,
+            patch("app.routers.health.os.path.getsize") as mock_getsize,
+            patch("app.routers.health.RawPacketRepository") as mock_repo,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.port = "/dev/ttyUSB0"
+            mock_getsize.return_value = 5 * 1024 * 1024  # 5 MB
+            mock_repo.get_oldest_undecrypted = AsyncMock(return_value=1700000000)
+
+            from app.main import app
+
+            client = TestClient(app)
+
+            response = client.get("/api/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "oldest_undecrypted_timestamp" in data
+            assert data["oldest_undecrypted_timestamp"] == 1700000000
+
+    def test_health_oldest_undecrypted_null_when_none(self):
+        """Health endpoint returns null for oldest_undecrypted_timestamp when no packets."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastapi.testclient import TestClient
+
+        with (
+            patch("app.routers.health.radio_manager") as mock_rm,
+            patch("app.routers.health.os.path.getsize") as mock_getsize,
+            patch("app.routers.health.RawPacketRepository") as mock_repo,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.port = "/dev/ttyUSB0"
+            mock_getsize.return_value = 1 * 1024 * 1024  # 1 MB
+            mock_repo.get_oldest_undecrypted = AsyncMock(return_value=None)
+
+            from app.main import app
+
+            client = TestClient(app)
+
+            response = client.get("/api/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "oldest_undecrypted_timestamp" in data
+            assert data["oldest_undecrypted_timestamp"] is None
+
+    def test_health_handles_db_not_connected(self):
+        """Health endpoint gracefully handles database not connected."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastapi.testclient import TestClient
+
+        with (
+            patch("app.routers.health.radio_manager") as mock_rm,
+            patch("app.routers.health.os.path.getsize") as mock_getsize,
+            patch("app.routers.health.RawPacketRepository") as mock_repo,
+        ):
+            mock_rm.is_connected = False
+            mock_rm.port = None
+            mock_getsize.side_effect = OSError("File not found")
+            mock_repo.get_oldest_undecrypted = AsyncMock(side_effect=RuntimeError("No DB"))
+
+            from app.main import app
+
+            client = TestClient(app)
+
+            response = client.get("/api/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["oldest_undecrypted_timestamp"] is None
+            assert data["database_size_mb"] == 0.0
