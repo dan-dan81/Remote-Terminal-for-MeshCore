@@ -441,40 +441,8 @@ export function CrackerPanel({
   };
 
   return (
-    <div className="flex flex-col h-full p-3 gap-3 bg-background border-t border-border">
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        For unknown-keyed GroupText packets, this will attempt to dictionary attack, then brute
-        force payloads as they arrive, testing room names up to the specified length to discover
-        active rooms on the local mesh (GroupText packets may not be hashtag messages; we have no
-        way of knowing but try as if they are).
-        <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
-        pick up messages it couldn't crack, attempting them at one longer length.
-        <strong> Decrypt historical</strong> will run an async job on any room name it finds to see
-        if any historically captured packets will decrypt with that key.
-        <strong> Turbo mode</strong> will push your GPU to the max (target dispatch time of 10s) and
-        may allow accelerated cracking and/or system instability.
-      </p>
+    <div className="flex flex-col h-full p-3 gap-3 bg-background border-t border-border overflow-auto">
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          onClick={isRunning ? handleStop : handleStart}
-          disabled={!wordlistLoaded || gpuAvailable === false}
-          className={cn(
-            'px-4 py-1.5 rounded text-sm font-medium',
-            isRunning
-              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90',
-            'disabled:opacity-50 disabled:cursor-not-allowed'
-          )}
-        >
-          {isRunning
-            ? 'Stop Search'
-            : gpuAvailable === false
-              ? 'GPU Not Available'
-              : !wordlistLoaded
-                ? 'Loading dictionary...'
-                : 'Find Rooms'}
-        </button>
-
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted-foreground">Max Length:</label>
           <input
@@ -524,6 +492,26 @@ export function CrackerPanel({
           Turbo mode (experimental)
         </label>
       </div>
+
+      <button
+        onClick={isRunning ? handleStop : handleStart}
+        disabled={!wordlistLoaded || gpuAvailable === false}
+        className={cn(
+          'w-48 px-4 py-1.5 rounded text-sm font-medium',
+          isRunning
+            ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+            : 'bg-primary text-primary-foreground hover:bg-primary/90',
+          'disabled:opacity-50 disabled:cursor-not-allowed'
+        )}
+      >
+        {isRunning
+          ? 'Stop Search'
+          : gpuAvailable === false
+            ? 'GPU Not Available'
+            : !wordlistLoaded
+              ? 'Loading dictionary...'
+              : 'Find Rooms'}
+      </button>
 
       {/* Status */}
       <div className="flex gap-4 text-sm">
@@ -606,6 +594,20 @@ export function CrackerPanel({
           </div>
         </div>
       )}
+
+      <hr className="border-border" />
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        For unknown-keyed GroupText packets, this will attempt to dictionary attack, then brute
+        force payloads as they arrive, testing room names up to the specified length to discover
+        active rooms on the local mesh (GroupText packets may not be hashtag messages; we have no
+        way of knowing but try as if they are).
+        <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
+        pick up messages it couldn't crack, attempting them at one longer length.
+        <strong> Decrypt historical</strong> will run an async job on any room name it finds to see
+        if any historically captured packets will decrypt with that key.
+        <strong> Turbo mode</strong> will push your GPU to the max (target dispatch time of 10s) and
+        may allow accelerated cracking and/or system instability.
+      </p>
     </div>
   );
 }
