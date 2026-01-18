@@ -87,10 +87,12 @@ class RawPacket(BaseModel):
     id: int
     timestamp: int
     data: str = Field(description="Hex-encoded packet data")
-    decrypted: bool = False
     message_id: int | None = None
-    decrypt_attempts: int = 0
-    last_attempt: int | None = None
+
+    @property
+    def decrypted(self) -> bool:
+        """A packet is decrypted iff it has a linked message_id."""
+        return self.message_id is not None
 
 
 class RawPacketDecryptedInfo(BaseModel):

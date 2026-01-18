@@ -1,5 +1,11 @@
 # RemoteTerm for MeshCore
 
+## Important Rules
+
+**NEVER make git commits.** A human must make all commits. You may stage files and prepare commit messages, but do not run `git commit`.
+
+## Overview
+
 A web interface for MeshCore mesh radio networks. The backend connects to a MeshCore-compatible radio over serial and exposes REST/WebSocket APIs. The React frontend provides real-time messaging and radio configuration.
 
 **For detailed component documentation, see:**

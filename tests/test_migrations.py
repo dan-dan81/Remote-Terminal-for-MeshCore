@@ -65,13 +65,26 @@ class TestMigration001:
                     on_radio INTEGER DEFAULT 0
                 )
             """)
+            # Raw packets table with old schema (for migrations 2 and 3)
+            await conn.execute("""
+                CREATE TABLE raw_packets (
+                    id INTEGER PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    decrypted INTEGER DEFAULT 0,
+                    message_id INTEGER,
+                    decrypt_attempts INTEGER DEFAULT 0,
+                    last_attempt INTEGER
+                )
+            """)
+            await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
             await conn.commit()
 
             # Run migrations
             applied = await run_migrations(conn)
 
-            assert applied == 1
-            assert await get_version(conn) == 1
+            assert applied == 3  # All 3 migrations run
+            assert await get_version(conn) == 3
 
             # Verify columns exist by inserting and selecting
             await conn.execute(
@@ -117,15 +130,28 @@ class TestMigration001:
                     name TEXT NOT NULL
                 )
             """)
+            # Raw packets table with old schema (for migrations 2 and 3)
+            await conn.execute("""
+                CREATE TABLE raw_packets (
+                    id INTEGER PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    decrypted INTEGER DEFAULT 0,
+                    message_id INTEGER,
+                    decrypt_attempts INTEGER DEFAULT 0,
+                    last_attempt INTEGER
+                )
+            """)
+            await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
             await conn.commit()
 
             # Run migrations twice
             applied1 = await run_migrations(conn)
             applied2 = await run_migrations(conn)
 
-            assert applied1 == 1
+            assert applied1 == 3  # All 3 migrations run
             assert applied2 == 0  # No migrations on second run
-            assert await get_version(conn) == 1
+            assert await get_version(conn) == 3
         finally:
             await conn.close()
 
@@ -150,14 +176,27 @@ class TestMigration001:
                     last_read_at INTEGER
                 )
             """)
+            # Raw packets table with old schema (for migrations 2 and 3)
+            await conn.execute("""
+                CREATE TABLE raw_packets (
+                    id INTEGER PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    decrypted INTEGER DEFAULT 0,
+                    message_id INTEGER,
+                    decrypt_attempts INTEGER DEFAULT 0,
+                    last_attempt INTEGER
+                )
+            """)
+            await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
             await conn.commit()
 
             # Run migrations - should not fail
             applied = await run_migrations(conn)
 
-            # Still counts as applied (version incremented) but no error
-            assert applied == 1
-            assert await get_version(conn) == 1
+            # All 3 migrations applied (version incremented) but no error
+            assert applied == 3
+            assert await get_version(conn) == 3
         finally:
             await conn.close()
 
@@ -182,6 +221,19 @@ class TestMigration001:
                     is_hashtag INTEGER DEFAULT 0
                 )
             """)
+            # Raw packets table with old schema (for migrations 2 and 3)
+            await conn.execute("""
+                CREATE TABLE raw_packets (
+                    id INTEGER PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    data BLOB NOT NULL,
+                    decrypted INTEGER DEFAULT 0,
+                    message_id INTEGER,
+                    decrypt_attempts INTEGER DEFAULT 0,
+                    last_attempt INTEGER
+                )
+            """)
+            await conn.execute("CREATE INDEX idx_raw_packets_decrypted ON raw_packets(decrypted)")
             await conn.execute(
                 "INSERT INTO contacts (public_key, name, type) VALUES (?, ?, ?)",
                 ("existingkey", "ExistingContact", 1),

@@ -468,9 +468,9 @@ class RawPacketRepository:
 
     @staticmethod
     async def get_undecrypted_count() -> int:
-        """Get count of undecrypted packets."""
+        """Get count of undecrypted packets (those without a linked message)."""
         cursor = await db.conn.execute(
-            "SELECT COUNT(*) as count FROM raw_packets WHERE decrypted = 0"
+            "SELECT COUNT(*) as count FROM raw_packets WHERE message_id IS NULL"
         )
         row = await cursor.fetchone()
         return row["count"] if row else 0
@@ -479,25 +479,27 @@ class RawPacketRepository:
     async def get_all_undecrypted() -> list[tuple[int, bytes, int]]:
         """Get all undecrypted packets as (id, data, timestamp) tuples."""
         cursor = await db.conn.execute(
-            "SELECT id, data, timestamp FROM raw_packets WHERE decrypted = 0 ORDER BY timestamp ASC"
+            "SELECT id, data, timestamp FROM raw_packets WHERE message_id IS NULL ORDER BY timestamp ASC"
         )
         rows = await cursor.fetchall()
         return [(row["id"], bytes(row["data"]), row["timestamp"]) for row in rows]
 
     @staticmethod
     async def mark_decrypted(packet_id: int, message_id: int) -> None:
+        """Link a raw packet to its decrypted message."""
         await db.conn.execute(
-            "UPDATE raw_packets SET decrypted = 1, message_id = ? WHERE id = ?",
+            "UPDATE raw_packets SET message_id = ? WHERE id = ?",
             (message_id, packet_id),
         )
         await db.conn.commit()
 
     @staticmethod
     async def get_undecrypted(limit: int = 100) -> list[RawPacket]:
+        """Get undecrypted packets (those without a linked message)."""
         cursor = await db.conn.execute(
             """
-            SELECT * FROM raw_packets
-            WHERE decrypted = 0
+            SELECT id, timestamp, data, message_id FROM raw_packets
+            WHERE message_id IS NULL
             ORDER BY timestamp DESC
             LIMIT ?
             """,
@@ -509,32 +511,17 @@ class RawPacketRepository:
                 id=row["id"],
                 timestamp=row["timestamp"],
                 data=row["data"].hex(),
-                decrypted=bool(row["decrypted"]),
                 message_id=row["message_id"],
-                decrypt_attempts=row["decrypt_attempts"],
-                last_attempt=row["last_attempt"],
             )
             for row in rows
         ]
-
-    @staticmethod
-    async def increment_attempts(packet_id: int) -> None:
-        await db.conn.execute(
-            """
-            UPDATE raw_packets
-            SET decrypt_attempts = decrypt_attempts + 1, last_attempt = ?
-            WHERE id = ?
-            """,
-            (int(time.time()), packet_id),
-        )
-        await db.conn.commit()
 
     @staticmethod
     async def prune_old_undecrypted(max_age_days: int) -> int:
         """Delete undecrypted packets older than max_age_days. Returns count deleted."""
         cutoff = int(time.time()) - (max_age_days * 86400)
         cursor = await db.conn.execute(
-            "DELETE FROM raw_packets WHERE decrypted = 0 AND timestamp < ?",
+            "DELETE FROM raw_packets WHERE message_id IS NULL AND timestamp < ?",
             (cutoff,),
         )
         await db.conn.commit()

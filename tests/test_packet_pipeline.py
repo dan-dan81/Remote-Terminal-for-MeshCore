@@ -519,9 +519,9 @@ class TestCreateMessageFromDecrypted:
                 received_at=1700000001,
             )
 
-        # Verify packet is marked decrypted
+        # Verify packet is marked decrypted (has message_id set)
         undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
-        packet_ids = [p[0] for p in undecrypted]
+        packet_ids = [p.id for p in undecrypted]
         assert packet_id not in packet_ids  # Should be marked as decrypted
 
 

@@ -483,10 +483,7 @@ class TestRawPacketRepository:
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
                 data BLOB NOT NULL UNIQUE,
-                decrypted INTEGER DEFAULT 0,
-                message_id INTEGER,
-                decrypt_attempts INTEGER DEFAULT 0,
-                last_attempt INTEGER
+                message_id INTEGER
             )
         """)
         await conn.commit()
@@ -523,10 +520,7 @@ class TestRawPacketRepository:
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
                 data BLOB NOT NULL UNIQUE,
-                decrypted INTEGER DEFAULT 0,
-                message_id INTEGER,
-                decrypt_attempts INTEGER DEFAULT 0,
-                last_attempt INTEGER
+                message_id INTEGER
             )
         """)
         await conn.commit()
@@ -567,10 +561,7 @@ class TestRawPacketRepository:
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
                 data BLOB NOT NULL UNIQUE,
-                decrypted INTEGER DEFAULT 0,
-                message_id INTEGER,
-                decrypt_attempts INTEGER DEFAULT 0,
-                last_attempt INTEGER
+                message_id INTEGER
             )
         """)
 
@@ -578,20 +569,21 @@ class TestRawPacketRepository:
         old_timestamp = now - (15 * 86400)  # 15 days ago
         recent_timestamp = now - (5 * 86400)  # 5 days ago
 
-        # Insert old undecrypted packet
+        # Insert old undecrypted packet (message_id NULL = undecrypted)
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (old_timestamp, b"\x01\x02\x03"),
         )
-        # Insert recent undecrypted packet
+        # Insert recent undecrypted packet (message_id NULL = undecrypted)
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (recent_timestamp, b"\x04\x05\x06"),
         )
         # Insert old but decrypted packet (should NOT be deleted)
+        # message_id NOT NULL = decrypted
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 1)",
-            (old_timestamp, b"\x07\x08\x09"),
+            "INSERT INTO raw_packets (timestamp, data, message_id) VALUES (?, ?, ?)",
+            (old_timestamp, b"\x07\x08\x09", 1),
         )
         await conn.commit()
 
@@ -630,19 +622,16 @@ class TestRawPacketRepository:
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
                 data BLOB NOT NULL UNIQUE,
-                decrypted INTEGER DEFAULT 0,
-                message_id INTEGER,
-                decrypt_attempts INTEGER DEFAULT 0,
-                last_attempt INTEGER
+                message_id INTEGER
             )
         """)
 
         now = int(time.time())
         recent_timestamp = now - (5 * 86400)  # 5 days ago
 
-        # Insert only recent packet
+        # Insert only recent packet (message_id NULL = undecrypted)
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (recent_timestamp, b"\x01\x02\x03"),
         )
         await conn.commit()
@@ -680,23 +669,20 @@ class TestMaintenanceEndpoint:
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
                 data BLOB NOT NULL UNIQUE,
-                decrypted INTEGER DEFAULT 0,
-                message_id INTEGER,
-                decrypt_attempts INTEGER DEFAULT 0,
-                last_attempt INTEGER
+                message_id INTEGER
             )
         """)
 
         now = int(time.time())
         old_timestamp = now - (20 * 86400)  # 20 days ago
 
-        # Insert old undecrypted packets
+        # Insert old undecrypted packets (message_id NULL = undecrypted)
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (old_timestamp, b"\x01\x02\x03"),
         )
         await conn.execute(
-            "INSERT INTO raw_packets (timestamp, data, decrypted) VALUES (?, ?, 0)",
+            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
             (old_timestamp, b"\x04\x05\x06"),
         )
         await conn.commit()

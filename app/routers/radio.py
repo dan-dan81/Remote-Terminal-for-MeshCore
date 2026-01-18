@@ -145,13 +145,47 @@ async def send_advertisement(flood: bool = True) -> dict:
 
 @router.post("/reboot")
 async def reboot_radio() -> dict:
-    """Reboot the radio. Connection will temporarily drop and auto-reconnect."""
-    mc = require_connected()
+    """Reboot the radio, or reconnect if not currently connected.
 
-    logger.info("Rebooting radio")
-    await mc.commands.reboot()
+    If connected: sends reboot command, connection will temporarily drop and auto-reconnect.
+    If not connected: attempts to reconnect (same as /reconnect endpoint).
+    """
+    from app.radio import radio_manager
 
-    return {"status": "ok", "message": "Reboot command sent. Radio will reconnect automatically."}
+    # If connected, send reboot command
+    if radio_manager.is_connected and radio_manager.meshcore:
+        logger.info("Rebooting radio")
+        await radio_manager.meshcore.commands.reboot()
+        return {
+            "status": "ok",
+            "message": "Reboot command sent. Radio will reconnect automatically.",
+        }
+
+    # Not connected - attempt to reconnect
+    if radio_manager.is_reconnecting:
+        return {
+            "status": "pending",
+            "message": "Reconnection already in progress",
+            "connected": False,
+        }
+
+    logger.info("Radio not connected, attempting reconnect")
+    success = await radio_manager.reconnect()
+
+    if success:
+        # Re-register event handlers after successful reconnect
+        from app.event_handlers import register_event_handlers
+
+        if radio_manager.meshcore:
+            register_event_handlers(radio_manager.meshcore)
+            await radio_manager.meshcore.start_auto_message_fetching()
+            logger.info("Event handlers re-registered and auto message fetching started")
+
+        return {"status": "ok", "message": "Reconnected successfully", "connected": True}
+    else:
+        raise HTTPException(
+            status_code=503, detail="Failed to reconnect. Check radio connection and power."
+        )
 
 
 @router.post("/reconnect")

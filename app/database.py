@@ -49,16 +49,13 @@ CREATE TABLE IF NOT EXISTS raw_packets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp INTEGER NOT NULL,
     data BLOB NOT NULL,
-    decrypted INTEGER DEFAULT 0,
     message_id INTEGER,
-    decrypt_attempts INTEGER DEFAULT 0,
-    last_attempt INTEGER,
     FOREIGN KEY (message_id) REFERENCES messages(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(type, conversation_key);
 CREATE INDEX IF NOT EXISTS idx_messages_received ON messages(received_at);
-CREATE INDEX IF NOT EXISTS idx_raw_packets_decrypted ON raw_packets(decrypted);
+CREATE INDEX IF NOT EXISTS idx_raw_packets_message_id ON raw_packets(message_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_on_radio ON contacts(on_radio);
 """
 
