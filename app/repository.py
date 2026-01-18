@@ -1,8 +1,14 @@
+import logging
+import sqlite3
 import time
+from hashlib import sha256
 from typing import Any
 
 from app.database import db
+from app.decoder import extract_payload
 from app.models import Channel, Contact, Message, RawPacket
+
+logger = logging.getLogger(__name__)
 
 
 class ContactRepository:
@@ -454,17 +460,62 @@ class MessageRepository:
 
 class RawPacketRepository:
     @staticmethod
-    async def create(data: bytes, timestamp: int | None = None) -> int:
-        """Create a raw packet. Returns the packet ID."""
+    async def create(data: bytes, timestamp: int | None = None) -> tuple[int, bool]:
+        """
+        Create a raw packet with payload-based deduplication.
+
+        Returns (packet_id, is_new) tuple:
+        - is_new=True: New packet stored, packet_id is the new row ID
+        - is_new=False: Duplicate payload detected, packet_id is the existing row ID
+
+        Deduplication is based on the SHA-256 hash of the packet payload
+        (excluding routing/path information).
+        """
         ts = timestamp or int(time.time())
 
+        # Compute payload hash for deduplication
+        payload = extract_payload(data)
+        if payload:
+            payload_hash = sha256(payload).hexdigest()
+        else:
+            # For malformed packets, hash the full data
+            payload_hash = sha256(data).hexdigest()
+
+        # Check if this payload already exists
         cursor = await db.conn.execute(
-            "INSERT INTO raw_packets (timestamp, data) VALUES (?, ?)",
-            (ts, data),
+            "SELECT id FROM raw_packets WHERE payload_hash = ?", (payload_hash,)
         )
-        await db.conn.commit()
-        assert cursor.lastrowid is not None  # INSERT always returns a row ID
-        return cursor.lastrowid
+        existing = await cursor.fetchone()
+
+        if existing:
+            # Duplicate - return existing packet ID
+            return (existing["id"], False)
+
+        # New packet - insert with hash
+        try:
+            cursor = await db.conn.execute(
+                "INSERT INTO raw_packets (timestamp, data, payload_hash) VALUES (?, ?, ?)",
+                (ts, data, payload_hash),
+            )
+            await db.conn.commit()
+            assert cursor.lastrowid is not None  # INSERT always returns a row ID
+            return (cursor.lastrowid, True)
+        except sqlite3.IntegrityError:
+            # Race condition: another insert with same payload_hash happened between
+            # our SELECT and INSERT. This is expected for duplicate packets arriving
+            # close together. Query again to get the existing ID.
+            logger.debug(
+                "Duplicate packet detected via race condition (payload_hash=%s), dropping",
+                payload_hash[:16],
+            )
+            cursor = await db.conn.execute(
+                "SELECT id FROM raw_packets WHERE payload_hash = ?", (payload_hash,)
+            )
+            existing = await cursor.fetchone()
+            if existing:
+                return (existing["id"], False)
+            # This shouldn't happen, but if it does, re-raise
+            raise
 
     @staticmethod
     async def get_undecrypted_count() -> int:

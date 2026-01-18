@@ -49,12 +49,6 @@ export interface MaintenanceResult {
   vacuumed: boolean;
 }
 
-export interface DedupResult {
-  started: boolean;
-  total_packets: number;
-  message: string;
-}
-
 export interface Contact {
   public_key: PublicKey;
   name: string | null;

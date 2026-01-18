@@ -4,7 +4,6 @@ import type {
   Channel,
   CommandResponse,
   Contact,
-  DedupResult,
   HealthStatus,
   MaintenanceResult,
   Message,
@@ -169,7 +168,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ prune_undecrypted_days: pruneUndecryptedDays }),
     }),
-  deduplicatePackets: () => fetchJson<DedupResult>('/packets/dedup', { method: 'POST' }),
 
   // Read State
   markAllRead: () =>

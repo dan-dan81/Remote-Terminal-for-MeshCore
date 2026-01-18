@@ -393,7 +393,7 @@ class TestCreateMessageFromDecrypted:
         from app.packet_processor import create_message_from_decrypted
 
         # Create a raw packet first (required for the function)
-        packet_id = await RawPacketRepository.create(b"test_packet_data", 1700000000)
+        packet_id, _ = await RawPacketRepository.create(b"test_packet_data", 1700000000)
 
         broadcasts, mock_broadcast = captured_broadcasts
 
@@ -439,7 +439,7 @@ class TestCreateMessageFromDecrypted:
         """create_message_from_decrypted handles messages without sender prefix."""
         from app.packet_processor import create_message_from_decrypted
 
-        packet_id = await RawPacketRepository.create(b"test_packet_data_2", 1700000000)
+        packet_id, _ = await RawPacketRepository.create(b"test_packet_data_2", 1700000000)
 
         broadcasts, mock_broadcast = captured_broadcasts
 
@@ -467,8 +467,8 @@ class TestCreateMessageFromDecrypted:
         """create_message_from_decrypted returns None for duplicate message."""
         from app.packet_processor import create_message_from_decrypted
 
-        packet_id_1 = await RawPacketRepository.create(b"packet_1", 1700000000)
-        packet_id_2 = await RawPacketRepository.create(b"packet_2", 1700000001)
+        packet_id_1, _ = await RawPacketRepository.create(b"packet_1", 1700000000)
+        packet_id_2, _ = await RawPacketRepository.create(b"packet_2", 1700000001)
 
         broadcasts, mock_broadcast = captured_broadcasts
 
@@ -505,7 +505,7 @@ class TestCreateMessageFromDecrypted:
         """create_message_from_decrypted links raw packet to created message."""
         from app.packet_processor import create_message_from_decrypted
 
-        packet_id = await RawPacketRepository.create(b"test_packet", 1700000000)
+        packet_id, _ = await RawPacketRepository.create(b"test_packet", 1700000000)
 
         broadcasts, mock_broadcast = captured_broadcasts
 

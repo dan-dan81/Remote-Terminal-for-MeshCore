@@ -46,7 +46,7 @@ frontend/
 │   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker (lazy-loads wordlist)
 │   │   ├── NewMessageModal.tsx
 │   │   ├── ConfigModal.tsx   # Radio config + app settings
-│   │   └── MaintenanceModal.tsx  # Database maintenance (cleanup, dedup)
+│   │   └── MaintenanceModal.tsx  # Database maintenance (packet cleanup)
 │   └── test/
 │       ├── setup.ts          # Test setup (jsdom, matchers)
 │       ├── messageParser.test.ts

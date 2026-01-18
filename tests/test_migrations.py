@@ -83,8 +83,8 @@ class TestMigration001:
             # Run migrations
             applied = await run_migrations(conn)
 
-            assert applied == 3  # All 3 migrations run
-            assert await get_version(conn) == 3
+            assert applied == 5  # All 5 migrations run
+            assert await get_version(conn) == 5
 
             # Verify columns exist by inserting and selecting
             await conn.execute(
@@ -149,9 +149,9 @@ class TestMigration001:
             applied1 = await run_migrations(conn)
             applied2 = await run_migrations(conn)
 
-            assert applied1 == 3  # All 3 migrations run
+            assert applied1 == 5  # All 5 migrations run
             assert applied2 == 0  # No migrations on second run
-            assert await get_version(conn) == 3
+            assert await get_version(conn) == 5
         finally:
             await conn.close()
 
@@ -194,9 +194,9 @@ class TestMigration001:
             # Run migrations - should not fail
             applied = await run_migrations(conn)
 
-            # All 3 migrations applied (version incremented) but no error
-            assert applied == 3
-            assert await get_version(conn) == 3
+            # All 5 migrations applied (version incremented) but no error
+            assert applied == 5
+            assert await get_version(conn) == 5
         finally:
             await conn.close()
 

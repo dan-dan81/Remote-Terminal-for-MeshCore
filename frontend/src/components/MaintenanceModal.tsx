@@ -22,7 +22,6 @@ export function MaintenanceModal({
 }: MaintenanceModalProps) {
   const [retentionDays, setRetentionDays] = useState('14');
   const [cleaning, setCleaning] = useState(false);
-  const [deduping, setDeduping] = useState(false);
 
   const handleCleanup = async () => {
     const days = parseInt(retentionDays, 10);
@@ -49,30 +48,6 @@ export function MaintenanceModal({
       });
     } finally {
       setCleaning(false);
-    }
-  };
-
-  const handleDedup = async () => {
-    setDeduping(true);
-
-    try {
-      const result = await api.deduplicatePackets();
-      if (result.started) {
-        toast.success('Deduplication started', {
-          description: result.message,
-        });
-      } else {
-        toast.info('Deduplication', {
-          description: result.message,
-        });
-      }
-    } catch (err) {
-      console.error('Failed to start deduplication:', err);
-      toast.error('Deduplication failed', {
-        description: err instanceof Error ? err.message : 'Unknown error',
-      });
-    } finally {
-      setDeduping(false);
     }
   };
 
@@ -114,17 +89,6 @@ export function MaintenanceModal({
                 {cleaning ? 'Cleaning...' : 'Cleanup'}
               </Button>
             </div>
-          </div>
-
-          <div className="space-y-3">
-            <Label>Remove Duplicate Packets</Label>
-            <p className="text-xs text-muted-foreground">
-              Remove packets with duplicate payloads (same message received via different paths).
-              Runs in background and may take a long time.
-            </p>
-            <Button variant="outline" onClick={handleDedup} disabled={deduping}>
-              {deduping ? 'Starting...' : 'Remove Duplicates'}
-            </Button>
           </div>
         </div>
       </DialogContent>

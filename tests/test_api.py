@@ -477,15 +477,19 @@ class TestRawPacketRepository:
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
 
-        # Create the raw_packets table
+        # Create the raw_packets table with payload_hash for deduplication
         await conn.execute("""
             CREATE TABLE raw_packets (
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
-                data BLOB NOT NULL UNIQUE,
-                message_id INTEGER
+                data BLOB NOT NULL,
+                message_id INTEGER,
+                payload_hash TEXT
             )
         """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_packets_payload_hash ON raw_packets(payload_hash)"
+        )
         await conn.commit()
 
         # Patch the db._connection to use our test connection
@@ -494,10 +498,11 @@ class TestRawPacketRepository:
 
         try:
             packet_data = b"\x01\x02\x03\x04\x05"
-            packet_id = await RawPacketRepository.create(packet_data, 1234567890)
+            packet_id, is_new = await RawPacketRepository.create(packet_data, 1234567890)
 
             assert packet_id is not None
             assert packet_id > 0
+            assert is_new is True
         finally:
             db._connection = original_conn
             await conn.close()
@@ -514,15 +519,19 @@ class TestRawPacketRepository:
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
 
-        # Create the raw_packets table
+        # Create the raw_packets table with payload_hash for deduplication
         await conn.execute("""
             CREATE TABLE raw_packets (
                 id INTEGER PRIMARY KEY,
                 timestamp INTEGER NOT NULL,
-                data BLOB NOT NULL UNIQUE,
-                message_id INTEGER
+                data BLOB NOT NULL,
+                message_id INTEGER,
+                payload_hash TEXT
             )
         """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_packets_payload_hash ON raw_packets(payload_hash)"
+        )
         await conn.commit()
 
         # Patch the db._connection to use our test connection
@@ -533,12 +542,106 @@ class TestRawPacketRepository:
             packet1 = b"\x01\x02\x03"
             packet2 = b"\x04\x05\x06"
 
-            id1 = await RawPacketRepository.create(packet1, 1234567890)
-            id2 = await RawPacketRepository.create(packet2, 1234567891)
+            id1, is_new1 = await RawPacketRepository.create(packet1, 1234567890)
+            id2, is_new2 = await RawPacketRepository.create(packet2, 1234567891)
 
             assert id1 is not None
             assert id2 is not None
             assert id1 != id2
+            assert is_new1 is True
+            assert is_new2 is True
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_packet_returns_existing_id(self):
+        """Inserting same payload twice returns existing ID and is_new=False."""
+        import aiosqlite
+
+        from app.database import db
+        from app.repository import RawPacketRepository
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create the raw_packets table with payload_hash for deduplication
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL,
+                message_id INTEGER,
+                payload_hash TEXT
+            )
+        """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_packets_payload_hash ON raw_packets(payload_hash)"
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            # Same packet data inserted twice
+            packet_data = b"\x01\x02\x03\x04\x05"
+            id1, is_new1 = await RawPacketRepository.create(packet_data, 1234567890)
+            id2, is_new2 = await RawPacketRepository.create(packet_data, 1234567891)
+
+            # Both should return the same ID
+            assert id1 == id2
+            # First is new, second is not
+            assert is_new1 is True
+            assert is_new2 is False
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_malformed_packet_uses_full_data_hash(self):
+        """Malformed packets (can't extract payload) hash full data for dedup."""
+        import aiosqlite
+
+        from app.database import db
+        from app.repository import RawPacketRepository
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE raw_packets (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data BLOB NOT NULL,
+                message_id INTEGER,
+                payload_hash TEXT
+            )
+        """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_packets_payload_hash ON raw_packets(payload_hash)"
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            # Single byte is too short to be valid packet (extract_payload returns None)
+            malformed = b"\x01"
+            id1, is_new1 = await RawPacketRepository.create(malformed, 1234567890)
+            id2, is_new2 = await RawPacketRepository.create(malformed, 1234567891)
+
+            # Should still deduplicate using full data hash
+            assert id1 == id2
+            assert is_new1 is True
+            assert is_new2 is False
+
+            # Different malformed packet should get different ID
+            different_malformed = b"\x02"
+            id3, is_new3 = await RawPacketRepository.create(different_malformed, 1234567892)
+            assert id3 != id1
+            assert is_new3 is True
         finally:
             db._connection = original_conn
             await conn.close()

@@ -215,8 +215,6 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/packets/decrypt/historical` | Decrypt stored packets |
 | GET | `/api/packets/decrypt/progress` | Get historical decryption progress |
 | POST | `/api/packets/maintenance` | Delete old packets (cleanup) |
-| POST | `/api/packets/dedup` | Remove duplicate raw packets |
-| GET | `/api/packets/dedup/progress` | Get deduplication progress |
 | POST | `/api/contacts/{key}/mark-read` | Mark contact conversation as read |
 | POST | `/api/channels/{key}/mark-read` | Mark channel as read |
 | POST | `/api/read-state/mark-all-read` | Mark all conversations as read |

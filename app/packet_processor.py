@@ -155,10 +155,15 @@ async def process_raw_packet(
     Process an incoming raw packet.
 
     This is the main entry point for all incoming RF packets.
+
+    Note: Packets are deduplicated by payload hash in the database. If we receive
+    a duplicate packet (same payload, different path), we still broadcast it to
+    the frontend (for the real-time packet feed) but skip decryption processing
+    since the original packet was already processed.
     """
     ts = timestamp or int(time.time())
 
-    packet_id = await RawPacketRepository.create(raw_bytes, ts)
+    packet_id, is_new_packet = await RawPacketRepository.create(raw_bytes, ts)
     raw_hex = raw_bytes.hex()
 
     # Parse packet to get type
@@ -179,22 +184,25 @@ async def process_raw_packet(
         "sender": None,
     }
 
-    # Try to decrypt/parse based on payload type
-    if payload_type == PayloadType.GROUP_TEXT:
-        decrypt_result = await _process_group_text(raw_bytes, packet_id, ts, packet_info)
-        if decrypt_result:
-            result.update(decrypt_result)
+    # Only process new packets - duplicates were already processed when first received
+    if is_new_packet:
+        # Try to decrypt/parse based on payload type
+        if payload_type == PayloadType.GROUP_TEXT:
+            decrypt_result = await _process_group_text(raw_bytes, packet_id, ts, packet_info)
+            if decrypt_result:
+                result.update(decrypt_result)
 
-    elif payload_type == PayloadType.ADVERT:
-        await _process_advertisement(raw_bytes, ts, packet_info)
+        elif payload_type == PayloadType.ADVERT:
+            await _process_advertisement(raw_bytes, ts, packet_info)
 
-    # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
-    # elif payload_type == PayloadType.TEXT_MESSAGE:
-    #     decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
-    #     if decrypt_result:
-    #         result.update(decrypt_result)
+        # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
+        # elif payload_type == PayloadType.TEXT_MESSAGE:
+        #     decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
+        #     if decrypt_result:
+        #         result.update(decrypt_result)
 
-    # Broadcast raw packet for the packet feed UI
+    # Always broadcast raw packet for the packet feed UI (even duplicates)
+    # This enables the frontend cracker to see all incoming packets in real-time
     broadcast_payload = RawPacketBroadcast(
         id=packet_id,
         timestamp=ts,
