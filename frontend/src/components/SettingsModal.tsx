@@ -12,7 +12,6 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
-import { Alert, AlertDescription } from './ui/alert';
 import { toast } from './ui/sonner';
 import { api } from '../api';
 import { formatTime } from '../utils/messageParser';
@@ -191,11 +190,16 @@ export function SettingsModal({
         },
       };
       await onSave(update);
-      toast.success('Radio config saved');
+      toast.success('Radio config saved, rebooting...');
+      setLoading(false);
+      setRebooting(true);
+      await onReboot();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
       setLoading(false);
+    } finally {
+      setRebooting(false);
     }
   };
 
@@ -242,11 +246,16 @@ export function SettingsModal({
     try {
       await onSetPrivateKey(privateKey.trim());
       setPrivateKey('');
-      toast.success('Private key set');
+      toast.success('Private key set, rebooting...');
+      setLoading(false);
+      setRebooting(true);
+      await onReboot();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set private key');
-    } finally {
       setLoading(false);
+    } finally {
+      setRebooting(false);
     }
   };
 
@@ -463,8 +472,12 @@ export function SettingsModal({
 
               {error && <div className="text-sm text-destructive">{error}</div>}
 
-              <Button onClick={handleSaveRadioConfig} disabled={loading} className="w-full">
-                {loading ? 'Saving...' : 'Save Radio Config'}
+              <Button
+                onClick={handleSaveRadioConfig}
+                disabled={loading || rebooting}
+                className="w-full"
+              >
+                {loading || rebooting ? 'Saving & Rebooting...' : 'Save Radio Config & Reboot'}
               </Button>
             </TabsContent>
 
@@ -503,29 +516,12 @@ export function SettingsModal({
                 />
                 <Button
                   onClick={handleSetPrivateKey}
-                  disabled={loading || !privateKey.trim()}
+                  disabled={loading || rebooting || !privateKey.trim()}
                   className="w-full"
                 >
-                  Set Private Key
+                  {loading || rebooting ? 'Setting & Rebooting...' : 'Set Private Key & Reboot'}
                 </Button>
               </div>
-
-              <Separator />
-
-              <Alert variant="warning">
-                <AlertDescription>
-                  Changes to name or private key require a radio reboot to take effect.
-                </AlertDescription>
-              </Alert>
-
-              <Button
-                variant="outline"
-                onClick={handleReboot}
-                disabled={rebooting || loading}
-                className="w-full border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/10"
-              >
-                {rebooting ? 'Rebooting...' : 'Reboot Radio'}
-              </Button>
 
               {error && <div className="text-sm text-destructive">{error}</div>}
             </TabsContent>
@@ -568,6 +564,17 @@ export function SettingsModal({
 
               <Button onClick={handleSaveSerial} disabled={loading} className="w-full">
                 {loading ? 'Saving...' : 'Save Settings'}
+              </Button>
+
+              <Separator />
+
+              <Button
+                variant="outline"
+                onClick={handleReboot}
+                disabled={rebooting || loading}
+                className="w-full border-red-500/50 text-red-400 hover:bg-red-500/10"
+              >
+                {rebooting ? 'Rebooting...' : 'Reboot Radio'}
               </Button>
 
               {error && <div className="text-sm text-destructive">{error}</div>}
