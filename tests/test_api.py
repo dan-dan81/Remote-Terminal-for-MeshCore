@@ -120,6 +120,88 @@ class TestMessagesEndpoint:
             assert response.status_code == 404
             assert "not found" in response.json()["detail"].lower()
 
+    @pytest.mark.asyncio
+    async def test_send_direct_message_duplicate_returns_500(self):
+        """If MessageRepository.create returns None (duplicate), returns 500."""
+        from app.models import SendDirectMessageRequest
+        from app.routers.messages import send_direct_message
+
+        mock_mc = MagicMock()
+        mock_mc.get_contact_by_key_prefix.return_value = {"public_key": "a" * 64}
+
+        mock_send_result = MagicMock()
+        mock_send_result.type = MagicMock()
+        mock_send_result.type.name = "OK"
+        mock_send_result.payload = {"expected_ack": b"\x00\x01"}
+        mock_mc.commands.send_msg = AsyncMock(return_value=mock_send_result)
+
+        mock_contact = MagicMock()
+        mock_contact.public_key = "a" * 64
+        mock_contact.to_radio_dict.return_value = {"public_key": "a" * 64}
+
+        with (
+            patch("app.dependencies.radio_manager") as mock_rm,
+            patch("app.repository.ContactRepository") as mock_contact_repo,
+            patch("app.routers.messages.MessageRepository") as mock_msg_repo,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(return_value=mock_contact)
+            mock_contact_repo.update_last_contacted = AsyncMock()
+            # Simulate duplicate - create returns None
+            mock_msg_repo.create = AsyncMock(return_value=None)
+
+            from fastapi import HTTPException
+
+            with pytest.raises(HTTPException) as exc_info:
+                await send_direct_message(
+                    SendDirectMessageRequest(destination="a" * 64, text="Hello")
+                )
+
+            assert exc_info.value.status_code == 500
+            assert "unexpected duplicate" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_channel_message_duplicate_returns_500(self):
+        """If MessageRepository.create returns None (duplicate), returns 500."""
+        from app.models import SendChannelMessageRequest
+        from app.routers.messages import send_channel_message
+
+        mock_mc = MagicMock()
+        mock_send_result = MagicMock()
+        mock_send_result.type = MagicMock()
+        mock_send_result.type.name = "OK"
+        mock_send_result.payload = {}
+        mock_mc.commands.send_chan_msg = AsyncMock(return_value=mock_send_result)
+        mock_mc.commands.set_channel = AsyncMock(return_value=mock_send_result)
+
+        mock_channel = MagicMock()
+        mock_channel.name = "test"
+        mock_channel.key = "0123456789ABCDEF0123456789ABCDEF"
+
+        with (
+            patch("app.dependencies.radio_manager") as mock_rm,
+            patch("app.repository.ChannelRepository") as mock_chan_repo,
+            patch("app.routers.messages.MessageRepository") as mock_msg_repo,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+            mock_chan_repo.get_by_key = AsyncMock(return_value=mock_channel)
+            # Simulate duplicate - create returns None
+            mock_msg_repo.create = AsyncMock(return_value=None)
+
+            from fastapi import HTTPException
+
+            with pytest.raises(HTTPException) as exc_info:
+                await send_channel_message(
+                    SendChannelMessageRequest(
+                        channel_key="0123456789ABCDEF0123456789ABCDEF", text="Hello"
+                    )
+                )
+
+            assert exc_info.value.status_code == 500
+            assert "unexpected duplicate" in exc_info.value.detail.lower()
+
 
 class TestChannelsEndpoint:
     """Test channel-related endpoints."""

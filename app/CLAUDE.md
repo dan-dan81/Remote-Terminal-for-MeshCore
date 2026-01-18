@@ -291,45 +291,12 @@ if result:
 
 ### Direct Message Decryption
 
-Direct messages use ECDH key exchange (Ed25519 → X25519) with the sender's public key
-and recipient's private key:
+Direct messages use ECDH key exchange (Ed25519 → X25519). Server-side decryption
+of direct messages is **not yet implemented**. Currently, direct messages are
+decrypted by the MeshCore library on the radio itself.
 
-```python
-from app.decoder import try_decrypt_packet_with_contact_key
-
-result = try_decrypt_packet_with_contact_key(
-    raw_bytes, sender_pub_key, recipient_prv_key
-)
-if result:
-    print(f"Message: {result.message}")
-```
-
-**Requirements:**
-- Sender's Ed25519 public key (32 bytes)
-- Recipient's Ed25519 private key (64 bytes) - from ephemeral KeyStore
-
-### Ephemeral Key Store (`keystore.py`)
-
-Private keys are stored **only in memory** for security:
-
-```python
-from app.keystore import KeyStore
-
-# Set private key (exported from radio)
-KeyStore.set_private_key(private_key_bytes)
-
-# Check if available
-if KeyStore.has_private_key():
-    key = KeyStore.get_private_key()
-
-# Clear from memory
-KeyStore.clear_private_key()
-```
-
-**Security guarantees:**
-- Never written to disk
-- Never logged
-- Lost on server restart (must re-export from radio)
+The decoder module contains a `try_decrypt_packet_with_contact_key()` function
+that could support this feature in the future.
 
 ## Advertisement Parsing (`decoder.py`)
 
@@ -432,13 +399,10 @@ All endpoints are prefixed with `/api`.
 ### Radio
 - `GET /api/radio/config` - Read config (public key, name, radio params)
 - `PATCH /api/radio/config` - Update name, lat/lon, tx_power, radio params
-- `PUT /api/radio/private-key` - Import private key (write-only)
+- `PUT /api/radio/private-key` - Import private key to radio (write-only)
 - `POST /api/radio/advertise?flood=true` - Send advertisement
-- `POST /api/radio/reboot` - Reboot radio
+- `POST /api/radio/reboot` - Reboot radio or reconnect if disconnected
 - `POST /api/radio/reconnect` - Manual reconnection attempt
-- `POST /api/radio/enable-server-decryption` - Export private key from radio, enable server-side decryption
-- `GET /api/radio/decryption-status` - Check if server-side decryption is enabled
-- `POST /api/radio/disable-server-decryption` - Clear private key from memory
 
 ### Contacts
 - `GET /api/contacts` - List from database

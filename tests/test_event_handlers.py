@@ -5,13 +5,15 @@ that determine message delivery confirmation.
 """
 
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.event_handlers import (
+    _active_subscriptions,
     _cleanup_expired_acks,
     _pending_acks,
+    register_event_handlers,
     track_pending_ack,
 )
 from app.packet_processor import (
@@ -23,15 +25,17 @@ from app.packet_processor import (
 
 
 @pytest.fixture(autouse=True)
-def clear_pending_state():
-    """Clear pending ACKs and repeats before each test."""
+def clear_test_state():
+    """Clear pending ACKs, repeats, and subscriptions before each test."""
     _pending_acks.clear()
     _pending_repeats.clear()
     _pending_repeat_expiry.clear()
+    _active_subscriptions.clear()
     yield
     _pending_acks.clear()
     _pending_repeats.clear()
     _pending_repeat_expiry.clear()
+    _active_subscriptions.clear()
 
 
 class TestAckTracking:
@@ -279,6 +283,40 @@ class TestContactMessageCLIFiltering:
             mock_broadcast.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_broadcast_payload_has_correct_acked_type(self):
+        """Broadcast payload should have acked as integer 0, not boolean False."""
+        from app.event_handlers import on_contact_message
+
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
+            mock_repo.create = AsyncMock(return_value=42)
+            mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
+
+            class MockEvent:
+                payload = {
+                    "pubkey_prefix": "abc123def456",
+                    "text": "Test message",
+                    "txt_type": 0,
+                    "sender_timestamp": 1700000000,
+                }
+
+            await on_contact_message(MockEvent())
+
+            # Verify broadcast was called
+            mock_broadcast.assert_called_once()
+            call_args = mock_broadcast.call_args
+
+            # First arg is event type, second is payload dict
+            event_type, payload = call_args[0]
+            assert event_type == "message"
+            assert payload["acked"] == 0
+            assert payload["acked"] is not False  # Ensure it's int, not bool
+            assert isinstance(payload["acked"], int)
+
+    @pytest.mark.asyncio
     async def test_missing_txt_type_defaults_to_normal(self):
         """Messages without txt_type field are treated as normal (not filtered)."""
         from app.event_handlers import on_contact_message
@@ -303,3 +341,89 @@ class TestContactMessageCLIFiltering:
 
             # SHOULD still be processed (defaults to txt_type=0)
             mock_repo.create.assert_called_once()
+
+
+class TestEventHandlerRegistration:
+    """Test event handler registration and cleanup."""
+
+    def test_register_handlers_tracks_subscriptions(self):
+        """Registering handlers populates _active_subscriptions."""
+        mock_meshcore = MagicMock()
+        mock_subscription = MagicMock()
+        mock_meshcore.subscribe.return_value = mock_subscription
+
+        register_event_handlers(mock_meshcore)
+
+        # Should have 5 subscriptions (one per event type)
+        assert len(_active_subscriptions) == 5
+        assert mock_meshcore.subscribe.call_count == 5
+
+    def test_register_handlers_twice_does_not_duplicate(self):
+        """Calling register_event_handlers twice unsubscribes old handlers first."""
+        mock_meshcore = MagicMock()
+
+        # First call: create mock subscriptions
+        first_subs = [MagicMock() for _ in range(5)]
+        mock_meshcore.subscribe.side_effect = first_subs
+        register_event_handlers(mock_meshcore)
+
+        assert len(_active_subscriptions) == 5
+        first_sub_objects = list(_active_subscriptions)
+
+        # Second call: create new mock subscriptions
+        second_subs = [MagicMock() for _ in range(5)]
+        mock_meshcore.subscribe.side_effect = second_subs
+        register_event_handlers(mock_meshcore)
+
+        # Old subscriptions should have been unsubscribed
+        for sub in first_sub_objects:
+            sub.unsubscribe.assert_called_once()
+
+        # Should still have exactly 5 subscriptions (not 10)
+        assert len(_active_subscriptions) == 5
+
+        # New subscriptions should be the second batch
+        for sub in second_subs:
+            assert sub in _active_subscriptions
+
+    def test_register_handlers_clears_before_adding(self):
+        """The subscription list is cleared before adding new subscriptions."""
+        mock_meshcore = MagicMock()
+        mock_meshcore.subscribe.return_value = MagicMock()
+
+        # Pre-populate with stale subscriptions (simulating a bug scenario)
+        stale_sub = MagicMock()
+        _active_subscriptions.append(stale_sub)
+        _active_subscriptions.append(stale_sub)
+
+        register_event_handlers(mock_meshcore)
+
+        # Stale subscriptions should have been unsubscribed
+        assert stale_sub.unsubscribe.call_count == 2
+
+        # Should have exactly 5 fresh subscriptions
+        assert len(_active_subscriptions) == 5
+
+    def test_register_handlers_survives_unsubscribe_exception(self):
+        """If unsubscribe() throws, registration still completes successfully."""
+        mock_meshcore = MagicMock()
+        mock_meshcore.subscribe.return_value = MagicMock()
+
+        # Create subscriptions where unsubscribe raises an exception
+        # (simulates old dispatcher being in a bad state after reconnect)
+        bad_sub = MagicMock()
+        bad_sub.unsubscribe.side_effect = RuntimeError("Dispatcher is dead")
+        _active_subscriptions.append(bad_sub)
+
+        good_sub = MagicMock()
+        _active_subscriptions.append(good_sub)
+
+        # Should not raise despite the exception
+        register_event_handlers(mock_meshcore)
+
+        # Both unsubscribe methods should have been called
+        bad_sub.unsubscribe.assert_called_once()
+        good_sub.unsubscribe.assert_called_once()
+
+        # Should have exactly 5 fresh subscriptions
+        assert len(_active_subscriptions) == 5

@@ -95,7 +95,11 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
         received_at=now,
         outgoing=True,
     )
-    assert message_id is not None  # Outgoing messages are always new (unique timestamp)
+    if message_id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to store outgoing message - unexpected duplicate",
+        )
 
     # Update last_contacted for the contact
     await ContactRepository.update_last_contacted(db_contact.public_key, now)
@@ -191,7 +195,11 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         received_at=now,
         outgoing=True,
     )
-    assert message_id is not None  # Outgoing messages are always new (unique timestamp)
+    if message_id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to store outgoing message - unexpected duplicate",
+        )
 
     # Track for repeat detection (flood messages get confirmed by hearing repeats)
     track_pending_repeat(channel_key_upper, request.text, now, message_id)

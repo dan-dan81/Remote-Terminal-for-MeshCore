@@ -10,9 +10,13 @@ from app.repository import ContactRepository, MessageRepository
 from app.websocket import broadcast_event
 
 if TYPE_CHECKING:
-    from meshcore.events import Event
+    from meshcore.events import Event, Subscription
 
 logger = logging.getLogger(__name__)
+
+# Track active subscriptions so we can unsubscribe before re-registering
+# This prevents handler duplication after reconnects
+_active_subscriptions: list["Subscription"] = []
 
 
 # Track pending ACKs: expected_ack_code -> (message_id, timestamp, timeout_ms)
@@ -100,7 +104,7 @@ async def on_contact_message(event: "Event") -> None:
             "txt_type": payload.get("txt_type", 0),
             "signature": payload.get("signature"),
             "outgoing": False,
-            "acked": False,
+            "acked": 0,
         },
     )
 
@@ -200,10 +204,36 @@ def register_event_handlers(meshcore) -> None:
     Note: CHANNEL_MSG_RECV and ADVERTISEMENT events are NOT subscribed.
     These are handled by the packet processor via RX_LOG_DATA to avoid
     duplicate processing and ensure consistent handling.
+
+    This function is safe to call multiple times (e.g., after reconnect).
+    Existing handlers are unsubscribed before new ones are registered.
     """
-    meshcore.subscribe(EventType.CONTACT_MSG_RECV, on_contact_message)
-    meshcore.subscribe(EventType.RX_LOG_DATA, on_rx_log_data)
-    meshcore.subscribe(EventType.PATH_UPDATE, on_path_update)
-    meshcore.subscribe(EventType.NEW_CONTACT, on_new_contact)
-    meshcore.subscribe(EventType.ACK, on_ack)
+    global _active_subscriptions
+
+    # Unsubscribe existing handlers to prevent duplication after reconnects.
+    # Try/except handles the case where the old dispatcher is in a bad state
+    # (e.g., after reconnect with a new MeshCore instance).
+    for sub in _active_subscriptions:
+        try:
+            sub.unsubscribe()
+        except Exception:
+            pass  # Old dispatcher may be gone, that's fine
+    _active_subscriptions.clear()
+
+    # Register handlers and track subscriptions
+    _active_subscriptions.append(
+        meshcore.subscribe(EventType.CONTACT_MSG_RECV, on_contact_message)
+    )
+    _active_subscriptions.append(
+        meshcore.subscribe(EventType.RX_LOG_DATA, on_rx_log_data)
+    )
+    _active_subscriptions.append(
+        meshcore.subscribe(EventType.PATH_UPDATE, on_path_update)
+    )
+    _active_subscriptions.append(
+        meshcore.subscribe(EventType.NEW_CONTACT, on_new_contact)
+    )
+    _active_subscriptions.append(
+        meshcore.subscribe(EventType.ACK, on_ack)
+    )
     logger.info("Event handlers registered")

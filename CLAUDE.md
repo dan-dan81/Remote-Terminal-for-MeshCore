@@ -201,8 +201,8 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | PATCH | `/api/radio/config` | Update name, location, radio params |
 | POST | `/api/radio/advertise` | Send advertisement |
 | POST | `/api/radio/reconnect` | Manual radio reconnection |
-| POST | `/api/radio/enable-server-decryption` | Export private key, enable decryption |
-| GET | `/api/radio/decryption-status` | Check if decryption enabled |
+| POST | `/api/radio/reboot` | Reboot radio or reconnect if disconnected |
+| PUT | `/api/radio/private-key` | Import private key to radio |
 | GET | `/api/contacts` | List contacts |
 | POST | `/api/contacts/sync` | Pull from radio |
 | POST | `/api/contacts/{key}/telemetry` | Request telemetry from repeater |
@@ -265,16 +265,11 @@ Read state (`last_read_at`) is tracked **server-side** for consistency across de
 
 ### Server-Side Decryption
 
-The server can decrypt historical packets if given the necessary keys:
+The server can decrypt historical channel packets using stored channel keys.
 
-**Channel messages**: Decrypted automatically using stored channel keys.
+**Channel messages**: Decrypted automatically when a matching channel key is available.
 
-**Direct messages**: Requires the node's private key, which must be:
-1. Exported from radio via `POST /radio/enable-server-decryption`
-2. Stored **only in memory** (never persisted to disk)
-3. Re-exported after every server restart
-
-This allows decrypting messages from contacts whose public keys were learned after the message was received.
+**Direct messages**: Currently decrypted only by the MeshCore library on the radio itself. Server-side direct message decryption is not yet implemented.
 
 ## MeshCore Library
 
