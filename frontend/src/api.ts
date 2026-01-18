@@ -26,8 +26,18 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(error || res.statusText);
+    const errorText = await res.text();
+    // FastAPI returns errors as {"detail": "message"}, extract the message
+    let errorMessage = errorText || res.statusText;
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.detail) {
+        errorMessage = errorJson.detail;
+      }
+    } catch {
+      // Not JSON, use raw text
+    }
+    throw new Error(errorMessage);
   }
   return res.json();
 }
