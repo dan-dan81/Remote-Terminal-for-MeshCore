@@ -86,19 +86,14 @@ async def create_message_from_decrypted(
     )
 
     if msg_id is None:
-        # Duplicate detected - find existing message ID for packet linkage
-        existing_id = await MessageRepository.find_duplicate(
-            conversation_key=channel_key_normalized,
-            text=text,
-            sender_timestamp=timestamp,
-        )
-        logger.debug(
-            "Duplicate message detected for channel %s (existing id=%s)",
+        # This shouldn't happen - raw packets are deduplicated by payload hash,
+        # so the same message content shouldn't be created twice. Log a warning.
+        logger.warning(
+            "Unexpected duplicate message for channel %s (packet_id=%d) - "
+            "this may indicate a bug in payload deduplication",
             channel_key_normalized[:8],
-            existing_id,
+            packet_id,
         )
-        if existing_id:
-            await RawPacketRepository.mark_decrypted(packet_id, existing_id)
         return None
 
     logger.info("Stored channel message %d for channel %s", msg_id, channel_key_normalized[:8])

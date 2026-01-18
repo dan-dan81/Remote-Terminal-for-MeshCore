@@ -378,33 +378,6 @@ class MessageRepository:
         return row["acked"] if row else 1
 
     @staticmethod
-    async def find_duplicate(
-        conversation_key: str,
-        text: str,
-        sender_timestamp: int | None,
-    ) -> int | None:
-        """Find existing message with same content (for deduplication).
-
-        Returns message ID if found, None otherwise.
-        Used to detect the same message arriving via multiple RF paths.
-        """
-        if sender_timestamp is None:
-            return None
-
-        cursor = await db.conn.execute(
-            """
-            SELECT id FROM messages
-            WHERE conversation_key = ?
-              AND text = ?
-              AND sender_timestamp = ?
-            LIMIT 1
-            """,
-            (conversation_key, text, sender_timestamp),
-        )
-        row = await cursor.fetchone()
-        return row["id"] if row else None
-
-    @staticmethod
     async def get_bulk(
         conversations: list[dict],
         limit_per_conversation: int = 100,
