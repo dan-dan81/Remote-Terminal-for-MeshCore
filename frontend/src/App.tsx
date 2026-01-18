@@ -705,6 +705,7 @@ export function App() {
                   }
                   onLoadOlder={fetchOlderMessages}
                   radioName={config?.name}
+                  config={config}
                 />
                 <MessageInput
                   ref={messageInputRef}

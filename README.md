@@ -16,7 +16,7 @@ Backend server + browser interface for MeshCore mesh radio networks. Attach your
 
 This is entirely vibecoded slop -- no warranty of fitness for any purpose. It's been lovingly guided by an engineer with a passion for clean code and good tests, but it's still mostly LLM output, so you may find some bugs.
 
-If extending, read the three `CLAUDE.md` files: `./CLAUDE.md`, `./frontend/CLAUDE.md`, and `./app/CLAUDE.md`.
+If extending, have your LLM read the three `CLAUDE.md` files: `./CLAUDE.md`, `./frontend/CLAUDE.md`, and `./app/CLAUDE.md`.
 
 ## Requirements
 
@@ -111,9 +111,9 @@ npm run build    # Production build to dist/
 
 Run both the backend and `npm run dev` for hot-reloading frontend development.
 
-### Code Quality
+### Code Quality & Tests
 
-Please lint, format, and quality check your code before PRing or committing. At the least, run a lint + autoformat + pyright check on the bakend, and a lint + autoformat on the frontend.
+Please test, lint, format, and quality check your code before PRing or committing. At the least, run a lint + autoformat + pyright check on the bakend, and a lint + autoformat on the frontend.
 
 <details>
 <summary>But how?</summary>
@@ -123,11 +123,14 @@ Please lint, format, and quality check your code before PRing or committing. At 
 uv run ruff check app/ tests/ --fix  # lint + auto-fix
 uv run ruff format app/ tests/       # format (always writes)
 uv run pyright app/                  # type checking
+PYTHONPATH=. uv run pytest tests/ -v # backend tests
 
 # frontend
 cd frontend
 npm run lint:fix                     # esLint + auto-fix
+npm run test:run                     # run tests
 npm run format                       # prettier (always writes)
+npm run build                        # build the frontend
 ```
 </details>
 

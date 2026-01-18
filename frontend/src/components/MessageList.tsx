@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState, type ReactNode } from 'react';
-import type { Contact, Message } from '../types';
+import type { Contact, Message, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
 import { pubkeysMatch } from '../utils/pubkey';
+import { getHopCount, type SenderInfo } from '../utils/pathUtils';
 import { ContactAvatar } from './ContactAvatar';
+import { PathModal } from './PathModal';
 import { cn } from '@/lib/utils';
 
 interface MessageListProps {
@@ -15,6 +17,7 @@ interface MessageListProps {
   onSenderClick?: (sender: string) => void;
   onLoadOlder?: () => void;
   radioName?: string;
+  config?: RadioConfig | null;
 }
 
 // Helper to render text with highlighted @[Name] mentions
@@ -68,11 +71,16 @@ export function MessageList({
   onSenderClick,
   onLoadOlder,
   radioName,
+  config,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef<number>(0);
   const isInitialLoadRef = useRef<boolean>(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<{
+    path: string;
+    senderInfo: SenderInfo;
+  } | null>(null);
 
   // Capture scroll state in the scroll handler BEFORE any state updates
   const scrollStateRef = useRef({
@@ -168,6 +176,41 @@ export function MessageList({
   // Look up contact by name (for channel messages where we parse sender from text)
   const getContactByName = (name: string): Contact | null => {
     return contacts.find((c) => c.name === name) || null;
+  };
+
+  // Build sender info for path modal
+  const getSenderInfo = (
+    msg: Message,
+    contact: Contact | null,
+    parsedSender: string | null
+  ): SenderInfo => {
+    if (msg.type === 'PRIV' && contact) {
+      return {
+        name: contact.name || contact.public_key.slice(0, 12),
+        publicKeyOrPrefix: contact.public_key,
+        lat: contact.lat,
+        lon: contact.lon,
+      };
+    }
+    // For channel messages, try to find contact by parsed sender name
+    if (parsedSender) {
+      const senderContact = getContactByName(parsedSender);
+      if (senderContact) {
+        return {
+          name: parsedSender,
+          publicKeyOrPrefix: senderContact.public_key,
+          lat: senderContact.lat,
+          lon: senderContact.lon,
+        };
+      }
+    }
+    // Fallback: unknown sender
+    return {
+      name: parsedSender || 'Unknown',
+      publicKeyOrPrefix: msg.conversation_key || '',
+      lat: null,
+      lon: null,
+    };
   };
 
   if (loading) {
@@ -293,6 +336,21 @@ export function MessageList({
                     <span className="font-normal text-muted-foreground/70 ml-2 text-[11px]">
                       {formatTime(msg.sender_timestamp || msg.received_at)}
                     </span>
+                    {!msg.outgoing && msg.path && (
+                      <span
+                        className="font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPath({
+                            path: msg.path!,
+                            senderInfo: getSenderInfo(msg, contact, sender),
+                          });
+                        }}
+                        title="View message path"
+                      >
+                        ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="break-words whitespace-pre-wrap">
@@ -303,9 +361,26 @@ export function MessageList({
                     </span>
                   ))}
                   {!showAvatar && (
-                    <span className="text-[10px] text-muted-foreground/50 ml-2">
-                      {formatTime(msg.sender_timestamp || msg.received_at)}
-                    </span>
+                    <>
+                      <span className="text-[10px] text-muted-foreground/50 ml-2">
+                        {formatTime(msg.sender_timestamp || msg.received_at)}
+                      </span>
+                      {!msg.outgoing && msg.path && (
+                        <span
+                          className="text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPath({
+                              path: msg.path!,
+                              senderInfo: getSenderInfo(msg, contact, sender),
+                            });
+                          }}
+                          title="View message path"
+                        >
+                          ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
+                        </span>
+                      )}
+                    </>
                   )}
                   {msg.outgoing && (msg.acked > 0 ? ` ✓${msg.acked > 1 ? msg.acked : ''}` : ' ?')}
                 </div>
@@ -337,6 +412,18 @@ export function MessageList({
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
+      )}
+
+      {/* Path modal */}
+      {selectedPath && (
+        <PathModal
+          open={true}
+          onClose={() => setSelectedPath(null)}
+          path={selectedPath.path}
+          senderInfo={selectedPath.senderInfo}
+          contacts={contacts}
+          config={config ?? null}
+        />
       )}
     </div>
   );

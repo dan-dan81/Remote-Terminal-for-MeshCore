@@ -11,3 +11,6 @@ frontend/node_modules/
 
 # reference librarys
 references/
+
+# ancillary LLM files
+.claude/
