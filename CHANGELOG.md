@@ -1,3 +1,10 @@
+## [1.3.1] - 2026-01-17
+
+UI: Rework restart handling
+Feature: Add `dutycyle_start` command to logged-in repeater session to start five min duty cycle tracking
+Bug: Improve error message rendering from server-side errors
+UI: Remove octothorpe from channel listing
+
 ## [1.3.0] - 2026-01-17
 
 Feature: Rework database schema to drop unnecessary columns and dedupe payloads at the DB level
