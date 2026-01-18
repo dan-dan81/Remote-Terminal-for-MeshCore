@@ -9,6 +9,7 @@ import type {
   AclEntry,
 } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
+import { useAirtimeTracking } from './useAirtimeTracking';
 
 // Format seconds into human-readable duration (e.g., 1d17h2m, 1h5m, 3m)
 export function formatDuration(seconds: number): string {
@@ -119,11 +120,13 @@ export function useRepeaterMode(
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>
 ): UseRepeaterModeResult {
   const [repeaterLoggedIn, setRepeaterLoggedIn] = useState(false);
+  const { handleAirtimeCommand, stopTracking } = useAirtimeTracking(setMessages);
 
-  // Reset login state when conversation changes
+  // Reset login state and stop airtime tracking when conversation changes
   useEffect(() => {
     setRepeaterLoggedIn(false);
-  }, [activeConversation?.id]);
+    stopTracking();
+  }, [activeConversation?.id, stopTracking]);
 
   // Check if active conversation is a repeater
   const activeContactIsRepeater = useMemo(() => {
@@ -187,6 +190,10 @@ export function useRepeaterMode(
       if (!activeConversation || activeConversation.type !== 'contact') return;
       if (!activeContactIsRepeater || !repeaterLoggedIn) return;
 
+      // Check for special airtime commands first (handled locally)
+      const handled = await handleAirtimeCommand(command, activeConversation.id);
+      if (handled) return;
+
       // Show the command as an outgoing message
       const commandMessage = createLocalMessage(activeConversation.id, `> ${command}`, true, 0);
       setMessages((prev) => [...prev, commandMessage]);
@@ -216,7 +223,13 @@ export function useRepeaterMode(
         setMessages((prev) => [...prev, errorMessage]);
       }
     },
-    [activeConversation, activeContactIsRepeater, repeaterLoggedIn, setMessages]
+    [
+      activeConversation,
+      activeContactIsRepeater,
+      repeaterLoggedIn,
+      setMessages,
+      handleAirtimeCommand,
+    ]
   );
 
   return {
