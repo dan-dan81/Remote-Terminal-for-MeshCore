@@ -31,7 +31,7 @@ ACL_PERMISSION_NAMES = {
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Delay between repeater radio operations to allow key exchange and path establishment
-REPEATER_OP_DELAY_SECONDS = 5.0
+REPEATER_OP_DELAY_SECONDS = 2.0
 
 
 async def prepare_repeater_connection(mc, contact: Contact, password: str) -> None:
