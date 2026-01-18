@@ -348,55 +348,66 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
     # Pause message polling to prevent it from stealing our response
     async with pause_polling():
-        # Add contact to radio with path from DB
-        logger.info("Adding repeater %s to radio", contact.public_key[:12])
-        await mc.commands.add_contact(contact.to_radio_dict())
+        # Stop auto-fetch to prevent race condition where it consumes our CLI response
+        # before we can call get_msg(). This was causing every other command to fail
+        # with {'messages_available': False}.
+        await mc.stop_auto_message_fetching()
 
-        # Send the command
-        logger.info("Sending command to repeater %s: %s", contact.public_key[:12], request.command)
+        try:
+            # Add contact to radio with path from DB
+            logger.info("Adding repeater %s to radio", contact.public_key[:12])
+            await mc.commands.add_contact(contact.to_radio_dict())
 
-        send_result = await mc.commands.send_cmd(contact.public_key, request.command)
-
-        if send_result.type == EventType.ERROR:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to send command: {send_result.payload}"
+            # Send the command
+            logger.info(
+                "Sending command to repeater %s: %s", contact.public_key[:12], request.command
             )
 
-        # Wait for response (MESSAGES_WAITING event, then get_msg)
-        try:
-            wait_result = await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=10.0)
+            send_result = await mc.commands.send_cmd(contact.public_key, request.command)
 
-            if wait_result is None:
-                # Timeout - no response received
-                logger.warning(
-                    "No response from repeater %s for command: %s",
-                    contact.public_key[:12],
-                    request.command,
+            if send_result.type == EventType.ERROR:
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to send command: {send_result.payload}"
                 )
+
+            # Wait for response (MESSAGES_WAITING event, then get_msg)
+            try:
+                wait_result = await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=10.0)
+
+                if wait_result is None:
+                    # Timeout - no response received
+                    logger.warning(
+                        "No response from repeater %s for command: %s",
+                        contact.public_key[:12],
+                        request.command,
+                    )
+                    return CommandResponse(
+                        command=request.command,
+                        response="(no response - command may have been processed)",
+                    )
+
+                response_event = await mc.commands.get_msg()
+
+                if response_event.type == EventType.ERROR:
+                    return CommandResponse(
+                        command=request.command, response=f"(error: {response_event.payload})"
+                    )
+
+                # Extract the response text and timestamp from the payload
+                response_text = response_event.payload.get("text", str(response_event.payload))
+                sender_timestamp = response_event.payload.get("timestamp")
+                logger.info("Received response from %s: %s", contact.public_key[:12], response_text)
+
                 return CommandResponse(
                     command=request.command,
-                    response="(no response - command may have been processed)",
+                    response=response_text,
+                    sender_timestamp=sender_timestamp,
                 )
-
-            response_event = await mc.commands.get_msg()
-
-            if response_event.type == EventType.ERROR:
+            except Exception as e:
+                logger.error("Error waiting for response: %s", e)
                 return CommandResponse(
-                    command=request.command, response=f"(error: {response_event.payload})"
+                    command=request.command, response=f"(error waiting for response: {e})"
                 )
-
-            # Extract the response text and timestamp from the payload
-            response_text = response_event.payload.get("text", str(response_event.payload))
-            sender_timestamp = response_event.payload.get("timestamp")
-            logger.info("Received response from %s: %s", contact.public_key[:12], response_text)
-
-            return CommandResponse(
-                command=request.command,
-                response=response_text,
-                sender_timestamp=sender_timestamp,
-            )
-        except Exception as e:
-            logger.error("Error waiting for response: %s", e)
-            return CommandResponse(
-                command=request.command, response=f"(error waiting for response: {e})"
-            )
+        finally:
+            # Always restart auto-fetch, even if an error occurred
+            await mc.start_auto_message_fetching()
