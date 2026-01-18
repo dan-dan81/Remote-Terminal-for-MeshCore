@@ -7,20 +7,11 @@ import { toast } from './ui/sonner';
 interface StatusBarProps {
   health: HealthStatus | null;
   config: RadioConfig | null;
-  onConfigClick: () => void;
-  onMaintenanceClick: () => void;
-  onAdvertise: () => void;
+  onSettingsClick: () => void;
   onMenuClick?: () => void;
 }
 
-export function StatusBar({
-  health,
-  config,
-  onConfigClick,
-  onMaintenanceClick,
-  onAdvertise,
-  onMenuClick,
-}: StatusBarProps) {
+export function StatusBar({ health, config, onSettingsClick, onMenuClick }: StatusBarProps) {
   const connected = health?.radio_connected ?? false;
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -62,21 +53,10 @@ export function StatusBar({
         </span>
       </div>
 
-      {health?.serial_port && (
-        <div className="hidden xl:flex items-center gap-1 text-[#888]">
-          Port: <span className="text-[#e0e0e0]">{health.serial_port}</span>
-        </div>
-      )}
-
       {config && (
-        <>
-          <div className="hidden lg:flex items-center gap-1 text-[#888]">
-            <span className="text-[#e0e0e0]">{config.name || 'Unnamed'}</span>
-          </div>
-          <div className="hidden xl:flex items-center gap-1 text-[#888]">
-            {config.radio.freq} MHz/SF{config.radio.sf}/CR{config.radio.cr}/{config.tx_power}dBm
-          </div>
-        </>
+        <div className="hidden lg:flex items-center gap-1 text-[#888]">
+          <span className="text-[#e0e0e0]">{config.name || 'Unnamed'}</span>
+        </div>
       )}
 
       {/* Spacer to push buttons right on mobile */}
@@ -92,29 +72,13 @@ export function StatusBar({
         </button>
       )}
       <button
-        onClick={onAdvertise}
-        disabled={!connected}
-        className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444] disabled:bg-[#333] disabled:text-[#666] disabled:cursor-not-allowed"
-      >
-        Advertise
-      </button>
-      <button
-        onClick={onMaintenanceClick}
-        className="px-2 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
-        title="Database Maintenance"
-      >
-        <span role="img" aria-label="Settings">
-          &#9881;&#65039;
-        </span>
-      </button>
-      <button
-        onClick={onConfigClick}
+        onClick={onSettingsClick}
         className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
       >
-        <span role="img" aria-label="Radio">
-          &#128251;
+        <span role="img" aria-label="Settings">
+          &#128295;
         </span>{' '}
-        Config
+        Radio & Config
       </button>
     </div>
   );

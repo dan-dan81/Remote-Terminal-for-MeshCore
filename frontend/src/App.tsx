@@ -12,8 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { MessageList } from './components/MessageList';
 import { MessageInput, type MessageInputHandle } from './components/MessageInput';
 import { NewMessageModal } from './components/NewMessageModal';
-import { ConfigModal } from './components/ConfigModal';
-import { MaintenanceModal } from './components/MaintenanceModal';
+import { SettingsModal } from './components/SettingsModal';
 import { RawPacketList } from './components/RawPacketList';
 import { MapView } from './components/MapView';
 import { CrackerPanel } from './components/CrackerPanel';
@@ -54,8 +53,7 @@ export function App() {
   const [rawPackets, setRawPackets] = useState<RawPacket[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
-  const [showMaintenance, setShowMaintenance] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [undecryptedCount, setUndecryptedCount] = useState(0);
   const [showCracker, setShowCracker] = useState(false);
@@ -564,9 +562,7 @@ export function App() {
       <StatusBar
         health={health}
         config={config}
-        onConfigClick={() => setShowConfig(true)}
-        onMaintenanceClick={() => setShowMaintenance(true)}
-        onAdvertise={handleAdvertise}
+        onSettingsClick={() => setShowSettings(true)}
         onMenuClick={() => setSidebarOpen(true)}
       />
 
@@ -617,30 +613,32 @@ export function App() {
                     </span>
                     <span className="font-normal text-sm text-muted-foreground font-mono truncate">
                       {activeConversation.id}
-                      {activeConversation.type === 'contact' &&
-                        (() => {
-                          const contact = contacts.find(
-                            (c) => c.public_key === activeConversation.id
-                          );
-                          if (!contact) return null;
-                          const parts: string[] = [];
-                          if (contact.last_seen) {
-                            parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
-                          }
-                          if (contact.last_path_len === -1) {
-                            parts.push('flood');
-                          } else if (contact.last_path_len === 0) {
-                            parts.push('direct');
-                          } else if (contact.last_path_len > 0) {
-                            parts.push(
-                              `${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`
-                            );
-                          }
-                          return parts.length > 0 ? (
-                            <span className="ml-2 font-sans">({parts.join(', ')})</span>
-                          ) : null;
-                        })()}
                     </span>
+                    {activeConversation.type === 'contact' &&
+                      (() => {
+                        const contact = contacts.find(
+                          (c) => c.public_key === activeConversation.id
+                        );
+                        if (!contact) return null;
+                        const parts: string[] = [];
+                        if (contact.last_seen) {
+                          parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
+                        }
+                        if (contact.last_path_len === -1) {
+                          parts.push('flood');
+                        } else if (contact.last_path_len === 0) {
+                          parts.push('direct');
+                        } else if (contact.last_path_len > 0) {
+                          parts.push(
+                            `${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`
+                          );
+                        }
+                        return parts.length > 0 ? (
+                          <span className="font-normal text-sm text-muted-foreground flex-shrink-0">
+                            ({parts.join(', ')})
+                          </span>
+                        ) : null;
+                      })()}
                   </span>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {/* Favorite button */}
@@ -779,21 +777,17 @@ export function App() {
         onCreateHashtagChannel={handleCreateHashtagChannel}
       />
 
-      <ConfigModal
-        open={showConfig}
+      <SettingsModal
+        open={showSettings}
         config={config}
+        health={health}
         appSettings={appSettings}
-        onClose={() => setShowConfig(false)}
+        onClose={() => setShowSettings(false)}
         onSave={handleSaveConfig}
         onSaveAppSettings={handleSaveAppSettings}
         onSetPrivateKey={handleSetPrivateKey}
         onReboot={handleReboot}
-      />
-
-      <MaintenanceModal
-        open={showMaintenance}
-        health={health}
-        onClose={() => setShowMaintenance(false)}
+        onAdvertise={handleAdvertise}
         onHealthRefresh={async () => {
           const data = await api.getHealth();
           setHealth(data);

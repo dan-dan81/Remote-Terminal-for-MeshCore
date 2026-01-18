@@ -1,7 +1,14 @@
 import { useState, useRef } from 'react';
 import type { Contact, Conversation } from '../types';
 import { getContactDisplayName } from '../utils/pubkey';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -33,7 +40,8 @@ export function NewMessageModal({
 }: NewMessageModalProps) {
   const [tab, setTab] = useState<Tab>('existing');
   const [name, setName] = useState('');
-  const [key, setKey] = useState('');
+  const [contactKey, setContactKey] = useState('');
+  const [roomKey, setRoomKey] = useState('');
   const [tryHistorical, setTryHistorical] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,22 +53,22 @@ export function NewMessageModal({
 
     try {
       if (tab === 'new-contact') {
-        if (!name.trim() || !key.trim()) {
+        if (!name.trim() || !contactKey.trim()) {
           setError('Name and public key are required');
           return;
         }
-        await onCreateContact(name.trim(), key.trim(), tryHistorical);
+        await onCreateContact(name.trim(), contactKey.trim(), tryHistorical);
         onSelectConversation({
           type: 'contact',
-          id: key.trim(),
+          id: contactKey.trim(),
           name: name.trim(),
         });
       } else if (tab === 'new-room') {
-        if (!name.trim() || !key.trim()) {
+        if (!name.trim() || !roomKey.trim()) {
           setError('Room name and key are required');
           return;
         }
-        await onCreateChannel(name.trim(), key.trim(), tryHistorical);
+        await onCreateChannel(name.trim(), roomKey.trim(), tryHistorical);
       } else if (tab === 'hashtag') {
         const channelName = name.trim();
         const validationError = validateHashtagName(channelName);
@@ -116,6 +124,12 @@ export function NewMessageModal({
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>New Conversation</DialogTitle>
+          <DialogDescription className="sr-only">
+            {tab === 'existing' && 'Select an existing contact to start a conversation'}
+            {tab === 'new-contact' && 'Add a new contact by entering their name and public key'}
+            {tab === 'new-room' && 'Create a private room with a shared encryption key'}
+            {tab === 'hashtag' && 'Join a public hashtag channel'}
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
@@ -165,8 +179,8 @@ export function NewMessageModal({
               <Label htmlFor="contact-key">Public Key</Label>
               <Input
                 id="contact-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
+                value={contactKey}
+                onChange={(e) => setContactKey(e.target.value)}
                 placeholder="64-character hex public key"
               />
             </div>
@@ -184,12 +198,31 @@ export function NewMessageModal({
             </div>
             <div className="space-y-2">
               <Label htmlFor="room-key">Room Key</Label>
-              <Input
-                id="room-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="Pre-shared key (hex)"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="room-key"
+                  value={roomKey}
+                  onChange={(e) => setRoomKey(e.target.value)}
+                  placeholder="Pre-shared key (hex)"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    const bytes = new Uint8Array(16);
+                    crypto.getRandomValues(bytes);
+                    const hex = Array.from(bytes)
+                      .map((b) => b.toString(16).padStart(2, '0'))
+                      .join('');
+                    setRoomKey(hex);
+                  }}
+                  title="Generate random key"
+                >
+                  🎲
+                </Button>
+              </div>
             </div>
           </TabsContent>
 

@@ -88,22 +88,33 @@ def broadcast_error(message: str, details: str | None = None) -> None:
 
 def broadcast_health(radio_connected: bool, serial_port: str | None = None) -> None:
     """Broadcast health status change to all connected clients."""
-    # Get database file size in MB
-    db_size_mb = 0.0
-    try:
-        db_size_bytes = os.path.getsize(settings.database_path)
-        db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
-    except OSError:
-        pass
+    from app.repository import RawPacketRepository
 
-    asyncio.create_task(
-        ws_manager.broadcast(
+    async def _broadcast():
+        # Get database file size in MB
+        db_size_mb = 0.0
+        try:
+            db_size_bytes = os.path.getsize(settings.database_path)
+            db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
+        except OSError:
+            pass
+
+        # Get oldest undecrypted packet info
+        oldest_ts = None
+        try:
+            oldest_ts = await RawPacketRepository.get_oldest_undecrypted()
+        except RuntimeError:
+            pass  # Database not connected
+
+        await ws_manager.broadcast(
             "health",
             {
                 "status": "ok" if radio_connected else "degraded",
                 "radio_connected": radio_connected,
                 "serial_port": serial_port,
                 "database_size_mb": db_size_mb,
+                "oldest_undecrypted_timestamp": oldest_ts,
             },
         )
-    )
+
+    asyncio.create_task(_broadcast())

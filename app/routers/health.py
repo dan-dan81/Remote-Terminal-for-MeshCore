@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.radio import radio_manager
+from app.repository import RawPacketRepository
 
 router = APIRouter(tags=["health"])
 
@@ -14,6 +15,7 @@ class HealthResponse(BaseModel):
     radio_connected: bool
     serial_port: str | None
     database_size_mb: float
+    oldest_undecrypted_timestamp: int | None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -27,9 +29,17 @@ async def healthcheck() -> HealthResponse:
     except OSError:
         pass
 
+    # Get oldest undecrypted packet info (gracefully handle if DB not connected)
+    oldest_ts = None
+    try:
+        oldest_ts = await RawPacketRepository.get_oldest_undecrypted()
+    except RuntimeError:
+        pass  # Database not connected
+
     return HealthResponse(
         status="ok" if radio_manager.is_connected else "degraded",
         radio_connected=radio_manager.is_connected,
         serial_port=radio_manager.port,
         database_size_mb=db_size_mb,
+        oldest_undecrypted_timestamp=oldest_ts,
     )

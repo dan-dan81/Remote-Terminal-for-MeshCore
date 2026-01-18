@@ -45,8 +45,7 @@ frontend/
 │   │   ├── MapView.tsx       # Leaflet map showing node locations
 │   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker (lazy-loads wordlist)
 │   │   ├── NewMessageModal.tsx
-│   │   ├── ConfigModal.tsx   # Radio config + app settings
-│   │   └── MaintenanceModal.tsx  # Database maintenance (packet cleanup)
+│   │   └── SettingsModal.tsx # Unified settings: radio config, identity, serial, database, advertise
 │   └── test/
 │       ├── setup.ts          # Test setup (jsdom, matchers)
 │       ├── messageParser.test.ts

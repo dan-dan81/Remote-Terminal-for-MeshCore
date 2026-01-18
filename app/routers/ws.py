@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.radio import radio_manager
-from app.repository import ChannelRepository, ContactRepository
+from app.repository import ChannelRepository, ContactRepository, RawPacketRepository
 from app.websocket import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         except OSError:
             pass
 
+        # Get oldest undecrypted packet info
+        oldest_ts = None
+        try:
+            oldest_ts = await RawPacketRepository.get_oldest_undecrypted()
+        except RuntimeError:
+            pass  # Database not connected
+
         health_data = {
             "status": "ok" if radio_manager.is_connected else "degraded",
             "radio_connected": radio_manager.is_connected,
             "serial_port": radio_manager.port,
             "database_size_mb": db_size_mb,
+            "oldest_undecrypted_timestamp": oldest_ts,
         }
         await ws_manager.send_personal(websocket, "health", health_data)
 

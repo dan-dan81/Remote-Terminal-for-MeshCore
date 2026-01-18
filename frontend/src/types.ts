@@ -42,6 +42,7 @@ export interface HealthStatus {
   radio_connected: boolean;
   serial_port: string | null;
   database_size_mb: number;
+  oldest_undecrypted_timestamp: number | null;
 }
 
 export interface MaintenanceResult {

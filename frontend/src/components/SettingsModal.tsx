@@ -1,0 +1,660 @@
+import { useState, useEffect, useMemo } from 'react';
+import type {
+  AppSettings,
+  AppSettingsUpdate,
+  HealthStatus,
+  RadioConfig,
+  RadioConfigUpdate,
+} from '../types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Button } from './ui/button';
+import { Separator } from './ui/separator';
+import { Alert, AlertDescription } from './ui/alert';
+import { toast } from './ui/sonner';
+import { api } from '../api';
+import { formatTime } from '../utils/messageParser';
+
+// Radio presets for common configurations
+interface RadioPreset {
+  name: string;
+  freq: number;
+  bw: number;
+  sf: number;
+  cr: number;
+}
+
+const RADIO_PRESETS: RadioPreset[] = [
+  { name: 'USA/Canada', freq: 910.525, bw: 62.5, sf: 7, cr: 5 },
+  { name: 'Australia', freq: 915.8, bw: 250, sf: 10, cr: 5 },
+  { name: 'Australia (narrow)', freq: 916.575, bw: 62.5, sf: 7, cr: 8 },
+  { name: 'Australia SA, WA', freq: 923.125, bw: 62.5, sf: 8, cr: 8 },
+  { name: 'Australia QLD', freq: 923.125, bw: 62.5, sf: 8, cr: 5 },
+  { name: 'New Zealand', freq: 917.375, bw: 250, sf: 11, cr: 5 },
+  { name: 'New Zealand (narrow)', freq: 917.375, bw: 62.5, sf: 7, cr: 5 },
+  { name: 'EU/UK/Switzerland Long Range', freq: 869.525, bw: 250, sf: 11, cr: 5 },
+  { name: 'EU/UK/Switzerland Medium Range', freq: 869.525, bw: 250, sf: 10, cr: 5 },
+  { name: 'EU/UK/Switzerland Narrow', freq: 869.618, bw: 62.5, sf: 8, cr: 8 },
+  { name: 'Czech Republic (Narrow)', freq: 869.432, bw: 62.5, sf: 7, cr: 5 },
+  { name: 'EU 433MHz Long Range', freq: 433.65, bw: 250, sf: 11, cr: 5 },
+  { name: 'Portugal 433MHz', freq: 433.375, bw: 62.5, sf: 9, cr: 6 },
+  { name: 'Portugal 868MHz', freq: 869.618, bw: 62.5, sf: 7, cr: 6 },
+  { name: 'Vietnam', freq: 920.25, bw: 250, sf: 11, cr: 5 },
+];
+
+interface SettingsModalProps {
+  open: boolean;
+  config: RadioConfig | null;
+  health: HealthStatus | null;
+  appSettings: AppSettings | null;
+  onClose: () => void;
+  onSave: (update: RadioConfigUpdate) => Promise<void>;
+  onSaveAppSettings: (update: AppSettingsUpdate) => Promise<void>;
+  onSetPrivateKey: (key: string) => Promise<void>;
+  onReboot: () => Promise<void>;
+  onAdvertise: () => Promise<void>;
+  onHealthRefresh: () => Promise<void>;
+}
+
+export function SettingsModal({
+  open,
+  config,
+  health,
+  appSettings,
+  onClose,
+  onSave,
+  onSaveAppSettings,
+  onSetPrivateKey,
+  onReboot,
+  onAdvertise,
+  onHealthRefresh,
+}: SettingsModalProps) {
+  // Tab state
+  type SettingsTab = 'radio' | 'identity' | 'serial' | 'database' | 'advertise';
+  const [activeTab, setActiveTab] = useState<SettingsTab>('radio');
+
+  // Radio config state
+  const [name, setName] = useState('');
+  const [lat, setLat] = useState('');
+  const [lon, setLon] = useState('');
+  const [txPower, setTxPower] = useState('');
+  const [freq, setFreq] = useState('');
+  const [bw, setBw] = useState('');
+  const [sf, setSf] = useState('');
+  const [cr, setCr] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [maxRadioContacts, setMaxRadioContacts] = useState('');
+
+  // Loading states
+  const [loading, setLoading] = useState(false);
+  const [rebooting, setRebooting] = useState(false);
+  const [advertising, setAdvertising] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [error, setError] = useState('');
+
+  // Database maintenance state
+  const [retentionDays, setRetentionDays] = useState('14');
+  const [cleaning, setCleaning] = useState(false);
+
+  useEffect(() => {
+    if (config) {
+      setName(config.name);
+      setLat(String(config.lat));
+      setLon(String(config.lon));
+      setTxPower(String(config.tx_power));
+      setFreq(String(config.radio.freq));
+      setBw(String(config.radio.bw));
+      setSf(String(config.radio.sf));
+      setCr(String(config.radio.cr));
+    }
+  }, [config]);
+
+  useEffect(() => {
+    if (appSettings) {
+      setMaxRadioContacts(String(appSettings.max_radio_contacts));
+    }
+  }, [appSettings]);
+
+  // Detect current preset from form values
+  const currentPreset = useMemo(() => {
+    const freqNum = parseFloat(freq);
+    const bwNum = parseFloat(bw);
+    const sfNum = parseInt(sf, 10);
+    const crNum = parseInt(cr, 10);
+
+    for (const preset of RADIO_PRESETS) {
+      if (
+        preset.freq === freqNum &&
+        preset.bw === bwNum &&
+        preset.sf === sfNum &&
+        preset.cr === crNum
+      ) {
+        return preset.name;
+      }
+    }
+    return 'custom';
+  }, [freq, bw, sf, cr]);
+
+  const handlePresetChange = (presetName: string) => {
+    if (presetName === 'custom') return;
+    const preset = RADIO_PRESETS.find((p) => p.name === presetName);
+    if (preset) {
+      setFreq(String(preset.freq));
+      setBw(String(preset.bw));
+      setSf(String(preset.sf));
+      setCr(String(preset.cr));
+    }
+  };
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported', {
+        description: 'Your browser does not support geolocation',
+      });
+      return;
+    }
+
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLat(position.coords.latitude.toFixed(6));
+        setLon(position.coords.longitude.toFixed(6));
+        setGettingLocation(false);
+        toast.success('Location updated');
+      },
+      (err) => {
+        setGettingLocation(false);
+        toast.error('Failed to get location', {
+          description: err.message,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSaveRadioConfig = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const update: RadioConfigUpdate = {
+        lat: parseFloat(lat),
+        lon: parseFloat(lon),
+        tx_power: parseInt(txPower, 10),
+        radio: {
+          freq: parseFloat(freq),
+          bw: parseFloat(bw),
+          sf: parseInt(sf, 10),
+          cr: parseInt(cr, 10),
+        },
+      };
+      await onSave(update);
+      toast.success('Radio config saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveIdentity = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const update: RadioConfigUpdate = { name };
+      await onSave(update);
+      toast.success('Identity saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSerial = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const newMaxRadioContacts = parseInt(maxRadioContacts, 10);
+      if (!isNaN(newMaxRadioContacts) && newMaxRadioContacts !== appSettings?.max_radio_contacts) {
+        await onSaveAppSettings({ max_radio_contacts: newMaxRadioContacts });
+      }
+      toast.success('Serial settings saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetPrivateKey = async () => {
+    if (!privateKey.trim()) {
+      setError('Private key is required');
+      return;
+    }
+    setError('');
+    setLoading(true);
+
+    try {
+      await onSetPrivateKey(privateKey.trim());
+      setPrivateKey('');
+      toast.success('Private key set');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set private key');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReboot = async () => {
+    if (
+      !confirm('Are you sure you want to reboot the radio? The connection will drop temporarily.')
+    ) {
+      return;
+    }
+    setError('');
+    setRebooting(true);
+
+    try {
+      await onReboot();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reboot radio');
+    } finally {
+      setRebooting(false);
+    }
+  };
+
+  const handleAdvertise = async () => {
+    setAdvertising(true);
+    try {
+      await onAdvertise();
+    } finally {
+      setAdvertising(false);
+    }
+  };
+
+  const handleCleanup = async () => {
+    const days = parseInt(retentionDays, 10);
+    if (isNaN(days) || days < 1) {
+      toast.error('Invalid retention days', {
+        description: 'Retention days must be at least 1',
+      });
+      return;
+    }
+
+    setCleaning(true);
+
+    try {
+      const result = await api.runMaintenance(days);
+      toast.success('Database cleanup complete', {
+        description: `Deleted ${result.packets_deleted} old packet${result.packets_deleted === 1 ? '' : 's'}`,
+      });
+      await onHealthRefresh();
+    } catch (err) {
+      console.error('Failed to run maintenance:', err);
+      toast.error('Database cleanup failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Radio & Settings</DialogTitle>
+          <DialogDescription className="sr-only">
+            {activeTab === 'radio' && 'Configure radio frequency, power, and location settings'}
+            {activeTab === 'identity' && 'Manage radio name, public key, and private key'}
+            {activeTab === 'serial' && 'View serial port connection and configure contact sync'}
+            {activeTab === 'database' && 'View database statistics and clean up old packets'}
+            {activeTab === 'advertise' && 'Send a flood advertisement to announce your presence'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {!config ? (
+          <div className="py-8 text-center text-muted-foreground">Loading configuration...</div>
+        ) : (
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as SettingsTab)}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="radio">Radio</TabsTrigger>
+              <TabsTrigger value="identity">Identity</TabsTrigger>
+              <TabsTrigger value="serial">Serial</TabsTrigger>
+              <TabsTrigger value="database">Database</TabsTrigger>
+              <TabsTrigger value="advertise">Advertise</TabsTrigger>
+            </TabsList>
+
+            {/* Radio Config Tab */}
+            <TabsContent value="radio" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="preset">Preset</Label>
+                <select
+                  id="preset"
+                  value={currentPreset}
+                  onChange={(e) => handlePresetChange(e.target.value)}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="custom">Custom</option>
+                  {RADIO_PRESETS.map((preset) => (
+                    <option key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="freq">Frequency (MHz)</Label>
+                  <Input
+                    id="freq"
+                    type="number"
+                    step="any"
+                    value={freq}
+                    onChange={(e) => setFreq(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bw">Bandwidth (kHz)</Label>
+                  <Input
+                    id="bw"
+                    type="number"
+                    step="any"
+                    value={bw}
+                    onChange={(e) => setBw(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="sf">Spreading Factor</Label>
+                  <Input
+                    id="sf"
+                    type="number"
+                    min="7"
+                    max="12"
+                    value={sf}
+                    onChange={(e) => setSf(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cr">Coding Rate</Label>
+                  <Input
+                    id="cr"
+                    type="number"
+                    min="5"
+                    max="8"
+                    value={cr}
+                    onChange={(e) => setCr(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tx-power">TX Power (dBm)</Label>
+                  <Input
+                    id="tx-power"
+                    type="number"
+                    value={txPower}
+                    onChange={(e) => setTxPower(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="max-tx">Max TX Power</Label>
+                  <Input id="max-tx" type="number" value={config.max_tx_power} disabled />
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Location</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGetLocation}
+                    disabled={gettingLocation}
+                  >
+                    {gettingLocation ? 'Getting...' : '📍 Use My Location'}
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lat" className="text-xs text-muted-foreground">
+                      Latitude
+                    </Label>
+                    <Input
+                      id="lat"
+                      type="number"
+                      step="any"
+                      value={lat}
+                      onChange={(e) => setLat(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lon" className="text-xs text-muted-foreground">
+                      Longitude
+                    </Label>
+                    <Input
+                      id="lon"
+                      type="number"
+                      step="any"
+                      value={lon}
+                      onChange={(e) => setLon(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {error && <div className="text-sm text-destructive">{error}</div>}
+
+              <Button onClick={handleSaveRadioConfig} disabled={loading} className="w-full">
+                {loading ? 'Saving...' : 'Save Radio Config'}
+              </Button>
+            </TabsContent>
+
+            {/* Identity Tab */}
+            <TabsContent value="identity" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="public-key">Public Key</Label>
+                <Input
+                  id="public-key"
+                  value={config.public_key}
+                  disabled
+                  className="font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="name">Radio Name</Label>
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+
+              <Button onClick={handleSaveIdentity} disabled={loading} className="w-full">
+                {loading ? 'Saving...' : 'Set Name'}
+              </Button>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label htmlFor="private-key">Set Private Key (write-only)</Label>
+                <Input
+                  id="private-key"
+                  type="password"
+                  autoComplete="off"
+                  value={privateKey}
+                  onChange={(e) => setPrivateKey(e.target.value)}
+                  placeholder="64-character hex private key"
+                />
+                <Button
+                  onClick={handleSetPrivateKey}
+                  disabled={loading || !privateKey.trim()}
+                  className="w-full"
+                >
+                  Set Private Key
+                </Button>
+              </div>
+
+              <Separator />
+
+              <Alert variant="warning">
+                <AlertDescription>
+                  Changes to name or private key require a radio reboot to take effect.
+                </AlertDescription>
+              </Alert>
+
+              <Button
+                variant="outline"
+                onClick={handleReboot}
+                disabled={rebooting || loading}
+                className="w-full border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/10"
+              >
+                {rebooting ? 'Rebooting...' : 'Reboot Radio'}
+              </Button>
+
+              {error && <div className="text-sm text-destructive">{error}</div>}
+            </TabsContent>
+
+            {/* Serial Tab */}
+            <TabsContent value="serial" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Serial Port</Label>
+                {health?.serial_port ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <code className="px-2 py-1 bg-muted rounded text-foreground text-sm">
+                      {health.serial_port}
+                    </code>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="w-2 h-2 rounded-full bg-gray-500" />
+                    <span>Not connected</span>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label htmlFor="max-contacts">Max Contacts on Radio</Label>
+                <Input
+                  id="max-contacts"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={maxRadioContacts}
+                  onChange={(e) => setMaxRadioContacts(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Recent non-repeater contacts loaded to radio for DM auto-ACK (1-1000)
+                </p>
+              </div>
+
+              <Button onClick={handleSaveSerial} disabled={loading} className="w-full">
+                {loading ? 'Saving...' : 'Save Settings'}
+              </Button>
+
+              {error && <div className="text-sm text-destructive">{error}</div>}
+            </TabsContent>
+
+            {/* Database Tab */}
+            <TabsContent value="database" className="space-y-4 mt-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Database size</span>
+                  <span className="font-medium">{health?.database_size_mb ?? '?'} MB</span>
+                </div>
+
+                {health?.oldest_undecrypted_timestamp ? (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Oldest undecrypted packet</span>
+                    <span className="font-medium">
+                      {formatTime(health.oldest_undecrypted_timestamp)}
+                      <span className="text-muted-foreground ml-1">
+                        (
+                        {Math.floor(
+                          (Date.now() / 1000 - health.oldest_undecrypted_timestamp) / 86400
+                        )}{' '}
+                        days old)
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Oldest undecrypted packet</span>
+                    <span className="text-muted-foreground">None</span>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label>Cleanup Old Packets</Label>
+                <p className="text-xs text-muted-foreground">
+                  Delete undecrypted packets older than the specified days. This helps manage
+                  storage for packets that couldn't be decrypted (unknown channel keys).
+                </p>
+                <div className="flex gap-2 items-end">
+                  <div className="space-y-1">
+                    <Label htmlFor="retention-days" className="text-xs">
+                      Days to retain
+                    </Label>
+                    <Input
+                      id="retention-days"
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={retentionDays}
+                      onChange={(e) => setRetentionDays(e.target.value)}
+                      className="w-24"
+                    />
+                  </div>
+                  <Button variant="outline" onClick={handleCleanup} disabled={cleaning}>
+                    {cleaning ? 'Cleaning...' : 'Cleanup'}
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Advertise Tab */}
+            <TabsContent value="advertise" className="space-y-4 mt-4">
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-6">
+                  Send a flood advertisement to announce your presence on the mesh network.
+                </p>
+                <Button
+                  size="lg"
+                  onClick={handleAdvertise}
+                  disabled={advertising || !health?.radio_connected}
+                  className="bg-green-600 hover:bg-green-700 text-white px-12 py-6 text-lg"
+                >
+                  {advertising ? 'Sending...' : 'Send Advertisement'}
+                </Button>
+                {!health?.radio_connected && (
+                  <p className="text-sm text-destructive mt-4">Radio not connected</p>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

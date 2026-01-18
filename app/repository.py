@@ -500,6 +500,15 @@ class RawPacketRepository:
         return row["count"] if row else 0
 
     @staticmethod
+    async def get_oldest_undecrypted() -> int | None:
+        """Get timestamp of oldest undecrypted packet, or None if none exist."""
+        cursor = await db.conn.execute(
+            "SELECT MIN(timestamp) as oldest FROM raw_packets WHERE message_id IS NULL"
+        )
+        row = await cursor.fetchone()
+        return row["oldest"] if row and row["oldest"] is not None else None
+
+    @staticmethod
     async def get_all_undecrypted() -> list[tuple[int, bytes, int]]:
         """Get all undecrypted packets as (id, data, timestamp) tuples."""
         cursor = await db.conn.execute(
