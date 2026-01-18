@@ -445,7 +445,8 @@ export function CrackerPanel({
       <p className="text-sm text-muted-foreground leading-relaxed">
         For unknown-keyed GroupText packets, this will attempt to dictionary attack, then brute
         force payloads as they arrive, testing room names up to the specified length to discover
-        active rooms on the local mesh.
+        active rooms on the local mesh (GroupText packets may not be hashtag messages; we have no
+        way of knowing but try as if they are).
         <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
         pick up messages it couldn't crack, attempting them at one longer length.
         <strong> Decrypt historical</strong> will run an async job on any room name it finds to see
@@ -465,7 +466,13 @@ export function CrackerPanel({
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
         >
-          {isRunning ? 'Stop' : 'Start Cracking'}
+          {isRunning
+            ? 'Stop Search'
+            : gpuAvailable === false
+              ? 'GPU Not Available'
+              : !wordlistLoaded
+                ? 'Loading dictionary...'
+                : 'Find Rooms'}
         </button>
 
         <div className="flex items-center gap-2">
