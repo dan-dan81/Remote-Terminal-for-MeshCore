@@ -606,7 +606,8 @@ export function App() {
                   <span className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
                     <span className="flex-shrink-0">
                       {activeConversation.type === 'channel' &&
-                      !activeConversation.name.startsWith('#')
+                      !activeConversation.name.startsWith('#') &&
+                      activeConversation.name !== 'Public'
                         ? '#'
                         : ''}
                       {activeConversation.name}
