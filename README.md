@@ -4,17 +4,17 @@ Backend server + browser interface for MeshCore mesh radio networks. Attach your
 
 * Send and receive DMs and GroupTexts
 * Cache all received packets, decrypting as you gain keys
-* Monitor unlimited contacts and channels (radio limits don't apply—packets are decrypted server-side)
+* Monitor unlimited contacts and channels (radio limits don't apply -- packets are decrypted server-side)
 * Access your radio remotely over your network or VPN
 * Brute force hashtag room names for GroupTexts you don't have keys for yet
 
-**Warning:** This app has no authentication. Run it on a private network only—do not expose to the internet unless you want strangers sending traffic as you.
+**Warning:** This app has no authentication. Run it on a private network only -- do not expose to the internet unless you want strangers sending traffic as you.
 
 ![Screenshot of the application's web interface](screenshot.png)
 
 ## Disclaimer
 
-This is a personal toolkit, not optimized for general consumption. Entirely vibecoded slop—no warranty of fitness for any purpose.
+This is entirely vibecoded slop -- no warranty of fitness for any purpose. It's been lovingly guided by an engineer with a passion for clean code and good tests, but it's still mostly LLM output, so you may find some bugs.
 
 If extending, read the three `CLAUDE.md` files: `./CLAUDE.md`, `./frontend/CLAUDE.md`, and `./app/CLAUDE.md`.
 
@@ -27,13 +27,19 @@ If extending, read the three `CLAUDE.md` files: `./CLAUDE.md`, `./frontend/CLAUD
 
 **Find your serial port:**
 ```bash
+#######
 # Linux
+#######
 ls /dev/ttyUSB* /dev/ttyACM*
 
+#######
 # macOS
+#######
 ls /dev/cu.usbserial-* /dev/cu.usbmodem*
 
+######
 # WSL2
+######
 # Run this in an elevated PowerShell (not WSL) window
 winget install usbipd
 
@@ -184,7 +190,7 @@ cd /opt/remoteterm
 sudo -u remoteterm uv venv
 sudo -u remoteterm uv sync
 
-# Build frontend (optional—already built in repo)
+# Build frontend (optional -- already built in repo and served by backend)
 cd /opt/remoteterm/frontend
 sudo -u remoteterm npm install
 sudo -u remoteterm npm run build
