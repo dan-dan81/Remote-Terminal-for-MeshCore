@@ -442,9 +442,10 @@ export function CrackerPanel({
 
   return (
     <div className="flex flex-col h-full p-3 gap-3 bg-background border-t border-border">
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        This will attempt to dictionary attack, then brute force GroupText packets as they arrive,
-        testing room names up to the specified length.
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        For unknown-keyed GroupText packets, this will attempt to dictionary attack, then brute
+        force payloads as they arrive, testing room names up to the specified length to discover
+        active rooms on the local mesh.
         <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
         pick up messages it couldn't crack, attempting them at one longer length.
         <strong> Decrypt historical</strong> will run an async job on any room name it finds to see

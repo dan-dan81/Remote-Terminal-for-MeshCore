@@ -312,7 +312,7 @@ export function Sidebar({
           >
             <span className="text-muted-foreground text-xs">🔓</span>
             <span className="flex-1 truncate">
-              {showCracker ? 'Hide' : 'Show'} Cracker
+              {showCracker ? 'Hide' : 'Show'} Room Finder
               <span
                 className={cn(
                   'ml-1 text-xs',
@@ -363,7 +363,6 @@ export function Sidebar({
                       })
                     }
                   >
-                    <span className="text-muted-foreground text-xs">#</span>
                     <span className="name flex-1 truncate">{channel.name}</span>
                     {unreadCount > 0 && (
                       <span
@@ -459,7 +458,6 @@ export function Sidebar({
                     })
                   }
                 >
-                  <span className="text-muted-foreground text-xs">#</span>
                   <span className="name flex-1 truncate">{channel.name}</span>
                   {unreadCount > 0 && (
                     <span
