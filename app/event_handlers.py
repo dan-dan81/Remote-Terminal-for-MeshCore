@@ -221,19 +221,9 @@ def register_event_handlers(meshcore) -> None:
     _active_subscriptions.clear()
 
     # Register handlers and track subscriptions
-    _active_subscriptions.append(
-        meshcore.subscribe(EventType.CONTACT_MSG_RECV, on_contact_message)
-    )
-    _active_subscriptions.append(
-        meshcore.subscribe(EventType.RX_LOG_DATA, on_rx_log_data)
-    )
-    _active_subscriptions.append(
-        meshcore.subscribe(EventType.PATH_UPDATE, on_path_update)
-    )
-    _active_subscriptions.append(
-        meshcore.subscribe(EventType.NEW_CONTACT, on_new_contact)
-    )
-    _active_subscriptions.append(
-        meshcore.subscribe(EventType.ACK, on_ack)
-    )
+    _active_subscriptions.append(meshcore.subscribe(EventType.CONTACT_MSG_RECV, on_contact_message))
+    _active_subscriptions.append(meshcore.subscribe(EventType.RX_LOG_DATA, on_rx_log_data))
+    _active_subscriptions.append(meshcore.subscribe(EventType.PATH_UPDATE, on_path_update))
+    _active_subscriptions.append(meshcore.subscribe(EventType.NEW_CONTACT, on_new_contact))
+    _active_subscriptions.append(meshcore.subscribe(EventType.ACK, on_ack))
     logger.info("Event handlers registered")

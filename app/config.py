@@ -1,12 +1,11 @@
 import logging
 from typing import Literal
 
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = ConfigDict(env_prefix="MESHCORE_")
+    model_config = SettingsConfigDict(env_prefix="MESHCORE_")
 
     serial_port: str = ""  # Empty string triggers auto-detection
     serial_baudrate: int = 115200
