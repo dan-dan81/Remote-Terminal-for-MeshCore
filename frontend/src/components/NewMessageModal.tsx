@@ -57,12 +57,8 @@ export function NewMessageModal({
           setError('Name and public key are required');
           return;
         }
+        // handleCreateContact sets activeConversation with the backend-normalized key
         await onCreateContact(name.trim(), contactKey.trim(), tryHistorical);
-        onSelectConversation({
-          type: 'contact',
-          id: contactKey.trim(),
-          name: name.trim(),
-        });
       } else if (tab === 'new-room') {
         if (!name.trim() || !roomKey.trim()) {
           setError('Room name and key are required');
