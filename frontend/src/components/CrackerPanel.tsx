@@ -142,8 +142,8 @@ export function CrackerPanel({
         .catch(() => setUndecryptedPacketCount(null));
     };
     fetchCount();
-    // Refresh periodically
-    const interval = setInterval(fetchCount, 30000);
+    // Refresh hourly (this is just for display; not critical to be up-to-date)
+    const interval = setInterval(fetchCount, 3600000);
     return () => clearInterval(interval);
   }, []);
 
