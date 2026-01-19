@@ -513,16 +513,35 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
-  // Toggle favorite status for a conversation (via API)
-  const handleToggleFavorite = useCallback(async (type: 'channel' | 'contact', id: string) => {
-    try {
-      const updatedSettings = await api.toggleFavorite(type, id);
-      setAppSettings(updatedSettings);
-    } catch (err) {
-      console.error('Failed to toggle favorite:', err);
-      toast.error('Failed to update favorite');
-    }
-  }, []);
+  // Toggle favorite status for a conversation (via API) with optimistic update
+  const handleToggleFavorite = useCallback(
+    async (type: 'channel' | 'contact', id: string) => {
+      // Compute optimistic new state
+      const wasFavorited = isFavorite(favorites, type, id);
+      const optimisticFavorites = wasFavorited
+        ? favorites.filter((f) => {
+            if (f.type !== type) return true;
+            // Use prefix matching for contacts, exact match for channels
+            if (type === 'contact') return !pubkeysMatch(f.id, id);
+            return f.id !== id;
+          })
+        : [...favorites, { type, id }];
+
+      // Optimistic update
+      setAppSettings((prev) => (prev ? { ...prev, favorites: optimisticFavorites } : prev));
+
+      try {
+        const updatedSettings = await api.toggleFavorite(type, id);
+        setAppSettings(updatedSettings);
+      } catch (err) {
+        console.error('Failed to toggle favorite:', err);
+        // Revert on error
+        setAppSettings((prev) => (prev ? { ...prev, favorites } : prev));
+        toast.error('Failed to update favorite');
+      }
+    },
+    [favorites]
+  );
 
   // Delete channel handler
   const handleDeleteChannel = useCallback(async (key: string) => {
@@ -622,13 +641,21 @@ export function App() {
     [fetchUndecryptedCount]
   );
 
-  // Handle sort order change via API
+  // Handle sort order change via API with optimistic update
   const handleSortOrderChange = useCallback(async (order: 'recent' | 'alpha') => {
+    // Optimistic update for responsive UI
+    setAppSettings((prev) => (prev ? { ...prev, sidebar_sort_order: order } : prev));
+
     try {
       const updatedSettings = await api.updateSettings({ sidebar_sort_order: order });
       setAppSettings(updatedSettings);
     } catch (err) {
       console.error('Failed to update sort order:', err);
+      // Revert on error
+      setAppSettings((prev) =>
+        prev ? { ...prev, sidebar_sort_order: order === 'recent' ? 'alpha' : 'recent' } : prev
+      );
+      toast.error('Failed to save sort preference');
     }
   }, []);
 
