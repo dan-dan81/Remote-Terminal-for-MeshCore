@@ -70,11 +70,7 @@ interface HopCountBadgeProps {
 
 function HopCountBadge({ paths, onClick, variant }: HopCountBadgeProps) {
   const hopInfo = formatHopCounts(paths);
-  // Single direct: "(d)", otherwise "(d/1/3 hops)"
-  const label =
-    hopInfo.allDirect && !hopInfo.hasMultiple
-      ? `(${hopInfo.display})`
-      : `(${hopInfo.display} hops)`;
+  const label = `(${hopInfo.display})`;
 
   const className =
     variant === 'header'
