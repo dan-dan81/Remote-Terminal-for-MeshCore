@@ -7,6 +7,7 @@ import {
   getHopCount,
   resolvePath,
   formatDistance,
+  formatHopCounts,
 } from '../utils/pathUtils';
 import type { Contact, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER, CONTACT_TYPE_CLIENT } from '../types';
@@ -571,5 +572,68 @@ describe('formatDistance', () => {
   it('rounds meters to nearest integer', () => {
     expect(formatDistance(0.4567)).toBe('457m');
     expect(formatDistance(0.001)).toBe('1m');
+  });
+});
+
+describe('formatHopCounts', () => {
+  it('returns empty for null paths', () => {
+    const result = formatHopCounts(null);
+    expect(result.display).toBe('');
+    expect(result.allDirect).toBe(true);
+    expect(result.hasMultiple).toBe(false);
+  });
+
+  it('returns empty for empty paths array', () => {
+    const result = formatHopCounts([]);
+    expect(result.display).toBe('');
+    expect(result.allDirect).toBe(true);
+    expect(result.hasMultiple).toBe(false);
+  });
+
+  it('formats single direct path as "d"', () => {
+    const result = formatHopCounts([{ path: '', received_at: 1700000000 }]);
+    expect(result.display).toBe('d');
+    expect(result.allDirect).toBe(true);
+    expect(result.hasMultiple).toBe(false);
+  });
+
+  it('formats single multi-hop path with hop count', () => {
+    const result = formatHopCounts([{ path: '1A2B', received_at: 1700000000 }]);
+    expect(result.display).toBe('2');
+    expect(result.allDirect).toBe(false);
+    expect(result.hasMultiple).toBe(false);
+  });
+
+  it('formats multiple paths sorted by hop count', () => {
+    const result = formatHopCounts([
+      { path: '1A2B3C', received_at: 1700000000 }, // 3 hops
+      { path: '', received_at: 1700000001 }, // direct
+      { path: '1A', received_at: 1700000002 }, // 1 hop
+      { path: '1A2B3C', received_at: 1700000003 }, // 3 hops
+    ]);
+    expect(result.display).toBe('d/1/3/3');
+    expect(result.allDirect).toBe(false);
+    expect(result.hasMultiple).toBe(true);
+  });
+
+  it('formats multiple direct paths', () => {
+    const result = formatHopCounts([
+      { path: '', received_at: 1700000000 },
+      { path: '', received_at: 1700000001 },
+    ]);
+    expect(result.display).toBe('d/d');
+    expect(result.allDirect).toBe(true);
+    expect(result.hasMultiple).toBe(true);
+  });
+
+  it('handles mixed paths with multiple direct routes', () => {
+    const result = formatHopCounts([
+      { path: '1A', received_at: 1700000000 }, // 1 hop
+      { path: '', received_at: 1700000001 }, // direct
+      { path: '', received_at: 1700000002 }, // direct
+    ]);
+    expect(result.display).toBe('d/d/1');
+    expect(result.allDirect).toBe(false);
+    expect(result.hasMultiple).toBe(true);
   });
 });

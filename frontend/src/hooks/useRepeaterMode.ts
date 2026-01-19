@@ -99,7 +99,7 @@ function createLocalMessage(
     text,
     sender_timestamp: now,
     received_at: now,
-    path: null,
+    paths: null,
     txt_type: 0,
     signature: null,
     outgoing,

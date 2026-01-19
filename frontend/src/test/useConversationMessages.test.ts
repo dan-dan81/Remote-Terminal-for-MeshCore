@@ -16,7 +16,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     text: 'Hello world',
     sender_timestamp: 1700000000,
     received_at: 1700000001,
-    path: null,
+    paths: null,
     txt_type: 0,
     signature: null,
     outgoing: false,
@@ -108,5 +108,77 @@ describe('getMessageContentKey', () => {
     const key = getMessageContentKey(msg);
 
     expect(key).toContain('Hello: World! @user #channel');
+  });
+});
+
+describe('updateMessageAck logic', () => {
+  // Test the logic that updateMessageAck applies to messages
+  // This simulates what the setMessages callback does
+
+  function applyAckUpdate(
+    messages: Message[],
+    messageId: number,
+    ackCount: number,
+    paths?: { path: string; received_at: number }[]
+  ): Message[] {
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx >= 0) {
+      const updated = [...messages];
+      updated[idx] = {
+        ...messages[idx],
+        acked: ackCount,
+        ...(paths !== undefined && { paths }),
+      };
+      return updated;
+    }
+    return messages;
+  }
+
+  it('updates ack count for existing message', () => {
+    const messages = [createMessage({ id: 42, acked: 0 })];
+
+    const updated = applyAckUpdate(messages, 42, 3);
+
+    expect(updated[0].acked).toBe(3);
+  });
+
+  it('updates paths when provided', () => {
+    const messages = [createMessage({ id: 42, acked: 0, paths: null })];
+    const newPaths = [
+      { path: '1A2B', received_at: 1700000000 },
+      { path: '1A3C', received_at: 1700000005 },
+    ];
+
+    const updated = applyAckUpdate(messages, 42, 2, newPaths);
+
+    expect(updated[0].acked).toBe(2);
+    expect(updated[0].paths).toEqual(newPaths);
+  });
+
+  it('does not modify paths when not provided', () => {
+    const existingPaths = [{ path: '1A2B', received_at: 1700000000 }];
+    const messages = [createMessage({ id: 42, acked: 1, paths: existingPaths })];
+
+    const updated = applyAckUpdate(messages, 42, 2);
+
+    expect(updated[0].acked).toBe(2);
+    expect(updated[0].paths).toEqual(existingPaths); // Unchanged
+  });
+
+  it('returns unchanged array for unknown message id', () => {
+    const messages = [createMessage({ id: 42, acked: 0 })];
+
+    const updated = applyAckUpdate(messages, 999, 3);
+
+    expect(updated).toEqual(messages);
+    expect(updated[0].acked).toBe(0); // Unchanged
+  });
+
+  it('handles empty paths array', () => {
+    const messages = [createMessage({ id: 42, acked: 0, paths: null })];
+
+    const updated = applyAckUpdate(messages, 42, 1, []);
+
+    expect(updated[0].paths).toEqual([]);
   });
 });

@@ -100,7 +100,7 @@ function createLocalMessage(conversationKey: string, text: string, outgoing: boo
     text,
     sender_timestamp: now,
     received_at: now,
-    path: null,
+    paths: null,
     txt_type: 0,
     signature: null,
     outgoing,

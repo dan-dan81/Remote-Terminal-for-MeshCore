@@ -1,7 +1,7 @@
 """Tests for event handler logic.
 
-These tests verify the ACK tracking and repeat detection mechanisms
-that determine message delivery confirmation.
+These tests verify the ACK tracking mechanism for direct message
+delivery confirmation.
 """
 
 import time
@@ -16,25 +16,15 @@ from app.event_handlers import (
     register_event_handlers,
     track_pending_ack,
 )
-from app.packet_processor import (
-    _cleanup_expired_repeats,
-    _pending_repeat_expiry,
-    _pending_repeats,
-    track_pending_repeat,
-)
 
 
 @pytest.fixture(autouse=True)
 def clear_test_state():
-    """Clear pending ACKs, repeats, and subscriptions before each test."""
+    """Clear pending ACKs and subscriptions before each test."""
     _pending_acks.clear()
-    _pending_repeats.clear()
-    _pending_repeat_expiry.clear()
     _active_subscriptions.clear()
     yield
     _pending_acks.clear()
-    _pending_repeats.clear()
-    _pending_repeat_expiry.clear()
     _active_subscriptions.clear()
 
 
@@ -82,67 +72,6 @@ class TestAckTracking:
         _cleanup_expired_acks()
 
         assert "recent" in _pending_acks
-
-
-class TestRepeatTracking:
-    """Test repeat tracking for channel/flood messages."""
-
-    def test_track_pending_repeat_stores_correctly(self):
-        """Pending repeats are stored with channel key, text hash, and timestamp."""
-        channel_key = "0123456789ABCDEF0123456789ABCDEF"
-        track_pending_repeat(
-            channel_key=channel_key, text="Hello", timestamp=1700000000, message_id=99
-        )
-
-        # Key is (channel_key, text_hash, timestamp)
-        text_hash = str(hash("Hello"))
-        key = (channel_key, text_hash, 1700000000)
-
-        assert key in _pending_repeats
-        assert _pending_repeats[key] == 99
-
-    def test_same_message_different_channels_tracked_separately(self):
-        """Same message on different channels creates separate entries."""
-        track_pending_repeat(
-            channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
-            text="Test",
-            timestamp=1000,
-            message_id=1,
-        )
-        track_pending_repeat(
-            channel_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2",
-            text="Test",
-            timestamp=1000,
-            message_id=2,
-        )
-
-        assert len(_pending_repeats) == 2
-
-    def test_same_message_different_timestamps_tracked_separately(self):
-        """Same message with different timestamps creates separate entries."""
-        channel_key = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-        track_pending_repeat(channel_key=channel_key, text="Test", timestamp=1000, message_id=1)
-        track_pending_repeat(channel_key=channel_key, text="Test", timestamp=1001, message_id=2)
-
-        assert len(_pending_repeats) == 2
-
-    def test_cleanup_removes_old_repeats(self):
-        """Expired repeats are removed during cleanup."""
-        channel_key = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
-        text_hash = str(hash("test"))
-        old_key = (channel_key, text_hash, 1000)
-        new_key = (channel_key, text_hash, 2000)
-
-        # Set up entries with expiry times
-        _pending_repeats[old_key] = 1
-        _pending_repeats[new_key] = 2
-        _pending_repeat_expiry[old_key] = time.time() - 10  # Already expired
-        _pending_repeat_expiry[new_key] = time.time() + 30  # Still valid
-
-        _cleanup_expired_repeats()
-
-        assert old_key not in _pending_repeats
-        assert new_key in _pending_repeats
 
 
 class TestAckEventHandler:

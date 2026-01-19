@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { HealthStatus, Contact, Channel, Message, RawPacket } from '../types';
+import type { HealthStatus, Contact, Channel, Message, MessagePath, RawPacket } from '../types';
 
 /**
  * Parse and route a WebSocket message.
@@ -21,7 +21,7 @@ function parseWebSocketMessage(
     onMessage?: (message: Message) => void;
     onContact?: (contact: Contact) => void;
     onRawPacket?: (packet: RawPacket) => void;
-    onMessageAcked?: (messageId: number, ackCount: number) => void;
+    onMessageAcked?: (messageId: number, ackCount: number, paths?: MessagePath[]) => void;
   }
 ): { type: string; handled: boolean } {
   try {
@@ -47,8 +47,12 @@ function parseWebSocketMessage(
         handlers.onRawPacket?.(msg.data as RawPacket);
         return { type: msg.type, handled: !!handlers.onRawPacket };
       case 'message_acked': {
-        const ackData = msg.data as { message_id: number; ack_count: number };
-        handlers.onMessageAcked?.(ackData.message_id, ackData.ack_count);
+        const ackData = msg.data as {
+          message_id: number;
+          ack_count: number;
+          paths?: MessagePath[];
+        };
+        handlers.onMessageAcked?.(ackData.message_id, ackData.ack_count, ackData.paths);
         return { type: msg.type, handled: !!handlers.onMessageAcked };
       }
       case 'pong':
@@ -90,7 +94,25 @@ describe('parseWebSocketMessage', () => {
 
     expect(result.type).toBe('message_acked');
     expect(result.handled).toBe(true);
-    expect(onMessageAcked).toHaveBeenCalledWith(42, 3);
+    expect(onMessageAcked).toHaveBeenCalledWith(42, 3, undefined);
+  });
+
+  it('routes message_acked with paths array', () => {
+    const onMessageAcked = vi.fn();
+    const paths = [
+      { path: '1A2B', received_at: 1700000000 },
+      { path: '1A3C', received_at: 1700000005 },
+    ];
+    const data = JSON.stringify({
+      type: 'message_acked',
+      data: { message_id: 42, ack_count: 2, paths },
+    });
+
+    const result = parseWebSocketMessage(data, { onMessageAcked });
+
+    expect(result.type).toBe('message_acked');
+    expect(result.handled).toBe(true);
+    expect(onMessageAcked).toHaveBeenCalledWith(42, 2, paths);
   });
 
   it('routes new message to onMessage handler', () => {

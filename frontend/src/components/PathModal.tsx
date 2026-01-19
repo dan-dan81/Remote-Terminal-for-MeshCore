@@ -1,4 +1,4 @@
-import type { Contact, RadioConfig } from '../types';
+import type { Contact, RadioConfig, MessagePath } from '../types';
 import {
   Dialog,
   DialogContent,
@@ -17,34 +17,59 @@ import {
   type ResolvedPath,
   type PathHop,
 } from '../utils/pathUtils';
+import { formatTime } from '../utils/messageParser';
 import { getMapFocusHash } from '../utils/urlHash';
 
 interface PathModalProps {
   open: boolean;
   onClose: () => void;
-  path: string;
+  paths: MessagePath[];
   senderInfo: SenderInfo;
   contacts: Contact[];
   config: RadioConfig | null;
 }
 
-export function PathModal({ open, onClose, path, senderInfo, contacts, config }: PathModalProps) {
-  const resolved = resolvePath(path, senderInfo, contacts, config);
+export function PathModal({ open, onClose, paths, senderInfo, contacts, config }: PathModalProps) {
+  // Resolve all paths
+  const resolvedPaths = paths.map((p) => ({
+    ...p,
+    resolved: resolvePath(p.path, senderInfo, contacts, config),
+  }));
+
+  const hasSinglePath = paths.length === 1;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Message Path</DialogTitle>
+          <DialogTitle>Message Path{!hasSinglePath && `s (${paths.length})`}</DialogTitle>
           <DialogDescription>
-            This shows <em>one route</em> that this message traveled through the mesh network. Flood
-            messages may arrive via multiple paths, and routers may be incorrectly identified due to
-            prefix collisions between heard and non-heard router advertisements.
+            {hasSinglePath ? (
+              <>
+                This shows <em>one route</em> that this message traveled through the mesh network.
+                Routers may be incorrectly identified due to prefix collisions between heard and
+                non-heard router advertisements.
+              </>
+            ) : (
+              <>
+                This message was received via <strong>{paths.length} different routes</strong>.
+                Routers may be incorrectly identified due to prefix collisions.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto py-2">
-          <PathVisualization resolved={resolved} senderInfo={senderInfo} />
+        <div className="flex-1 overflow-y-auto py-2 space-y-4">
+          {resolvedPaths.map((pathData, index) => (
+            <div key={index}>
+              {!hasSinglePath && (
+                <div className="text-xs text-muted-foreground font-medium mb-2 pb-1 border-b border-border">
+                  Path {index + 1} — received {formatTime(pathData.received_at)}
+                </div>
+              )}
+              <PathVisualization resolved={pathData.resolved} senderInfo={senderInfo} />
+            </div>
+          ))}
         </div>
 
         <DialogFooter>

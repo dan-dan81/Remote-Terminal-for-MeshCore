@@ -1,4 +1,4 @@
-import type { Contact, RadioConfig } from '../types';
+import type { Contact, RadioConfig, MessagePath } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 
 export interface PathHop {
@@ -153,6 +153,33 @@ export function getHopCount(path: string | null | undefined): number {
     return 0;
   }
   return Math.floor(path.length / 2);
+}
+
+/**
+ * Format hop counts from multiple paths for display.
+ * Returns something like "d/1/3/3" for direct, 1-hop, 3-hop, 3-hop paths.
+ * Returns null if no paths or only direct.
+ */
+export function formatHopCounts(paths: MessagePath[] | null | undefined): {
+  display: string;
+  allDirect: boolean;
+  hasMultiple: boolean;
+} {
+  if (!paths || paths.length === 0) {
+    return { display: '', allDirect: true, hasMultiple: false };
+  }
+
+  // Get hop counts for all paths and sort ascending
+  const hopCounts = paths.map((p) => getHopCount(p.path)).sort((a, b) => a - b);
+
+  const allDirect = hopCounts.every((h) => h === 0);
+  const hasMultiple = paths.length > 1;
+
+  // Format: "d" for 0, numbers for others
+  const parts = hopCounts.map((h) => (h === 0 ? 'd' : h.toString()));
+  const display = parts.join('/');
+
+  return { display, allDirect, hasMultiple };
 }
 
 /**

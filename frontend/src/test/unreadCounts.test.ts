@@ -72,7 +72,7 @@ describe('shouldIncrementUnread', () => {
     text: 'Test',
     sender_timestamp: null,
     received_at: Date.now(),
-    path: null,
+    paths: null,
     txt_type: 0,
     signature: null,
     outgoing: false,

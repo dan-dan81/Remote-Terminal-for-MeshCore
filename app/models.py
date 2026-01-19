@@ -67,6 +67,13 @@ class Channel(BaseModel):
     last_read_at: int | None = None  # Server-side read state tracking
 
 
+class MessagePath(BaseModel):
+    """A single path that a message took to reach us."""
+
+    path: str = Field(description="Hex-encoded routing path (2 chars per hop)")
+    received_at: int = Field(description="Unix timestamp when this path was received")
+
+
 class Message(BaseModel):
     id: int
     type: str = Field(description="PRIV or CHAN")
@@ -74,7 +81,9 @@ class Message(BaseModel):
     text: str
     sender_timestamp: int | None = None
     received_at: int
-    path: str | None = Field(default=None, description="Hex-encoded routing path (2 chars per hop)")
+    paths: list[MessagePath] | None = Field(
+        default=None, description="List of routing paths this message arrived via"
+    )
     txt_type: int = 0
     signature: str | None = None
     outgoing: bool = False

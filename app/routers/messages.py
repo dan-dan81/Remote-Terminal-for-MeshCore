@@ -7,7 +7,6 @@ from meshcore import EventType
 from app.dependencies import require_connected
 from app.event_handlers import track_pending_ack
 from app.models import Message, SendChannelMessageRequest, SendDirectMessageRequest
-from app.packet_processor import track_pending_repeat
 from app.repository import MessageRepository
 
 logger = logging.getLogger(__name__)
@@ -184,12 +183,16 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
     if result.type == EventType.ERROR:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
 
-    # Store outgoing message
+    # Store outgoing message with sender prefix (to match echo format)
+    # The radio includes "SenderName: " prefix when broadcasting, so we store it the same way
+    # to enable proper deduplication when the echo comes back
     now = int(time.time())
     channel_key_upper = request.channel_key.upper()
+    radio_name = mc.self_info.get("name", "") if mc.self_info else ""
+    text_with_sender = f"{radio_name}: {request.text}" if radio_name else request.text
     message_id = await MessageRepository.create(
         msg_type="CHAN",
-        text=request.text,
+        text=text_with_sender,
         conversation_key=channel_key_upper,
         sender_timestamp=now,
         received_at=now,
@@ -201,14 +204,11 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
             detail="Failed to store outgoing message - unexpected duplicate",
         )
 
-    # Track for repeat detection (flood messages get confirmed by hearing repeats)
-    track_pending_repeat(channel_key_upper, request.text, now, message_id)
-
     return Message(
         id=message_id,
         type="CHAN",
         conversation_key=channel_key_upper,
-        text=request.text,
+        text=text_with_sender,
         sender_timestamp=now,
         received_at=now,
         outgoing=True,

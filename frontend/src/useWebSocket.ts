@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { HealthStatus, Contact, Channel, Message, RawPacket } from './types';
+import type { HealthStatus, Contact, Channel, Message, MessagePath, RawPacket } from './types';
 
 interface WebSocketMessage {
   type: string;
@@ -18,7 +18,7 @@ interface UseWebSocketOptions {
   onMessage?: (message: Message) => void;
   onContact?: (contact: Contact) => void;
   onRawPacket?: (packet: RawPacket) => void;
-  onMessageAcked?: (messageId: number, ackCount: number) => void;
+  onMessageAcked?: (messageId: number, ackCount: number, paths?: MessagePath[]) => void;
   onError?: (error: ErrorEvent) => void;
 }
 
@@ -83,8 +83,12 @@ export function useWebSocket(options: UseWebSocketOptions) {
             options.onRawPacket?.(msg.data as RawPacket);
             break;
           case 'message_acked': {
-            const ackData = msg.data as { message_id: number; ack_count: number };
-            options.onMessageAcked?.(ackData.message_id, ackData.ack_count);
+            const ackData = msg.data as {
+              message_id: number;
+              ack_count: number;
+              paths?: MessagePath[];
+            };
+            options.onMessageAcked?.(ackData.message_id, ackData.ack_count, ackData.paths);
             break;
           }
           case 'error':

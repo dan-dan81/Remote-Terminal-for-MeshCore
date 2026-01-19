@@ -430,7 +430,7 @@ class TestCreateMessageFromDecrypted:
         assert broadcast["text"] == "TestSender: Hello world"
         assert broadcast["sender_timestamp"] == 1700000000
         assert broadcast["received_at"] == 1700000001
-        assert broadcast["path"] is None  # Historical decryption has no path info
+        assert broadcast["paths"] is None  # Historical decryption has no path info
         assert broadcast["outgoing"] is False
         assert broadcast["acked"] == 0
 
@@ -551,8 +551,11 @@ class TestMessageBroadcastStructure:
 
         broadcast = message_broadcasts[0]["data"]
         # Real-time processing extracts path from packet (flood packets have empty path)
-        assert "path" in broadcast
-        # The test packet is a flood packet, so path should be empty string ""
+        assert "paths" in broadcast
+        # The test packet is a flood packet, so paths should contain a single entry with empty path
+        assert broadcast["paths"] is not None
+        assert len(broadcast["paths"]) == 1
+        assert broadcast["paths"][0]["path"] == ""  # Empty string = direct/flood
 
 
 class TestRawPacketStorage:

@@ -33,6 +33,7 @@ import type {
   Conversation,
   HealthStatus,
   Message,
+  MessagePath,
   RawPacket,
   RadioConfig,
   RadioConfigUpdate,
@@ -220,8 +221,8 @@ export function App() {
           return updated;
         });
       },
-      onMessageAcked: (messageId: number, ackCount: number) => {
-        updateMessageAck(messageId, ackCount);
+      onMessageAcked: (messageId: number, ackCount: number, paths?: MessagePath[]) => {
+        updateMessageAck(messageId, ackCount, paths);
       },
     }),
     [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck, checkMention]

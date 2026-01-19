@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState, type ReactNode } from 'react';
-import type { Contact, Message, RadioConfig } from '../types';
+import type { Contact, Message, MessagePath, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
 import { pubkeysMatch } from '../utils/pubkey';
-import { getHopCount, type SenderInfo } from '../utils/pathUtils';
+import { formatHopCounts, type SenderInfo } from '../utils/pathUtils';
 import { ContactAvatar } from './ContactAvatar';
 import { PathModal } from './PathModal';
 import { cn } from '@/lib/utils';
@@ -62,6 +62,40 @@ function renderTextWithMentions(text: string, radioName?: string): ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+// Clickable hop count badge that opens the path modal
+interface HopCountBadgeProps {
+  paths: MessagePath[];
+  onClick: () => void;
+  variant: 'header' | 'inline';
+}
+
+function HopCountBadge({ paths, onClick, variant }: HopCountBadgeProps) {
+  const hopInfo = formatHopCounts(paths);
+  // Single direct: "(d)", otherwise "(d/1/3 hops)"
+  const label =
+    hopInfo.allDirect && !hopInfo.hasMultiple
+      ? `(${hopInfo.display})`
+      : `(${hopInfo.display} hops)`;
+
+  const className =
+    variant === 'header'
+      ? 'font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline'
+      : 'text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline';
+
+  return (
+    <span
+      className={className}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title="View message path"
+    >
+      {label}
+    </span>
+  );
+}
+
 export function MessageList({
   messages,
   contacts,
@@ -78,7 +112,7 @@ export function MessageList({
   const isInitialLoadRef = useRef<boolean>(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [selectedPath, setSelectedPath] = useState<{
-    path: string;
+    paths: MessagePath[];
     senderInfo: SenderInfo;
   } | null>(null);
 
@@ -336,27 +370,18 @@ export function MessageList({
                     <span className="font-normal text-muted-foreground/70 ml-2 text-[11px]">
                       {formatTime(msg.sender_timestamp || msg.received_at)}
                     </span>
-                    {!msg.outgoing &&
-                      msg.path &&
-                      (getHopCount(msg.path) === 0 ? (
-                        <span className="font-normal text-muted-foreground/70 ml-1 text-[11px]">
-                          (direct)
-                        </span>
-                      ) : (
-                        <span
-                          className="font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPath({
-                              path: msg.path!,
-                              senderInfo: getSenderInfo(msg, contact, sender),
-                            });
-                          }}
-                          title="View message path"
-                        >
-                          ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
-                        </span>
-                      ))}
+                    {!msg.outgoing && msg.paths && msg.paths.length > 0 && (
+                      <HopCountBadge
+                        paths={msg.paths}
+                        variant="header"
+                        onClick={() =>
+                          setSelectedPath({
+                            paths: msg.paths!,
+                            senderInfo: getSenderInfo(msg, contact, sender),
+                          })
+                        }
+                      />
+                    )}
                   </div>
                 )}
                 <div className="break-words whitespace-pre-wrap">
@@ -371,27 +396,18 @@ export function MessageList({
                       <span className="text-[10px] text-muted-foreground/50 ml-2">
                         {formatTime(msg.sender_timestamp || msg.received_at)}
                       </span>
-                      {!msg.outgoing &&
-                        msg.path &&
-                        (getHopCount(msg.path) === 0 ? (
-                          <span className="text-[10px] text-muted-foreground/50 ml-1">
-                            (direct)
-                          </span>
-                        ) : (
-                          <span
-                            className="text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedPath({
-                                path: msg.path!,
-                                senderInfo: getSenderInfo(msg, contact, sender),
-                              });
-                            }}
-                            title="View message path"
-                          >
-                            ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
-                          </span>
-                        ))}
+                      {!msg.outgoing && msg.paths && msg.paths.length > 0 && (
+                        <HopCountBadge
+                          paths={msg.paths}
+                          variant="inline"
+                          onClick={() =>
+                            setSelectedPath({
+                              paths: msg.paths!,
+                              senderInfo: getSenderInfo(msg, contact, sender),
+                            })
+                          }
+                        />
+                      )}
                     </>
                   )}
                   {msg.outgoing && (msg.acked > 0 ? ` ✓${msg.acked > 1 ? msg.acked : ''}` : ' ?')}
@@ -431,7 +447,7 @@ export function MessageList({
         <PathModal
           open={true}
           onClose={() => setSelectedPath(null)}
-          path={selectedPath.path}
+          paths={selectedPath.paths}
           senderInfo={selectedPath.senderInfo}
           contacts={contacts}
           config={config ?? null}

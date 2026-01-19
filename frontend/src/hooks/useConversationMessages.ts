@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from '../components/ui/sonner';
 import { api } from '../api';
-import type { Conversation, Message } from '../types';
+import type { Conversation, Message, MessagePath } from '../types';
 
 const MESSAGE_PAGE_SIZE = 200;
 
@@ -19,7 +19,7 @@ export interface UseConversationMessagesResult {
   fetchMessages: (showLoading?: boolean) => Promise<void>;
   fetchOlderMessages: () => Promise<void>;
   addMessageIfNew: (msg: Message) => boolean;
-  updateMessageAck: (messageId: number, ackCount: number) => void;
+  updateMessageAck: (messageId: number, ackCount: number, paths?: MessagePath[]) => void;
 }
 
 export function useConversationMessages(
@@ -145,18 +145,25 @@ export function useConversationMessages(
     return true;
   }, []);
 
-  // Update a message's ack count
-  const updateMessageAck = useCallback((messageId: number, ackCount: number) => {
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === messageId);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = { ...prev[idx], acked: ackCount };
-        return updated;
-      }
-      return prev;
-    });
-  }, []);
+  // Update a message's ack count and paths
+  const updateMessageAck = useCallback(
+    (messageId: number, ackCount: number, paths?: MessagePath[]) => {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = {
+            ...prev[idx],
+            acked: ackCount,
+            ...(paths !== undefined && { paths }),
+          };
+          return updated;
+        }
+        return prev;
+      });
+    },
+    []
+  );
 
   return {
     messages,

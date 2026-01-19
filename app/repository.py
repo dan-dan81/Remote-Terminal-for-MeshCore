@@ -1,3 +1,4 @@
+import json
 import logging
 import sqlite3
 import time
@@ -6,7 +7,7 @@ from typing import Any
 
 from app.database import db
 from app.decoder import extract_payload
-from app.models import Channel, Contact, Message, RawPacket
+from app.models import Channel, Contact, Message, MessagePath, RawPacket
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,24 @@ class ChannelRepository:
 
 class MessageRepository:
     @staticmethod
+    def _parse_paths(paths_json: str | None) -> list[MessagePath] | None:
+        """Parse paths JSON string to list of MessagePath objects."""
+        if not paths_json:
+            return None
+        try:
+            paths_data = json.loads(paths_json)
+            return [MessagePath(**p) for p in paths_data]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return None
+
+    @staticmethod
+    def _serialize_paths(paths: list[dict] | None) -> str | None:
+        """Serialize paths list to JSON string."""
+        if not paths:
+            return None
+        return json.dumps(paths)
+
+    @staticmethod
     async def create(
         msg_type: str,
         text: str,
@@ -303,11 +322,18 @@ class MessageRepository:
         Uses INSERT OR IGNORE to handle the UNIQUE constraint on
         (type, conversation_key, text, sender_timestamp). This prevents
         duplicate messages when the same message arrives via multiple RF paths.
+
+        The path parameter is converted to the paths JSON array format.
         """
+        # Convert single path to paths array format
+        paths_json = None
+        if path is not None:
+            paths_json = json.dumps([{"path": path, "received_at": received_at}])
+
         cursor = await db.conn.execute(
             """
             INSERT OR IGNORE INTO messages (type, conversation_key, text, sender_timestamp,
-                                            received_at, path, txt_type, signature, outgoing)
+                                            received_at, paths, txt_type, signature, outgoing)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -316,7 +342,7 @@ class MessageRepository:
                 text,
                 sender_timestamp,
                 received_at,
-                path,
+                paths_json,
                 txt_type,
                 signature,
                 outgoing,
@@ -327,6 +353,44 @@ class MessageRepository:
         if cursor.rowcount == 0:
             return None
         return cursor.lastrowid
+
+    @staticmethod
+    async def add_path(
+        message_id: int, path: str, received_at: int | None = None
+    ) -> list[MessagePath]:
+        """Add a new path to an existing message.
+
+        This is used when a repeat/echo of a message arrives via a different route.
+        Returns the updated list of paths.
+        """
+        ts = received_at or int(time.time())
+
+        # Get current paths
+        cursor = await db.conn.execute("SELECT paths FROM messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return []
+
+        # Parse existing paths or start with empty list
+        existing_paths = []
+        if row["paths"]:
+            try:
+                existing_paths = json.loads(row["paths"])
+            except json.JSONDecodeError:
+                existing_paths = []
+
+        # Add new path
+        existing_paths.append({"path": path, "received_at": ts})
+
+        # Update database
+        paths_json = json.dumps(existing_paths)
+        await db.conn.execute(
+            "UPDATE messages SET paths = ? WHERE id = ?",
+            (paths_json, message_id),
+        )
+        await db.conn.commit()
+
+        return [MessagePath(**p) for p in existing_paths]
 
     @staticmethod
     async def get_all(
@@ -359,7 +423,7 @@ class MessageRepository:
                 text=row["text"],
                 sender_timestamp=row["sender_timestamp"],
                 received_at=row["received_at"],
-                path=row["path"],
+                paths=MessageRepository._parse_paths(row["paths"]),
                 txt_type=row["txt_type"],
                 signature=row["signature"],
                 outgoing=bool(row["outgoing"]),
@@ -376,6 +440,59 @@ class MessageRepository:
         cursor = await db.conn.execute("SELECT acked FROM messages WHERE id = ?", (message_id,))
         row = await cursor.fetchone()
         return row["acked"] if row else 1
+
+    @staticmethod
+    async def get_ack_count(message_id: int) -> int:
+        """Get the current ack count for a message."""
+        cursor = await db.conn.execute("SELECT acked FROM messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        return row["acked"] if row else 0
+
+    @staticmethod
+    async def get_by_content(
+        msg_type: str,
+        conversation_key: str,
+        text: str,
+        sender_timestamp: int | None,
+    ) -> "Message | None":
+        """Look up a message by its unique content fields."""
+        cursor = await db.conn.execute(
+            """
+            SELECT id, type, conversation_key, text, sender_timestamp, received_at,
+                   paths, txt_type, signature, outgoing, acked
+            FROM messages
+            WHERE type = ? AND conversation_key = ? AND text = ?
+              AND (sender_timestamp = ? OR (sender_timestamp IS NULL AND ? IS NULL))
+            """,
+            (msg_type, conversation_key, text, sender_timestamp, sender_timestamp),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        paths = None
+        if row["paths"]:
+            try:
+                paths_data = json.loads(row["paths"])
+                paths = [
+                    MessagePath(path=p["path"], received_at=p["received_at"]) for p in paths_data
+                ]
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+        return Message(
+            id=row["id"],
+            type=row["type"],
+            conversation_key=row["conversation_key"],
+            text=row["text"],
+            sender_timestamp=row["sender_timestamp"],
+            received_at=row["received_at"],
+            paths=paths,
+            txt_type=row["txt_type"],
+            signature=row["signature"],
+            outgoing=bool(row["outgoing"]),
+            acked=row["acked"],
+        )
 
     @staticmethod
     async def get_bulk(
@@ -419,7 +536,7 @@ class MessageRepository:
                     text=row["text"],
                     sender_timestamp=row["sender_timestamp"],
                     received_at=row["received_at"],
-                    path=row["path"],
+                    paths=MessageRepository._parse_paths(row["paths"]),
                     txt_type=row["txt_type"],
                     signature=row["signature"],
                     outgoing=bool(row["outgoing"]),
@@ -462,6 +579,11 @@ class RawPacketRepository:
 
         if existing:
             # Duplicate - return existing packet ID
+            logger.info(
+                "Duplicate payload detected (hash=%s..., existing_id=%d)",
+                payload_hash[:12],
+                existing["id"],
+            )
             return (existing["id"], False)
 
         # New packet - insert with hash

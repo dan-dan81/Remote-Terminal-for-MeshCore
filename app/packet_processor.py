@@ -17,6 +17,7 @@ import logging
 import time
 
 from app.decoder import (
+    PacketInfo,
     PayloadType,
     parse_advertisement,
     parse_packet,
@@ -32,13 +33,6 @@ from app.repository import (
 from app.websocket import broadcast_event
 
 logger = logging.getLogger(__name__)
-
-
-# Pending repeats for outgoing message ACK detection
-# Key: (channel_key, text_hash, timestamp) -> message_id
-_pending_repeats: dict[tuple[str, str, int], int] = {}
-_pending_repeat_expiry: dict[tuple[str, str, int], float] = {}
-REPEAT_EXPIRY_SECONDS = 30
 
 
 async def create_message_from_decrypted(
@@ -66,9 +60,7 @@ async def create_message_from_decrypted(
 
     Returns the message ID if created, None if duplicate.
     """
-    import time as time_module
-
-    received = received_at or int(time_module.time())
+    received = received_at or int(time.time())
 
     # Format the message text with sender prefix if present
     text = f"{sender}: {message_text}" if sender else message_text
@@ -87,20 +79,66 @@ async def create_message_from_decrypted(
     )
 
     if msg_id is None:
-        # This shouldn't happen - raw packets are deduplicated by payload hash,
-        # so the same message content shouldn't be created twice. Log a warning.
-        logger.warning(
-            "Unexpected duplicate message for channel %s (packet_id=%d) - "
-            "this may indicate a bug in payload deduplication",
-            channel_key_normalized[:8],
-            packet_id,
+        # Duplicate message detected - this happens when:
+        # 1. Our own outgoing message echoes back (flood routing)
+        # 2. Same message arrives via multiple paths before first is committed
+        # In either case, add the path to the existing message.
+        existing_msg = await MessageRepository.get_by_content(
+            msg_type="CHAN",
+            conversation_key=channel_key_normalized,
+            text=text,
+            sender_timestamp=timestamp,
         )
+        if not existing_msg:
+            logger.warning(
+                "Duplicate message for channel %s but couldn't find existing",
+                channel_key_normalized[:8],
+            )
+            return None
+
+        logger.debug(
+            "Duplicate message for channel %s (msg_id=%d, outgoing=%s) - adding path",
+            channel_key_normalized[:8],
+            existing_msg.id,
+            existing_msg.outgoing,
+        )
+
+        # Add path if provided
+        if path is not None:
+            paths = await MessageRepository.add_path(existing_msg.id, path, received)
+        else:
+            # Get current paths for broadcast
+            paths = existing_msg.paths or []
+
+        # Increment ack count for outgoing messages (echo confirmation)
+        if existing_msg.outgoing:
+            ack_count = await MessageRepository.increment_ack_count(existing_msg.id)
+        else:
+            ack_count = await MessageRepository.get_ack_count(existing_msg.id)
+
+        # Broadcast updated paths
+        broadcast_event(
+            "message_acked",
+            {
+                "message_id": existing_msg.id,
+                "ack_count": ack_count,
+                "paths": [p.model_dump() for p in paths] if paths else [],
+            },
+        )
+
+        # Mark this packet as decrypted
+        await RawPacketRepository.mark_decrypted(packet_id, existing_msg.id)
+
         return None
 
     logger.info("Stored channel message %d for channel %s", msg_id, channel_key_normalized[:8])
 
     # Mark the raw packet as decrypted
     await RawPacketRepository.mark_decrypted(packet_id, msg_id)
+
+    # Build paths array for broadcast
+    # Use "is not None" to include empty string (direct/0-hop messages)
+    paths = [{"path": path or "", "received_at": received}] if path is not None else None
 
     # Broadcast new message to connected clients
     broadcast_event(
@@ -112,7 +150,7 @@ async def create_message_from_decrypted(
             "text": text,
             "sender_timestamp": timestamp,
             "received_at": received,
-            "path": path,
+            "paths": paths,
             "txt_type": 0,
             "signature": None,
             "outgoing": False,
@@ -121,24 +159,6 @@ async def create_message_from_decrypted(
     )
 
     return msg_id
-
-
-def track_pending_repeat(channel_key: str, text: str, timestamp: int, message_id: int) -> None:
-    """Track an outgoing channel message for repeat detection."""
-    text_hash = str(hash(text))
-    key = (channel_key.upper(), text_hash, timestamp)
-    _pending_repeats[key] = message_id
-    _pending_repeat_expiry[key] = time.time() + REPEAT_EXPIRY_SECONDS
-    logger.debug("Tracking repeat for channel %s, message %d", channel_key[:8], message_id)
-
-
-def _cleanup_expired_repeats() -> None:
-    """Remove expired pending repeats."""
-    now = time.time()
-    expired = [k for k, exp in _pending_repeat_expiry.items() if exp < now]
-    for k in expired:
-        _pending_repeats.pop(k, None)
-        _pending_repeat_expiry.pop(k, None)
 
 
 async def process_raw_packet(
@@ -167,6 +187,16 @@ async def process_raw_packet(
     payload_type = packet_info.payload_type if packet_info else None
     payload_type_name = payload_type.name if payload_type else "Unknown"
 
+    # Log packet arrival at debug level
+    path_hex = packet_info.path.hex() if packet_info and packet_info.path else ""
+    logger.debug(
+        "Packet received: type=%s, is_new=%s, packet_id=%d, path='%s'",
+        payload_type_name,
+        is_new_packet,
+        packet_id,
+        path_hex[:8] if path_hex else "(direct)",
+    )
+
     result = {
         "packet_id": packet_id,
         "timestamp": ts,
@@ -180,22 +210,24 @@ async def process_raw_packet(
         "sender": None,
     }
 
-    # Only process new packets - duplicates were already processed when first received
-    if is_new_packet:
-        # Try to decrypt/parse based on payload type
-        if payload_type == PayloadType.GROUP_TEXT:
-            decrypt_result = await _process_group_text(raw_bytes, packet_id, ts, packet_info)
-            if decrypt_result:
-                result.update(decrypt_result)
+    # Process packets based on payload type
+    # For GROUP_TEXT, we always try to decrypt even for duplicate packets - the message
+    # deduplication in create_message_from_decrypted handles adding paths to existing messages.
+    # This is more reliable than trying to look up the message via raw packet linking.
+    if payload_type == PayloadType.GROUP_TEXT:
+        decrypt_result = await _process_group_text(raw_bytes, packet_id, ts, packet_info)
+        if decrypt_result:
+            result.update(decrypt_result)
 
-        elif payload_type == PayloadType.ADVERT:
-            await _process_advertisement(raw_bytes, ts, packet_info)
+    elif payload_type == PayloadType.ADVERT and is_new_packet:
+        # Only process new advertisements (duplicates don't add value)
+        await _process_advertisement(raw_bytes, ts, packet_info)
 
-        # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
-        # elif payload_type == PayloadType.TEXT_MESSAGE:
-        #     decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
-        #     if decrypt_result:
-        #         result.update(decrypt_result)
+    # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
+    # elif payload_type == PayloadType.TEXT_MESSAGE:
+    #     decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
+    #     if decrypt_result:
+    #         result.update(decrypt_result)
 
     # Always broadcast raw packet for the packet feed UI (even duplicates)
     # This enables the frontend cracker to see all incoming packets in real-time
@@ -223,14 +255,13 @@ async def _process_group_text(
     raw_bytes: bytes,
     packet_id: int,
     timestamp: int,
-    packet_info,
+    packet_info: PacketInfo | None,
 ) -> dict | None:
     """
     Process a GroupText (channel message) packet.
 
     Tries all known channel keys to decrypt.
-    Creates a message entry if successful.
-    Handles repeat detection for outgoing message ACKs.
+    Creates a message entry if successful (or adds path to existing if duplicate).
     """
     # Try to decrypt with all known channel keys
     channels = await ChannelRepository.get_all()
@@ -249,34 +280,8 @@ async def _process_group_text(
         # Successfully decrypted!
         logger.debug("Decrypted GroupText for channel %s: %s", channel.name, decrypted.message[:50])
 
-        # Check for repeat detection (our own message echoed back)
-        is_repeat = False
-        _cleanup_expired_repeats()
-        text_hash = str(hash(decrypted.message))
-
-        for ts_offset in range(-5, 6):
-            key = (channel.key, text_hash, decrypted.timestamp + ts_offset)
-            if key in _pending_repeats:
-                message_id = _pending_repeats[key]
-                # Don't pop - let it expire naturally so subsequent repeats via
-                # different radio paths are also caught as duplicates
-                logger.info("Repeat detected for channel message %d", message_id)
-                ack_count = await MessageRepository.increment_ack_count(message_id)
-                broadcast_event("message_acked", {"message_id": message_id, "ack_count": ack_count})
-                is_repeat = True
-                break
-
-        if is_repeat:
-            # Mark packet as decrypted but don't create new message
-            await RawPacketRepository.mark_decrypted(packet_id, message_id)
-            return {
-                "decrypted": True,
-                "channel_name": channel.name,
-                "sender": decrypted.sender,
-                "message_id": message_id,
-            }
-
-        # Use shared function to create message, handle duplicates, and broadcast
+        # Create message (or add path to existing if duplicate)
+        # This handles both new messages and echoes of our own outgoing messages
         msg_id = await create_message_from_decrypted(
             packet_id=packet_id,
             channel_key=channel.key,
@@ -301,7 +306,7 @@ async def _process_group_text(
 async def _process_advertisement(
     raw_bytes: bytes,
     timestamp: int,
-    packet_info=None,
+    packet_info: PacketInfo | None = None,
 ) -> None:
     """
     Process an advertisement packet.

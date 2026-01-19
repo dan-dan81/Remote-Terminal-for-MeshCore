@@ -90,6 +90,11 @@ async def on_contact_message(event: "Event") -> None:
         logger.debug("Duplicate direct message from %s ignored", sender_pubkey[:12])
         return
 
+    # Build paths array for broadcast
+    # Use "is not None" to include empty string (direct/0-hop messages)
+    path = payload.get("path")
+    paths = [{"path": path or "", "received_at": received_at}] if path is not None else None
+
     # Broadcast only genuinely new messages
     broadcast_event(
         "message",
@@ -100,7 +105,7 @@ async def on_contact_message(event: "Event") -> None:
             "text": payload.get("text", ""),
             "sender_timestamp": payload.get("sender_timestamp"),
             "received_at": received_at,
-            "path": payload.get("path"),
+            "paths": paths,
             "txt_type": payload.get("txt_type", 0),
             "signature": payload.get("signature"),
             "outgoing": False,

@@ -74,6 +74,14 @@ export interface Channel {
   last_read_at: number | null;
 }
 
+/** A single path that a message took to reach us */
+export interface MessagePath {
+  /** Hex-encoded routing path (2 chars per hop) */
+  path: string;
+  /** Unix timestamp when this path was received */
+  received_at: number;
+}
+
 export interface Message {
   id: number;
   type: 'PRIV' | 'CHAN';
@@ -82,8 +90,8 @@ export interface Message {
   text: string;
   sender_timestamp: number | null;
   received_at: number;
-  /** Hex-encoded routing path (2 chars per hop). Null for outgoing messages. */
-  path: string | null;
+  /** List of routing paths this message arrived via. Null for outgoing messages. */
+  paths: MessagePath[] | null;
   txt_type: number;
   signature: string | null;
   outgoing: boolean;
