@@ -1,3 +1,13 @@
+## [1.4.0] - 2026-01-18
+
+UI: Improve button layout for room searcher
+UI: Improve favicon coloring
+UI: Improve status bar button layout on small screen
+Feature: Show multi-path hop display with distance estimates
+Feature: Search rooms and contacts by key, not just name
+Bugfix: Historical DM decryption now works as expected
+Bugfix: Don't double-set active conversation after addition; wait for backend room name normalization
+
 ## [1.3.1] - 2026-01-17
 
 UI: Rework restart handling
