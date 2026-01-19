@@ -349,12 +349,12 @@ describe('Integration: State Key Contract', () => {
     expect(stateKey).toBe(`channel-${channelKey}`);
   });
 
-  it('generates correct contact state key with prefix', () => {
+  it('generates correct contact state key with full public key', () => {
     const publicKey = fixtures.advertisement_with_gps.expected_ws_event.data.public_key;
 
     const stateKey = getStateKey('contact', publicKey);
 
-    // Contact state key uses 12-char prefix
-    expect(stateKey).toBe(`contact-${publicKey.substring(0, 12)}`);
+    // Contact state key uses full public key
+    expect(stateKey).toBe(`contact-${publicKey}`);
   });
 });

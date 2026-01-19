@@ -26,7 +26,7 @@ import {
   clearLocalStorageConversationState,
 } from './utils/conversationState';
 import { formatTime } from './utils/messageParser';
-import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
+import { getContactDisplayName } from './utils/pubkey';
 import { parseHashConversation, updateUrlHash, getMapFocusHash } from './utils/urlHash';
 import { isValidLocation, calculateDistance, formatDistance } from './utils/pathUtils';
 import {
@@ -167,7 +167,7 @@ export function App() {
             return msg.conversation_key === activeConv.id;
           }
           if (msg.type === 'PRIV' && activeConv.type === 'contact') {
-            return msg.conversation_key && pubkeysMatch(activeConv.id, msg.conversation_key);
+            return msg.conversation_key === activeConv.id;
           }
           return false;
         })();
@@ -519,12 +519,7 @@ export function App() {
       // Compute optimistic new state
       const wasFavorited = isFavorite(favorites, type, id);
       const optimisticFavorites = wasFavorited
-        ? favorites.filter((f) => {
-            if (f.type !== type) return true;
-            // Use prefix matching for contacts, exact match for channels
-            if (type === 'contact') return !pubkeysMatch(f.id, id);
-            return f.id !== id;
-          })
+        ? favorites.filter((f) => !(f.type === type && f.id === id))
         : [...favorites, { type, id }];
 
       // Optimistic update

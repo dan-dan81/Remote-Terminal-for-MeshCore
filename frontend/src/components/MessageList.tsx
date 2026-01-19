@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useCallback, useState, type ReactNo
 import type { Contact, Message, MessagePath, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
-import { pubkeysMatch } from '../utils/pubkey';
 import { formatHopCounts, type SenderInfo } from '../utils/pathUtils';
 import { ContactAvatar } from './ContactAvatar';
 import { PathModal } from './PathModal';
@@ -201,10 +200,10 @@ export function MessageList({
     }
   }, []);
 
-  // Look up contact by public key or prefix
+  // Look up contact by public key
   const getContact = (conversationKey: string | null): Contact | null => {
     if (!conversationKey) return null;
-    return contacts.find((c) => pubkeysMatch(c.public_key, conversationKey)) || null;
+    return contacts.find((c) => c.public_key === conversationKey) || null;
   };
 
   // Look up contact by name (for channel messages where we parse sender from text)

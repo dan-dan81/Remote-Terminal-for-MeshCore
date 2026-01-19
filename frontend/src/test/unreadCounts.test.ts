@@ -7,7 +7,6 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Message, Conversation } from '../types';
-import { getPubkeyPrefix, pubkeysMatch } from '../utils/pubkey';
 
 /**
  * Determine if a message should increment unread count.
@@ -32,13 +31,9 @@ function shouldIncrementUnread(
   }
 
   if (msg.type === 'PRIV' && msg.conversation_key) {
-    // Use 12-char prefix for contact key
-    const key = `contact-${getPubkeyPrefix(msg.conversation_key)}`;
-    // Don't count if this contact is active (compare by prefix)
-    if (
-      activeConversation?.type === 'contact' &&
-      pubkeysMatch(activeConversation.id, msg.conversation_key)
-    ) {
+    const key = `contact-${msg.conversation_key}`;
+    // Don't count if this contact is active
+    if (activeConversation?.type === 'contact' && activeConversation.id === msg.conversation_key) {
       return null;
     }
     return { key };
@@ -56,12 +51,7 @@ function getUnreadCount(
   id: string,
   unreadCounts: Record<string, number>
 ): number {
-  if (type === 'channel') {
-    return unreadCounts[`channel-${id}`] || 0;
-  }
-  // For contacts, use prefix
-  const prefix = `contact-${getPubkeyPrefix(id)}`;
-  return unreadCounts[prefix] || 0;
+  return unreadCounts[`${type}-${id}`] || 0;
 }
 
 describe('shouldIncrementUnread', () => {
@@ -137,17 +127,21 @@ describe('shouldIncrementUnread', () => {
 
     const result = shouldIncrementUnread(msg, activeConversation);
 
-    expect(result).toEqual({ key: 'contact-abc123456789' });
+    // State key uses full public key
+    expect(result).toEqual({
+      key: 'contact-abc123456789012345678901234567890123456789012345678901234567',
+    });
   });
 
   it('returns null for incoming direct message when viewing that contact', () => {
+    const fullKey = 'abc123456789012345678901234567890123456789012345678901234567';
     const msg = createMessage({
       type: 'PRIV',
-      conversation_key: 'abc123456789012345678901234567890123456789012345678901234567',
+      conversation_key: fullKey,
     });
     const activeConversation: Conversation = {
       type: 'contact',
-      id: 'abc123456789fullkey12345678901234567890123456789012345678',
+      id: fullKey, // Same full key - exact match required
       name: 'Alice',
     };
 
@@ -193,23 +187,15 @@ describe('getUnreadCount', () => {
     expect(getUnreadCount('channel', 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB9', counts)).toBe(0);
   });
 
-  it('returns count for contact using 12-char prefix', () => {
-    const counts = { 'contact-abc123456789': 5 };
+  it('returns count for contact using full public key', () => {
+    const fullKey = 'abc123456789fullpublickey123456789012345678901234';
+    const counts = { [`contact-${fullKey}`]: 5 };
 
-    // Full public key lookup should match the prefix
-    expect(
-      getUnreadCount('contact', 'abc123456789fullpublickey123456789012345678901234', counts)
-    ).toBe(5);
-  });
-
-  it('handles contact key shorter than 12 chars', () => {
-    const counts = { 'contact-short': 2 };
-
-    expect(getUnreadCount('contact', 'short', counts)).toBe(2);
+    expect(getUnreadCount('contact', fullKey, counts)).toBe(5);
   });
 
   it('returns 0 for contact with no unread', () => {
-    const counts = { 'contact-abc123456789': 5 };
+    const counts = { 'contact-abc123456789fullpublickey123456789012345678901234': 5 };
 
     expect(
       getUnreadCount('contact', 'xyz999999999fullkey12345678901234567890123456789', counts)

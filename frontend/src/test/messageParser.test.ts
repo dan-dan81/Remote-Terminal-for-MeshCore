@@ -104,17 +104,10 @@ describe('getStateKey', () => {
     expect(key).toBe('channel-5');
   });
 
-  it('creates contact state key with 12-char prefix', () => {
+  it('creates contact state key with full public key', () => {
     const fullKey = 'abcdef123456789012345678901234567890';
     const key = getStateKey('contact', fullKey);
 
-    expect(key).toBe('contact-abcdef123456');
-  });
-
-  it('handles contact key shorter than 12 chars', () => {
-    const shortKey = 'abc123';
-    const key = getStateKey('contact', shortKey);
-
-    expect(key).toBe('contact-abc123');
+    expect(key).toBe(`contact-${fullKey}`);
   });
 });

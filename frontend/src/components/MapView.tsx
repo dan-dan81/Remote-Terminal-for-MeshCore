@@ -5,11 +5,10 @@ import 'leaflet/dist/leaflet.css';
 import type { Contact } from '../types';
 import { formatTime } from '../utils/messageParser';
 import { CONTACT_TYPE_REPEATER } from '../types';
-import { pubkeysMatch } from '../utils/pubkey';
 
 interface MapViewProps {
   contacts: Contact[];
-  /** Public key (or prefix) of contact to focus on and open popup */
+  /** Public key of contact to focus on and open popup */
   focusedKey?: string | null;
 }
 
@@ -102,10 +101,10 @@ export function MapView({ contacts, focusedKey }: MapViewProps) {
     );
   }, [contacts]);
 
-  // Find the focused contact by key prefix
+  // Find the focused contact by key
   const focusedContact = useMemo(() => {
     if (!focusedKey) return null;
-    return mappableContacts.find((c) => pubkeysMatch(c.public_key, focusedKey)) || null;
+    return mappableContacts.find((c) => c.public_key === focusedKey) || null;
   }, [focusedKey, mappableContacts]);
 
   // Track marker refs to open popup programmatically

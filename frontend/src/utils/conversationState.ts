@@ -9,8 +9,6 @@
  * across devices - see useUnreadCounts hook.
  */
 
-import { getPubkeyPrefix } from './pubkey';
-
 const LAST_MESSAGE_KEY = 'remoteterm-lastMessageTime';
 const SORT_ORDER_KEY = 'remoteterm-sortOrder';
 
@@ -49,17 +47,10 @@ export function setLastMessageTime(key: string, timestamp: number): Conversation
  * This is NOT the same as Message.conversation_key (the database field).
  * This creates prefixed keys for state tracking:
  * - Channels: "channel-{channelKey}"
- * - Contacts: "contact-{12-char-pubkey-prefix}"
- *
- * The 12-char prefix for contacts ensures consistent matching regardless
- * of whether we have a full 64-char pubkey or just a prefix.
+ * - Contacts: "contact-{publicKey}"
  */
 export function getStateKey(type: 'channel' | 'contact', id: string): string {
-  if (type === 'channel') {
-    return `channel-${id}`;
-  }
-  // For contacts, use 12-char prefix for consistent matching
-  return `contact-${getPubkeyPrefix(id)}`;
+  return `${type}-${id}`;
 }
 
 /**

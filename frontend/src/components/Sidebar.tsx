@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Contact, Channel, Conversation, Favorite } from '../types';
 import { getStateKey, type ConversationTimes } from '../utils/conversationState';
-import { getPubkeyPrefix, getContactDisplayName } from '../utils/pubkey';
+import { getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
 import { isFavorite } from '../utils/favorites';
@@ -96,7 +96,7 @@ export function Sidebar({
     return acc;
   }, []);
 
-  // Deduplicate contacts by 12-char prefix, preferring ones with names
+  // Deduplicate contacts by public key, preferring ones with names
   // Also filter out any contacts with empty public keys
   const uniqueContacts = contacts
     .filter((c) => c.public_key && c.public_key.length > 0)
@@ -107,8 +107,7 @@ export function Sidebar({
       return (a.name || '').localeCompare(b.name || '');
     })
     .reduce<Contact[]>((acc, contact) => {
-      const prefix = getPubkeyPrefix(contact.public_key);
-      if (!acc.some((c) => getPubkeyPrefix(c.public_key) === prefix)) {
+      if (!acc.some((c) => c.public_key === contact.public_key)) {
         acc.push(contact);
       }
       return acc;
