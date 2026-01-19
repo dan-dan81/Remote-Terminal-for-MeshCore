@@ -967,6 +967,7 @@ export function App() {
           const data = await api.getHealth();
           setHealth(data);
         }}
+        onRefreshAppSettings={fetchAppSettings}
       />
 
       <Toaster position="top-right" />

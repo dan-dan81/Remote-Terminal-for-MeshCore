@@ -55,6 +55,7 @@ interface SettingsModalProps {
   onReboot: () => Promise<void>;
   onAdvertise: () => Promise<void>;
   onHealthRefresh: () => Promise<void>;
+  onRefreshAppSettings: () => Promise<void>;
 }
 
 export function SettingsModal({
@@ -69,6 +70,7 @@ export function SettingsModal({
   onReboot,
   onAdvertise,
   onHealthRefresh,
+  onRefreshAppSettings,
 }: SettingsModalProps) {
   // Tab state
   type SettingsTab = 'radio' | 'identity' | 'serial' | 'database' | 'advertise';
@@ -117,6 +119,14 @@ export function SettingsModal({
       setAutoDecryptOnAdvert(appSettings.auto_decrypt_dm_on_advert);
     }
   }, [appSettings]);
+
+  // Refresh settings from server when modal opens
+  // This ensures UI reflects actual server state (prevents stale UI after checkbox toggle without save)
+  useEffect(() => {
+    if (open) {
+      onRefreshAppSettings();
+    }
+  }, [open, onRefreshAppSettings]);
 
   // Detect current preset from form values
   const currentPreset = useMemo(() => {
@@ -316,16 +326,19 @@ export function SettingsModal({
     }
   };
 
-  const handleToggleAutoDecrypt = async () => {
-    const newValue = !autoDecryptOnAdvert;
-    setAutoDecryptOnAdvert(newValue); // Optimistic update
+  const handleSaveDatabaseSettings = async () => {
+    setLoading(true);
+    setError('');
 
     try {
-      await onSaveAppSettings({ auto_decrypt_dm_on_advert: newValue });
+      await onSaveAppSettings({ auto_decrypt_dm_on_advert: autoDecryptOnAdvert });
+      toast.success('Database settings saved');
     } catch (err) {
-      console.error('Failed to save auto-decrypt setting:', err);
-      setAutoDecryptOnAdvert(!newValue); // Revert on error
-      toast.error('Failed to save setting');
+      console.error('Failed to save database settings:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save');
+      toast.error('Failed to save settings');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -658,26 +671,29 @@ export function SettingsModal({
 
               <div className="space-y-3">
                 <Label>DM Decryption</Label>
-                <div
-                  className="flex items-center gap-3 cursor-pointer"
-                  onClick={handleToggleAutoDecrypt}
-                >
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={autoDecryptOnAdvert}
-                    readOnly
-                    className="w-4 h-4 rounded border-input accent-primary pointer-events-none"
+                    onChange={(e) => setAutoDecryptOnAdvert(e.target.checked)}
+                    className="w-4 h-4 rounded border-input accent-primary"
                   />
                   <span className="text-sm">
                     Auto-decrypt historical DMs when new contact advertises
                   </span>
-                </div>
+                </label>
                 <p className="text-xs text-muted-foreground">
                   When enabled, the server will automatically try to decrypt stored DM packets when
                   a new contact sends an advertisement. This may cause brief delays on large packet
                   backlogs.
                 </p>
               </div>
+
+              {error && <div className="text-sm text-destructive">{error}</div>}
+
+              <Button onClick={handleSaveDatabaseSettings} disabled={loading} className="w-full">
+                {loading ? 'Saving...' : 'Save Settings'}
+              </Button>
             </TabsContent>
 
             {/* Advertise Tab */}
