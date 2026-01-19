@@ -178,7 +178,9 @@ export function Sidebar({
   // Filter by search query
   const query = searchQuery.toLowerCase().trim();
   const filteredChannels = query
-    ? sortedChannels.filter((c) => c.name.toLowerCase().includes(query))
+    ? sortedChannels.filter(
+        (c) => c.name.toLowerCase().includes(query) || c.key.toLowerCase().includes(query)
+      )
     : sortedChannels;
   const filteredContacts = query
     ? sortedContacts.filter(
