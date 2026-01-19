@@ -260,8 +260,12 @@ class TestAdvertisementPipeline:
     async def test_advertisement_triggers_historical_decrypt_for_new_contact(
         self, test_db, captured_broadcasts
     ):
-        """New contact via advertisement starts historical DM decryption."""
+        """New contact via advertisement starts historical DM decryption when setting enabled."""
         from app.packet_processor import process_raw_packet
+        from app.repository import AppSettingsRepository
+
+        # Enable auto-decrypt setting
+        await AppSettingsRepository.update(auto_decrypt_dm_on_advert=True)
 
         fixture = FIXTURES["advertisement_with_gps"]
         packet_bytes = bytes.fromhex(fixture["raw_packet_hex"])

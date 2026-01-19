@@ -12,6 +12,9 @@ echo
 
 # Run backend linting and type checking
 echo -e "${YELLOW}Running backend lint (Ruff)...${NC}"
+uv run ruff check app/ tests/ --fix
+uv run ruff format app/ tests/
+# validate
 uv run ruff check app/ tests/
 uv run ruff format --check app/ tests/
 echo -e "${GREEN}Backend lint passed!${NC}"

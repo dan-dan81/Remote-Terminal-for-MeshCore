@@ -4,9 +4,12 @@ import type {
   Channel,
   CommandResponse,
   Contact,
+  Favorite,
   HealthStatus,
   MaintenanceResult,
   Message,
+  MigratePreferencesRequest,
+  MigratePreferencesResponse,
   RadioConfig,
   RadioConfigUpdate,
   TelemetryResponse,
@@ -196,5 +199,36 @@ export const api = {
     fetchJson<AppSettings>('/settings', {
       method: 'PATCH',
       body: JSON.stringify(settings),
+    }),
+
+  // Favorites
+  addFavorite: (type: Favorite['type'], id: string) =>
+    fetchJson<AppSettings>('/settings/favorites', {
+      method: 'POST',
+      body: JSON.stringify({ type, id }),
+    }),
+  removeFavorite: (type: Favorite['type'], id: string) =>
+    fetchJson<AppSettings>('/settings/favorites', {
+      method: 'DELETE',
+      body: JSON.stringify({ type, id }),
+    }),
+  toggleFavorite: (type: Favorite['type'], id: string) =>
+    fetchJson<AppSettings>('/settings/favorites/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ type, id }),
+    }),
+
+  // Last message time tracking
+  updateLastMessageTime: (stateKey: string, timestamp: number) =>
+    fetchJson<{ status: string }>('/settings/last-message-time', {
+      method: 'POST',
+      body: JSON.stringify({ state_key: stateKey, timestamp }),
+    }),
+
+  // Preferences migration (one-time, from localStorage to database)
+  migratePreferences: (request: MigratePreferencesRequest) =>
+    fetchJson<MigratePreferencesResponse>('/settings/migrate', {
+      method: 'POST',
+      body: JSON.stringify(request),
     }),
 };

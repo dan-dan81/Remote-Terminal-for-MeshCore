@@ -96,6 +96,7 @@ export function SettingsModal({
   // Database maintenance state
   const [retentionDays, setRetentionDays] = useState('14');
   const [cleaning, setCleaning] = useState(false);
+  const [autoDecryptOnAdvert, setAutoDecryptOnAdvert] = useState(false);
 
   useEffect(() => {
     if (config) {
@@ -113,6 +114,7 @@ export function SettingsModal({
   useEffect(() => {
     if (appSettings) {
       setMaxRadioContacts(String(appSettings.max_radio_contacts));
+      setAutoDecryptOnAdvert(appSettings.auto_decrypt_dm_on_advert);
     }
   }, [appSettings]);
 
@@ -311,6 +313,19 @@ export function SettingsModal({
       });
     } finally {
       setCleaning(false);
+    }
+  };
+
+  const handleToggleAutoDecrypt = async () => {
+    const newValue = !autoDecryptOnAdvert;
+    setAutoDecryptOnAdvert(newValue); // Optimistic update
+
+    try {
+      await onSaveAppSettings({ auto_decrypt_dm_on_advert: newValue });
+    } catch (err) {
+      console.error('Failed to save auto-decrypt setting:', err);
+      setAutoDecryptOnAdvert(!newValue); // Revert on error
+      toast.error('Failed to save setting');
     }
   };
 
@@ -637,6 +652,31 @@ export function SettingsModal({
                     {cleaning ? 'Cleaning...' : 'Cleanup'}
                   </Button>
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label>DM Decryption</Label>
+                <div
+                  className="flex items-center gap-3 cursor-pointer"
+                  onClick={handleToggleAutoDecrypt}
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoDecryptOnAdvert}
+                    readOnly
+                    className="w-4 h-4 rounded border-input accent-primary pointer-events-none"
+                  />
+                  <span className="text-sm">
+                    Auto-decrypt historical DMs when new contact advertises
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, the server will automatically try to decrypt stored DM packets when
+                  a new contact sends an advertisement. This may cause brief delays on large packet
+                  backlogs.
+                </p>
               </div>
             </TabsContent>
 

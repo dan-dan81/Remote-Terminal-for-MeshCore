@@ -124,12 +124,35 @@ export interface RawPacket {
   } | null;
 }
 
+export interface Favorite {
+  type: 'channel' | 'contact';
+  id: string; // channel key or contact public key
+}
+
 export interface AppSettings {
   max_radio_contacts: number;
+  favorites: Favorite[];
+  auto_decrypt_dm_on_advert: boolean;
+  sidebar_sort_order: 'recent' | 'alpha';
+  last_message_times: Record<string, number>;
+  preferences_migrated: boolean;
 }
 
 export interface AppSettingsUpdate {
   max_radio_contacts?: number;
+  auto_decrypt_dm_on_advert?: boolean;
+  sidebar_sort_order?: 'recent' | 'alpha';
+}
+
+export interface MigratePreferencesRequest {
+  favorites: Favorite[];
+  sort_order: string;
+  last_message_times: Record<string, number>;
+}
+
+export interface MigratePreferencesResponse {
+  migrated: boolean;
+  settings: AppSettings;
 }
 
 /** Contact type constants */

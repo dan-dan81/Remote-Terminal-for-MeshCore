@@ -18,12 +18,22 @@ import { MapView } from './components/MapView';
 import { CrackerPanel } from './components/CrackerPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
-import { getStateKey } from './utils/conversationState';
+import {
+  getStateKey,
+  initLastMessageTimes,
+  loadLocalStorageLastMessageTimes,
+  loadLocalStorageSortOrder,
+  clearLocalStorageConversationState,
+} from './utils/conversationState';
 import { formatTime } from './utils/messageParser';
 import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
 import { parseHashConversation, updateUrlHash, getMapFocusHash } from './utils/urlHash';
 import { isValidLocation, calculateDistance, formatDistance } from './utils/pathUtils';
-import { loadFavorites, toggleFavorite, isFavorite, type Favorite } from './utils/favorites';
+import {
+  isFavorite,
+  loadLocalStorageFavorites,
+  clearLocalStorageFavorites,
+} from './utils/favorites';
 import { cn } from '@/lib/utils';
 import type {
   AppSettings,
@@ -31,6 +41,7 @@ import type {
   Contact,
   Channel,
   Conversation,
+  Favorite,
   HealthStatus,
   Message,
   MessagePath,
@@ -60,7 +71,9 @@ export function App() {
   const [undecryptedCount, setUndecryptedCount] = useState(0);
   const [showCracker, setShowCracker] = useState(false);
   const [crackerRunning, setCrackerRunning] = useState(false);
-  const [favorites, setFavorites] = useState<Favorite[]>(loadFavorites);
+
+  // Favorites are now stored server-side in appSettings
+  const favorites: Favorite[] = appSettings?.favorites ?? [];
 
   // Track previous health status to detect changes
   const prevHealthRef = useRef<HealthStatus | null>(null);
@@ -251,6 +264,8 @@ export function App() {
     try {
       const data = await api.getSettings();
       setAppSettings(data);
+      // Initialize in-memory cache with server data
+      initLastMessageTimes(data.last_message_times ?? {});
     } catch (err) {
       console.error('Failed to fetch app settings:', err);
     }
@@ -272,6 +287,72 @@ export function App() {
     fetchAppSettings();
     fetchUndecryptedCount();
   }, [fetchConfig, fetchAppSettings, fetchUndecryptedCount]);
+
+  // One-time migration of localStorage preferences to server
+  const hasMigratedRef = useRef(false);
+  useEffect(() => {
+    // Only run once we have appSettings loaded
+    if (!appSettings || hasMigratedRef.current) return;
+
+    // Skip if already migrated on server
+    if (appSettings.preferences_migrated) {
+      // Just clear any leftover localStorage
+      clearLocalStorageFavorites();
+      clearLocalStorageConversationState();
+      hasMigratedRef.current = true;
+      return;
+    }
+
+    // Check if we have any localStorage data to migrate
+    const localFavorites = loadLocalStorageFavorites();
+    const localSortOrder = loadLocalStorageSortOrder();
+    const localLastMessageTimes = loadLocalStorageLastMessageTimes();
+
+    const hasLocalData =
+      localFavorites.length > 0 ||
+      localSortOrder !== 'recent' ||
+      Object.keys(localLastMessageTimes).length > 0;
+
+    if (!hasLocalData) {
+      // No local data to migrate, just mark as done
+      hasMigratedRef.current = true;
+      return;
+    }
+
+    // Mark as migrating immediately to prevent duplicate calls
+    hasMigratedRef.current = true;
+
+    // Migrate localStorage to server
+    const migratePreferences = async () => {
+      try {
+        const result = await api.migratePreferences({
+          favorites: localFavorites,
+          sort_order: localSortOrder,
+          last_message_times: localLastMessageTimes,
+        });
+
+        if (result.migrated) {
+          toast.success('Preferences migrated', {
+            description: `Migrated ${localFavorites.length} favorites to server`,
+          });
+        }
+
+        // Update local state with migrated settings
+        setAppSettings(result.settings);
+        // Reinitialize cache with migrated data
+        initLastMessageTimes(result.settings.last_message_times ?? {});
+
+        // Clear localStorage after successful migration
+        clearLocalStorageFavorites();
+        clearLocalStorageConversationState();
+      } catch (err) {
+        console.error('Failed to migrate preferences:', err);
+        // Don't block the app on migration failure
+      }
+    };
+
+    migratePreferences();
+  }, [appSettings]);
 
   // Resolve URL hash to a conversation
   const resolveHashToConversation = useCallback((): Conversation | null => {
@@ -432,9 +513,15 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
-  // Toggle favorite status for a conversation
-  const handleToggleFavorite = useCallback((type: 'channel' | 'contact', id: string) => {
-    setFavorites(toggleFavorite(type, id));
+  // Toggle favorite status for a conversation (via API)
+  const handleToggleFavorite = useCallback(async (type: 'channel' | 'contact', id: string) => {
+    try {
+      const updatedSettings = await api.toggleFavorite(type, id);
+      setAppSettings(updatedSettings);
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+      toast.error('Failed to update favorite');
+    }
   }, []);
 
   // Delete channel handler
@@ -535,6 +622,16 @@ export function App() {
     [fetchUndecryptedCount]
   );
 
+  // Handle sort order change via API
+  const handleSortOrderChange = useCallback(async (order: 'recent' | 'alpha') => {
+    try {
+      const updatedSettings = await api.updateSettings({ sidebar_sort_order: order });
+      setAppSettings(updatedSettings);
+    } catch (err) {
+      console.error('Failed to update sort order:', err);
+    }
+  }, []);
+
   // Sidebar content (shared between desktop and mobile)
   const sidebarContent = (
     <Sidebar
@@ -554,6 +651,8 @@ export function App() {
       onToggleCracker={() => setShowCracker((prev) => !prev)}
       onMarkAllRead={markAllRead}
       favorites={favorites}
+      sortOrder={appSettings?.sidebar_sort_order ?? 'recent'}
+      onSortOrderChange={handleSortOrderChange}
     />
   );
 

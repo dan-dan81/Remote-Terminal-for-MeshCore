@@ -47,12 +47,18 @@ app/
 All database operations go through repository classes in `repository.py`:
 
 ```python
-from app.repository import ContactRepository, ChannelRepository, MessageRepository, RawPacketRepository
+from app.repository import ContactRepository, ChannelRepository, MessageRepository, RawPacketRepository, AppSettingsRepository
 
 # Examples
 contact = await ContactRepository.get_by_key_prefix("abc123")
 await MessageRepository.create(msg_type="PRIV", text="Hello", received_at=timestamp)
 await RawPacketRepository.mark_decrypted(packet_id, message_id)
+
+# App settings (single-row pattern)
+settings = await AppSettingsRepository.get()
+await AppSettingsRepository.update(auto_decrypt_dm_on_advert=True)
+await AppSettingsRepository.add_favorite("contact", public_key)
+await AppSettingsRepository.update_last_message_time("channel-KEY", timestamp)
 ```
 
 ### Radio Connection
@@ -205,6 +211,16 @@ raw_packets (
     decrypt_attempts INTEGER DEFAULT 0,
     last_attempt INTEGER,
     FOREIGN KEY (message_id) REFERENCES messages(id)
+)
+
+app_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Single-row pattern
+    max_radio_contacts INTEGER DEFAULT 200,
+    favorites TEXT DEFAULT '[]',            -- JSON array of {type, id}
+    auto_decrypt_dm_on_advert INTEGER DEFAULT 0,
+    sidebar_sort_order TEXT DEFAULT 'recent',  -- 'recent' or 'alpha'
+    last_message_times TEXT DEFAULT '{}',   -- JSON object of state_key -> timestamp
+    preferences_migrated INTEGER DEFAULT 0  -- One-time migration flag
 )
 ```
 
@@ -453,8 +469,13 @@ All endpoints are prefixed with `/api`.
 - `POST /api/packets/decrypt/historical` - Try decrypting old packets with new key
 
 ### Settings
-- `GET /api/settings` - Get app settings (max_radio_contacts)
-- `PATCH /api/settings` - Update app settings
+- `GET /api/settings` - Get all app settings
+- `PATCH /api/settings` - Update settings (max_radio_contacts, auto_decrypt_dm_on_advert, sidebar_sort_order)
+- `POST /api/settings/favorites` - Add a favorite
+- `DELETE /api/settings/favorites` - Remove a favorite
+- `POST /api/settings/favorites/toggle` - Toggle favorite status
+- `POST /api/settings/last-message-time` - Update last message time for a conversation
+- `POST /api/settings/migrate` - One-time migration from frontend localStorage
 
 ### WebSocket
 - `WS /api/ws` - Real-time updates (health, contacts, channels, messages, raw packets)

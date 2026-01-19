@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { Contact, Channel, Conversation } from '../types';
+import type { Contact, Channel, Conversation, Favorite } from '../types';
 import { getStateKey, type ConversationTimes } from '../utils/conversationState';
 import { getPubkeyPrefix, getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
-import { isFavorite, type Favorite } from '../utils/favorites';
+import { isFavorite } from '../utils/favorites';
 import { UNREAD_FETCH_LIMIT } from '../api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -27,30 +27,15 @@ interface SidebarProps {
   onToggleCracker: () => void;
   onMarkAllRead: () => void;
   favorites: Favorite[];
+  /** Sort order from server settings */
+  sortOrder?: SortOrder;
+  /** Callback when sort order changes */
+  onSortOrderChange?: (order: SortOrder) => void;
 }
 
 /** Format unread count, showing "X+" if at the fetch limit (indicating there may be more) */
 function formatUnreadCount(count: number): string {
   return count >= UNREAD_FETCH_LIMIT ? `${count}+` : `${count}`;
-}
-
-// Load sort preference from localStorage (default to 'recent')
-function loadSortOrder(): SortOrder {
-  try {
-    const stored = localStorage.getItem('remoteterm-sortOrder');
-    return stored === 'alpha' ? 'alpha' : 'recent';
-  } catch {
-    return 'recent';
-  }
-}
-
-// Save sort preference to localStorage
-function saveSortOrder(order: SortOrder): void {
-  try {
-    localStorage.setItem('remoteterm-sortOrder', order);
-  } catch {
-    // localStorage might be full or disabled
-  }
 }
 
 export function Sidebar({
@@ -67,14 +52,15 @@ export function Sidebar({
   onToggleCracker,
   onMarkAllRead,
   favorites,
+  sortOrder: sortOrderProp = 'recent',
+  onSortOrderChange,
 }: SidebarProps) {
-  const [sortOrder, setSortOrder] = useState<SortOrder>(loadSortOrder);
+  const sortOrder = sortOrderProp;
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSortToggle = () => {
     const newOrder = sortOrder === 'alpha' ? 'recent' : 'alpha';
-    setSortOrder(newOrder);
-    saveSortOrder(newOrder);
+    onSortOrderChange?.(newOrder);
   };
 
   const handleSelectConversation = (conversation: Conversation) => {

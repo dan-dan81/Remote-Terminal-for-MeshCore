@@ -1,18 +1,14 @@
 import logging
+from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from app.models import AppSettings
+from app.repository import AppSettingsRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/settings", tags=["settings"])
-
-
-class AppSettingsResponse(BaseModel):
-    max_radio_contacts: int = Field(
-        description="Maximum non-repeater contacts to keep on radio for DM ACKs"
-    )
 
 
 class AppSettingsUpdate(BaseModel):
@@ -22,32 +18,153 @@ class AppSettingsUpdate(BaseModel):
         le=1000,
         description="Maximum non-repeater contacts to keep on radio (1-1000)",
     )
-
-
-@router.get("", response_model=AppSettingsResponse)
-async def get_settings() -> AppSettingsResponse:
-    """Get current application settings."""
-    return AppSettingsResponse(
-        max_radio_contacts=settings.max_radio_contacts,
+    auto_decrypt_dm_on_advert: bool | None = Field(
+        default=None,
+        description="Whether to attempt historical DM decryption on new contact advertisement",
+    )
+    sidebar_sort_order: Literal["recent", "alpha"] | None = Field(
+        default=None,
+        description="Sidebar sort order: 'recent' or 'alpha'",
     )
 
 
-@router.patch("", response_model=AppSettingsResponse)
-async def update_settings(update: AppSettingsUpdate) -> AppSettingsResponse:
+class FavoriteRequest(BaseModel):
+    type: Literal["channel", "contact"] = Field(description="'channel' or 'contact'")
+    id: str = Field(description="Channel key or contact public key")
+
+
+class LastMessageTimeUpdate(BaseModel):
+    state_key: str = Field(
+        description="Conversation state key (e.g., 'channel-KEY' or 'contact-PREFIX')"
+    )
+    timestamp: int = Field(description="Unix timestamp of the last message")
+
+
+class MigratePreferencesRequest(BaseModel):
+    favorites: list[FavoriteRequest] = Field(
+        default_factory=list,
+        description="List of favorites from localStorage",
+    )
+    sort_order: str = Field(
+        default="recent",
+        description="Sort order preference from localStorage",
+    )
+    last_message_times: dict[str, int] = Field(
+        default_factory=dict,
+        description="Map of conversation state keys to timestamps from localStorage",
+    )
+
+
+class MigratePreferencesResponse(BaseModel):
+    migrated: bool = Field(description="Whether migration occurred (false if already migrated)")
+    settings: AppSettings = Field(description="Current settings after migration attempt")
+
+
+@router.get("", response_model=AppSettings)
+async def get_settings() -> AppSettings:
+    """Get current application settings."""
+    return await AppSettingsRepository.get()
+
+
+@router.patch("", response_model=AppSettings)
+async def update_settings(update: AppSettingsUpdate) -> AppSettings:
     """Update application settings.
 
-    Note: Changes are applied immediately but not persisted across restarts.
-    Set MESHCORE_MAX_RADIO_CONTACTS environment variable for persistent changes.
+    Settings are persisted to the database and survive restarts.
     """
+    kwargs = {}
     if update.max_radio_contacts is not None:
-        logger.info(
-            "Updating max_radio_contacts from %d to %d",
-            settings.max_radio_contacts,
-            update.max_radio_contacts,
-        )
-        # Pydantic settings are mutable, we can update them directly
-        object.__setattr__(settings, "max_radio_contacts", update.max_radio_contacts)
+        logger.info("Updating max_radio_contacts to %d", update.max_radio_contacts)
+        kwargs["max_radio_contacts"] = update.max_radio_contacts
 
-    return AppSettingsResponse(
-        max_radio_contacts=settings.max_radio_contacts,
+    if update.auto_decrypt_dm_on_advert is not None:
+        logger.info("Updating auto_decrypt_dm_on_advert to %s", update.auto_decrypt_dm_on_advert)
+        kwargs["auto_decrypt_dm_on_advert"] = update.auto_decrypt_dm_on_advert
+
+    if update.sidebar_sort_order is not None:
+        logger.info("Updating sidebar_sort_order to %s", update.sidebar_sort_order)
+        kwargs["sidebar_sort_order"] = update.sidebar_sort_order
+
+    if kwargs:
+        return await AppSettingsRepository.update(**kwargs)
+
+    return await AppSettingsRepository.get()
+
+
+@router.post("/favorites", response_model=AppSettings)
+async def add_favorite(request: FavoriteRequest) -> AppSettings:
+    """Add a conversation to favorites."""
+    logger.info("Adding favorite: %s %s", request.type, request.id[:12])
+    return await AppSettingsRepository.add_favorite(request.type, request.id)
+
+
+@router.delete("/favorites", response_model=AppSettings)
+async def remove_favorite(request: FavoriteRequest) -> AppSettings:
+    """Remove a conversation from favorites."""
+    logger.info("Removing favorite: %s %s", request.type, request.id[:12])
+    return await AppSettingsRepository.remove_favorite(request.type, request.id)
+
+
+@router.post("/favorites/toggle", response_model=AppSettings)
+async def toggle_favorite(request: FavoriteRequest) -> AppSettings:
+    """Toggle a conversation's favorite status."""
+    settings = await AppSettingsRepository.get()
+    is_favorited = any(f.type == request.type and f.id == request.id for f in settings.favorites)
+
+    if is_favorited:
+        logger.info("Removing favorite: %s %s", request.type, request.id[:12])
+        return await AppSettingsRepository.remove_favorite(request.type, request.id)
+    else:
+        logger.info("Adding favorite: %s %s", request.type, request.id[:12])
+        return await AppSettingsRepository.add_favorite(request.type, request.id)
+
+
+@router.post("/last-message-time")
+async def update_last_message_time(request: LastMessageTimeUpdate) -> dict:
+    """Update the last message time for a conversation.
+
+    Used to track when conversations last received messages for sidebar sorting.
+    Only updates if the new timestamp is greater than the existing one.
+    """
+    await AppSettingsRepository.update_last_message_time(request.state_key, request.timestamp)
+    return {"status": "ok"}
+
+
+@router.post("/migrate", response_model=MigratePreferencesResponse)
+async def migrate_preferences(request: MigratePreferencesRequest) -> MigratePreferencesResponse:
+    """Migrate all preferences from frontend localStorage to database.
+
+    This is a one-time migration. If preferences have already been migrated,
+    this endpoint will not overwrite them and will return migrated=false.
+
+    Call this on frontend startup to ensure preferences are moved to the database.
+    After successful migration, the frontend should clear localStorage preferences.
+
+    Migrates:
+    - favorites (remoteterm-favorites)
+    - sort_order (remoteterm-sortOrder)
+    - last_message_times (remoteterm-lastMessageTime)
+    """
+    # Convert to dict format for the repository method
+    frontend_favorites = [{"type": f.type, "id": f.id} for f in request.favorites]
+
+    settings, did_migrate = await AppSettingsRepository.migrate_preferences_from_frontend(
+        favorites=frontend_favorites,
+        sort_order=request.sort_order,
+        last_message_times=request.last_message_times,
+    )
+
+    if did_migrate:
+        logger.info(
+            "Migrated preferences from frontend: %d favorites, sort_order=%s, %d message times",
+            len(frontend_favorites),
+            request.sort_order,
+            len(request.last_message_times),
+        )
+    else:
+        logger.debug("Preferences already migrated, skipping")
+
+    return MigratePreferencesResponse(
+        migrated=did_migrate,
+        settings=settings,
     )

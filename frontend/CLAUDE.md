@@ -68,6 +68,7 @@ All application state lives in `App.tsx` using React hooks. No external state li
 ```typescript
 const [health, setHealth] = useState<HealthStatus | null>(null);
 const [config, setConfig] = useState<RadioConfig | null>(null);
+const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [channels, setChannels] = useState<Channel[]>([]);
 const [messages, setMessages] = useState<Message[]>([]);
@@ -75,6 +76,17 @@ const [rawPackets, setRawPackets] = useState<RawPacket[]>([]);
 const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
 const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 ```
+
+### App Settings
+
+App settings are stored server-side and include:
+- `favorites` - List of favorited conversations (channels/contacts)
+- `sidebar_sort_order` - 'recent' or 'alpha'
+- `auto_decrypt_dm_on_advert` - Auto-decrypt historical DMs on new contact
+- `last_message_times` - Map of conversation keys to last message timestamps
+
+**Migration**: On first load, localStorage preferences are migrated to the server.
+The `preferences_migrated` flag prevents duplicate migrations.
 
 ### State Flow
 
@@ -222,8 +234,18 @@ interface Conversation {
   name: string;
 }
 
+interface Favorite {
+  type: 'channel' | 'contact';
+  id: string;  // Channel key or contact public key
+}
+
 interface AppSettings {
   max_radio_contacts: number;
+  favorites: Favorite[];
+  auto_decrypt_dm_on_advert: boolean;
+  sidebar_sort_order: 'recent' | 'alpha';
+  last_message_times: Record<string, number>;
+  preferences_migrated: boolean;
 }
 
 // Repeater telemetry types

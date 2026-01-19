@@ -3,11 +3,11 @@ import logging
 import sqlite3
 import time
 from hashlib import sha256
-from typing import Any
+from typing import Any, Literal
 
 from app.database import db
 from app.decoder import PayloadType, extract_payload, get_packet_payload_type
-from app.models import Channel, Contact, Message, MessagePath, RawPacket
+from app.models import AppSettings, Channel, Contact, Favorite, Message, MessagePath, RawPacket
 
 logger = logging.getLogger(__name__)
 
@@ -703,3 +703,192 @@ class RawPacketRepository:
                 result.append((row["id"], data, row["timestamp"]))
 
         return result
+
+
+class AppSettingsRepository:
+    """Repository for app_settings table (single-row pattern)."""
+
+    @staticmethod
+    async def get() -> AppSettings:
+        """Get the current app settings.
+
+        Always returns settings - creates default row if needed (migration handles initial row).
+        """
+        cursor = await db.conn.execute(
+            """
+            SELECT max_radio_contacts, favorites, auto_decrypt_dm_on_advert,
+                   sidebar_sort_order, last_message_times, preferences_migrated
+            FROM app_settings WHERE id = 1
+            """
+        )
+        row = await cursor.fetchone()
+
+        if not row:
+            # Should not happen after migration, but handle gracefully
+            return AppSettings()
+
+        # Parse favorites JSON
+        favorites = []
+        if row["favorites"]:
+            try:
+                favorites_data = json.loads(row["favorites"])
+                favorites = [Favorite(**f) for f in favorites_data]
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                logger.warning(
+                    "Failed to parse favorites JSON, using empty list: %s (data=%r)",
+                    e,
+                    row["favorites"][:100] if row["favorites"] else None,
+                )
+                favorites = []
+
+        # Parse last_message_times JSON
+        last_message_times: dict[str, int] = {}
+        if row["last_message_times"]:
+            try:
+                last_message_times = json.loads(row["last_message_times"])
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse last_message_times JSON, using empty dict: %s",
+                    e,
+                )
+                last_message_times = {}
+
+        # Validate sidebar_sort_order (fallback to "recent" if invalid)
+        sort_order = row["sidebar_sort_order"]
+        if sort_order not in ("recent", "alpha"):
+            sort_order = "recent"
+
+        return AppSettings(
+            max_radio_contacts=row["max_radio_contacts"],
+            favorites=favorites,
+            auto_decrypt_dm_on_advert=bool(row["auto_decrypt_dm_on_advert"]),
+            sidebar_sort_order=sort_order,
+            last_message_times=last_message_times,
+            preferences_migrated=bool(row["preferences_migrated"]),
+        )
+
+    @staticmethod
+    async def update(
+        max_radio_contacts: int | None = None,
+        favorites: list[Favorite] | None = None,
+        auto_decrypt_dm_on_advert: bool | None = None,
+        sidebar_sort_order: str | None = None,
+        last_message_times: dict[str, int] | None = None,
+        preferences_migrated: bool | None = None,
+    ) -> AppSettings:
+        """Update app settings. Only provided fields are updated."""
+        updates = []
+        params: list[Any] = []
+
+        if max_radio_contacts is not None:
+            updates.append("max_radio_contacts = ?")
+            params.append(max_radio_contacts)
+
+        if favorites is not None:
+            updates.append("favorites = ?")
+            favorites_json = json.dumps([f.model_dump() for f in favorites])
+            params.append(favorites_json)
+
+        if auto_decrypt_dm_on_advert is not None:
+            updates.append("auto_decrypt_dm_on_advert = ?")
+            params.append(1 if auto_decrypt_dm_on_advert else 0)
+
+        if sidebar_sort_order is not None:
+            updates.append("sidebar_sort_order = ?")
+            params.append(sidebar_sort_order)
+
+        if last_message_times is not None:
+            updates.append("last_message_times = ?")
+            params.append(json.dumps(last_message_times))
+
+        if preferences_migrated is not None:
+            updates.append("preferences_migrated = ?")
+            params.append(1 if preferences_migrated else 0)
+
+        if updates:
+            query = f"UPDATE app_settings SET {', '.join(updates)} WHERE id = 1"
+            await db.conn.execute(query, params)
+            await db.conn.commit()
+
+        return await AppSettingsRepository.get()
+
+    @staticmethod
+    async def add_favorite(fav_type: Literal["channel", "contact"], fav_id: str) -> AppSettings:
+        """Add a favorite, avoiding duplicates."""
+        settings = await AppSettingsRepository.get()
+
+        # Check if already favorited
+        if any(f.type == fav_type and f.id == fav_id for f in settings.favorites):
+            return settings
+
+        new_favorites = settings.favorites + [Favorite(type=fav_type, id=fav_id)]
+        return await AppSettingsRepository.update(favorites=new_favorites)
+
+    @staticmethod
+    async def remove_favorite(fav_type: Literal["channel", "contact"], fav_id: str) -> AppSettings:
+        """Remove a favorite."""
+        settings = await AppSettingsRepository.get()
+        new_favorites = [
+            f for f in settings.favorites if not (f.type == fav_type and f.id == fav_id)
+        ]
+        return await AppSettingsRepository.update(favorites=new_favorites)
+
+    @staticmethod
+    async def update_last_message_time(state_key: str, timestamp: int) -> None:
+        """Update the last message time for a conversation atomically.
+
+        Only updates if the new timestamp is greater than the existing one.
+        Uses SQLite's json_set for atomic update to avoid race conditions.
+        """
+        # Use COALESCE to handle NULL or missing keys, json_set for atomic update
+        # Only update if new timestamp > existing (or key doesn't exist)
+        await db.conn.execute(
+            """
+            UPDATE app_settings
+            SET last_message_times = json_set(
+                COALESCE(last_message_times, '{}'),
+                '$.' || ?,
+                ?
+            )
+            WHERE id = 1
+            AND (
+                json_extract(last_message_times, '$.' || ?) IS NULL
+                OR json_extract(last_message_times, '$.' || ?) < ?
+            )
+            """,
+            (state_key, timestamp, state_key, state_key, timestamp),
+        )
+        await db.conn.commit()
+
+    @staticmethod
+    async def migrate_preferences_from_frontend(
+        favorites: list[dict],
+        sort_order: str,
+        last_message_times: dict[str, int],
+    ) -> tuple[AppSettings, bool]:
+        """Migrate all preferences from frontend localStorage.
+
+        This is a one-time migration. If already migrated, returns current settings
+        without overwriting. Returns (settings, did_migrate) tuple.
+        """
+        settings = await AppSettingsRepository.get()
+
+        if settings.preferences_migrated:
+            # Already migrated, don't overwrite
+            return settings, False
+
+        # Convert frontend favorites format to Favorite objects
+        new_favorites = []
+        for f in favorites:
+            if f.get("type") in ("channel", "contact") and f.get("id"):
+                new_favorites.append(Favorite(type=f["type"], id=f["id"]))
+
+        # Update with migrated preferences and mark as migrated
+        settings = await AppSettingsRepository.update(
+            favorites=new_favorites,
+            sidebar_sort_order=sort_order if sort_order in ("recent", "alpha") else "recent",
+            last_message_times=last_message_times,
+            preferences_migrated=True,
+        )
+
+        return settings, True

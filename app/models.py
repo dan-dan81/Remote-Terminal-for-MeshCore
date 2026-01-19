@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -217,4 +219,39 @@ class CommandResponse(BaseModel):
     response: str = Field(description="Response from the repeater")
     sender_timestamp: int | None = Field(
         default=None, description="Timestamp from the repeater's response"
+    )
+
+
+class Favorite(BaseModel):
+    """A favorite conversation."""
+
+    type: Literal["channel", "contact"] = Field(description="'channel' or 'contact'")
+    id: str = Field(description="Channel key or contact public key")
+
+
+class AppSettings(BaseModel):
+    """Application settings stored in the database."""
+
+    max_radio_contacts: int = Field(
+        default=200,
+        description="Maximum non-repeater contacts to keep on radio for DM ACKs",
+    )
+    favorites: list[Favorite] = Field(
+        default_factory=list, description="List of favorited conversations"
+    )
+    auto_decrypt_dm_on_advert: bool = Field(
+        default=False,
+        description="Whether to attempt historical DM decryption on new contact advertisement",
+    )
+    sidebar_sort_order: Literal["recent", "alpha"] = Field(
+        default="recent",
+        description="Sidebar sort order: 'recent' or 'alpha'",
+    )
+    last_message_times: dict[str, int] = Field(
+        default_factory=dict,
+        description="Map of conversation state keys to last message timestamps",
+    )
+    preferences_migrated: bool = Field(
+        default=False,
+        description="Whether preferences have been migrated from localStorage",
     )

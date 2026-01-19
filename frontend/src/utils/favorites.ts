@@ -1,21 +1,39 @@
 /**
- * localStorage utilities for managing favorite conversations.
+ * Favorites utilities.
  *
- * Favorites are stored client-side and displayed in a dedicated section
- * above channels in the sidebar, always sorted by most recent message.
+ * Favorites are now stored server-side in the database.
+ * This file provides helper functions for checking favorites
+ * and loading legacy localStorage data for migration.
  */
+
+import type { Favorite } from '../types';
+import { pubkeysMatch } from './pubkey';
 
 const FAVORITES_KEY = 'remoteterm-favorites';
 
-export interface Favorite {
-  type: 'channel' | 'contact';
-  id: string; // channel key or contact public key
+/**
+ * Check if a conversation is favorited (from provided favorites array)
+ *
+ * For contacts, uses prefix matching to handle full pubkeys vs 12-char prefixes.
+ */
+export function isFavorite(
+  favorites: Favorite[],
+  type: 'channel' | 'contact',
+  id: string
+): boolean {
+  return favorites.some((f) => {
+    if (f.type !== type) return false;
+    // For contacts, use prefix matching (handles full keys vs prefixes)
+    if (type === 'contact') return pubkeysMatch(f.id, id);
+    // For channels, exact match
+    return f.id === id;
+  });
 }
 
 /**
- * Load favorites from localStorage
+ * Load favorites from localStorage (for migration only)
  */
-export function loadFavorites(): Favorite[] {
+export function loadLocalStorageFavorites(): Favorite[] {
   try {
     const stored = localStorage.getItem(FAVORITES_KEY);
     return stored ? JSON.parse(stored) : [];
@@ -25,58 +43,15 @@ export function loadFavorites(): Favorite[] {
 }
 
 /**
- * Save favorites to localStorage
+ * Clear favorites from localStorage (after migration)
  */
-function saveFavorites(favorites: Favorite[]): void {
+export function clearLocalStorageFavorites(): void {
   try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+    localStorage.removeItem(FAVORITES_KEY);
   } catch {
-    // localStorage might be full or disabled
+    // localStorage might be disabled
   }
 }
 
-/**
- * Add a conversation to favorites
- */
-export function addFavorite(type: 'channel' | 'contact', id: string): Favorite[] {
-  const favorites = loadFavorites();
-  // Check if already favorited
-  if (favorites.some((f) => f.type === type && f.id === id)) {
-    return favorites;
-  }
-  const updated = [...favorites, { type, id }];
-  saveFavorites(updated);
-  return updated;
-}
-
-/**
- * Remove a conversation from favorites
- */
-export function removeFavorite(type: 'channel' | 'contact', id: string): Favorite[] {
-  const favorites = loadFavorites();
-  const updated = favorites.filter((f) => !(f.type === type && f.id === id));
-  saveFavorites(updated);
-  return updated;
-}
-
-/**
- * Check if a conversation is favorited
- */
-export function isFavorite(
-  favorites: Favorite[],
-  type: 'channel' | 'contact',
-  id: string
-): boolean {
-  return favorites.some((f) => f.type === type && f.id === id);
-}
-
-/**
- * Toggle a conversation's favorite status
- */
-export function toggleFavorite(type: 'channel' | 'contact', id: string): Favorite[] {
-  const favorites = loadFavorites();
-  if (favorites.some((f) => f.type === type && f.id === id)) {
-    return removeFavorite(type, id);
-  }
-  return addFavorite(type, id);
-}
+// Re-export the Favorite type for convenience
+export type { Favorite };

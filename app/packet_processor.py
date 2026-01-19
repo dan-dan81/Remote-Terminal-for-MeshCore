@@ -659,9 +659,14 @@ async def _process_advertisement(
         },
     )
 
-    # For new contacts, attempt to decrypt any historical DMs we may have stored
+    # For new contacts, optionally attempt to decrypt any historical DMs we may have stored
+    # This is controlled by the auto_decrypt_dm_on_advert setting
     if existing is None:
-        await start_historical_dm_decryption(None, advert.public_key, advert.name)
+        from app.repository import AppSettingsRepository
+
+        settings = await AppSettingsRepository.get()
+        if settings.auto_decrypt_dm_on_advert:
+            await start_historical_dm_decryption(None, advert.public_key, advert.name)
 
     # If this is not a repeater, trigger recent contacts sync to radio
     # This ensures we can auto-ACK DMs from recent contacts
