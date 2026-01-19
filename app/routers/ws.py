@@ -45,12 +45,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         }
         await ws_manager.send_personal(websocket, "health", health_data)
 
-        # Contacts
-        contacts = await ContactRepository.get_all(limit=500)
+        # Contacts - fetch all by paginating until exhausted
+        all_contacts = []
+        chunk_size = 500
+        offset = 0
+        while True:
+            chunk = await ContactRepository.get_all(limit=chunk_size, offset=offset)
+            all_contacts.extend(chunk)
+            if len(chunk) < chunk_size:
+                break
+            offset += chunk_size
+
         await ws_manager.send_personal(
             websocket,
             "contacts",
-            [c.model_dump() for c in contacts],
+            [c.model_dump() for c in all_contacts],
         )
 
         # Channels

@@ -71,7 +71,15 @@ export function useUnreadCounts(
       if (conversations.length === 0) return;
 
       try {
-        const bulkMessages = await api.getMessagesBulk(conversations, UNREAD_FETCH_LIMIT);
+        // Fetch messages in chunks to avoid huge single requests
+        const chunkSize = 200;
+        const bulkMessages: Record<string, Message[]> = {};
+
+        for (let i = 0; i < conversations.length; i += chunkSize) {
+          const chunk = conversations.slice(i, i + chunkSize);
+          const chunkResult = await api.getMessagesBulk(chunk, UNREAD_FETCH_LIMIT);
+          Object.assign(bulkMessages, chunkResult);
+        }
         const newUnreadCounts: Record<string, number> = {};
         const newMentions: Record<string, boolean> = {};
         const newLastMessageTimes: Record<string, number> = {};
