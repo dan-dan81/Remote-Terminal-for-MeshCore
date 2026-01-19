@@ -1,3 +1,11 @@
+## [1.4.1] - 2026-01-19
+
+Feature: Add option to attempt historical DM decrypt on new-contact advertisement (disabled by default)
+Feature: Server-side preference management for favorites, read status, etc.
+UI: More compact hop labelling
+Bugfix: Misc. race conditions and websocket handling
+Bugfix: Reduce fetching cadence by loading all contact data at start to prevent fetches on advertise-driven update
+
 ## [1.4.0] - 2026-01-18
 
 UI: Improve button layout for room searcher
