@@ -231,9 +231,11 @@ class RadioManager:
                         if await self.reconnect():
                             # Re-register event handlers after successful reconnect
                             from app.event_handlers import register_event_handlers
+                            from app.keystore import export_and_store_private_key
 
                             if self._meshcore:
                                 register_event_handlers(self._meshcore)
+                                await export_and_store_private_key(self._meshcore)
                                 await self._meshcore.start_auto_message_fetching()
                                 logger.info("Event handlers re-registered after auto-reconnect")
 

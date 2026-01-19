@@ -137,6 +137,7 @@ await api.sendAdvertisement(true);
 
 // Contacts/Channels
 await api.getContacts();
+await api.createContact(publicKey, name, tryHistorical);  // Create contact, optionally decrypt historical DMs
 await api.getChannels();
 await api.createChannel('#test');
 

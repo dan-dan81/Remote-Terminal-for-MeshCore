@@ -589,3 +589,299 @@ class TestRawPacketStorage:
         assert raw_broadcast["decrypted"] is True
         assert "decrypted_info" in raw_broadcast
         assert raw_broadcast["decrypted_info"]["channel_name"] == fixture["channel_name"]
+
+
+class TestCreateDMMessageFromDecrypted:
+    """Test the DM message creation function for direct message decryption."""
+
+    # Test data from real MeshCore DM example
+    FACE12_PRIV = (
+        "58BA1940E97099CBB4357C62CE9C7F4B245C94C90D722E67201B989F9FEACF7B"
+        "77ACADDB84438514022BDB0FC3140C2501859BE1772AC7B8C7E41DC0F40490A1"
+    )
+    # FACE12 public key - derived via scalar × basepoint, NOT the last 32 bytes!
+    # The last 32 bytes (77AC...) are the signing prefix, not the public key.
+    FACE12_PUB = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
+    A1B2C3_PUB = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+
+    @pytest.mark.asyncio
+    async def test_creates_dm_message_and_broadcasts(self, test_db, captured_broadcasts):
+        """create_dm_message_from_decrypted creates message and broadcasts correctly."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        # Create a raw packet first
+        packet_id, _ = await RawPacketRepository.create(b"test_dm_packet", 1700000000)
+
+        # Create a mock decrypted message
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="Hello, World!",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+            )
+
+        # Should return a message ID
+        assert msg_id is not None
+        assert isinstance(msg_id, int)
+
+        # Verify message was stored in database
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+        )
+        assert len(messages) == 1
+        assert messages[0].text == "Hello, World!"
+        assert messages[0].sender_timestamp == 1700000000
+        assert messages[0].outgoing is False
+
+        # Verify broadcast was sent with correct structure
+        message_broadcasts = [b for b in broadcasts if b["type"] == "message"]
+        assert len(message_broadcasts) == 1
+
+        broadcast = message_broadcasts[0]["data"]
+        assert broadcast["id"] == msg_id
+        assert broadcast["type"] == "PRIV"
+        assert broadcast["conversation_key"] == self.A1B2C3_PUB.lower()
+        assert broadcast["text"] == "Hello, World!"
+        assert broadcast["outgoing"] is False
+
+    @pytest.mark.asyncio
+    async def test_handles_outgoing_dm(self, test_db, captured_broadcasts):
+        """create_dm_message_from_decrypted handles outgoing messages correctly."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        packet_id, _ = await RawPacketRepository.create(b"test_outgoing_dm", 1700000000)
+
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="My outgoing message",
+            dest_hash="a1",  # Destination is contact (first byte of A1B2C3_PUB)
+            src_hash="fa",  # Source is us (first byte of derived FACE12_PUB)
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=True,
+            )
+
+        assert msg_id is not None
+
+        # Verify outgoing flag is set correctly
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+        )
+        assert len(messages) == 1
+        assert messages[0].outgoing is True
+
+        # Verify broadcast shows outgoing
+        message_broadcasts = [b for b in broadcasts if b["type"] == "message"]
+        assert message_broadcasts[0]["data"]["outgoing"] is True
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_duplicate_dm(self, test_db, captured_broadcasts):
+        """create_dm_message_from_decrypted returns None for duplicate DM."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        packet_id_1, _ = await RawPacketRepository.create(b"dm_packet_1", 1700000000)
+        packet_id_2, _ = await RawPacketRepository.create(b"dm_packet_2", 1700000001)
+
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="Duplicate DM test",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            # First call creates the message
+            msg_id_1 = await create_dm_message_from_decrypted(
+                packet_id=packet_id_1,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+            )
+
+            # Second call with same content returns None
+            msg_id_2 = await create_dm_message_from_decrypted(
+                packet_id=packet_id_2,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000002,
+                outgoing=False,
+            )
+
+        assert msg_id_1 is not None
+        assert msg_id_2 is None  # Duplicate detected
+
+        # Only one message broadcast
+        message_broadcasts = [b for b in broadcasts if b["type"] == "message"]
+        assert len(message_broadcasts) == 1
+
+    @pytest.mark.asyncio
+    async def test_links_raw_packet_to_dm_message(self, test_db, captured_broadcasts):
+        """create_dm_message_from_decrypted links raw packet to message."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        packet_id, _ = await RawPacketRepository.create(b"link_test_dm", 1700000000)
+
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="Link test DM",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+            )
+
+        # Verify packet is marked decrypted
+        undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
+        packet_ids = [p.id for p in undecrypted]
+        assert packet_id not in packet_ids
+
+    @pytest.mark.asyncio
+    async def test_dm_includes_path_in_broadcast(self, test_db, captured_broadcasts):
+        """create_dm_message_from_decrypted includes path in broadcast when provided."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        packet_id, _ = await RawPacketRepository.create(b"path_test_dm", 1700000000)
+
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="Path test DM",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                path="aabbcc",  # Path through 3 repeaters
+                outgoing=False,
+            )
+
+        message_broadcasts = [b for b in broadcasts if b["type"] == "message"]
+        assert len(message_broadcasts) == 1
+
+        broadcast = message_broadcasts[0]["data"]
+        assert broadcast["paths"] is not None
+        assert len(broadcast["paths"]) == 1
+        assert broadcast["paths"][0]["path"] == "aabbcc"
+        assert broadcast["paths"][0]["received_at"] == 1700000001
+
+
+class TestDMDecryptionFunction:
+    """Test the DM decryption function with real crypto."""
+
+    # Same test data
+    FACE12_PRIV = bytes.fromhex(
+        "58BA1940E97099CBB4357C62CE9C7F4B245C94C90D722E67201B989F9FEACF7B"
+        "77ACADDB84438514022BDB0FC3140C2501859BE1772AC7B8C7E41DC0F40490A1"
+    )
+    # FACE12 public key - derived via scalar × basepoint, NOT the last 32 bytes!
+    # The last 32 bytes (77AC...) are the signing prefix, not the public key.
+    FACE12_PUB = bytes.fromhex("FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46")
+    A1B2C3_PUB = bytes.fromhex("a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7")
+    FULL_PACKET = bytes.fromhex(
+        "0900FAA1295471ADB44A98B13CA528A4B5C4FBC29B4DA3CED477519B2FBD8FD5467C31E5D58B"
+    )
+    EXPECTED_MESSAGE = "Hello there, Mr. Face!"
+
+    @pytest.mark.asyncio
+    async def test_full_dm_decryption_pipeline(self, test_db, captured_broadcasts):
+        """Test complete DM decryption from raw packet through to stored message."""
+        from app.decoder import try_decrypt_dm
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        # Store the raw packet
+        packet_id, _ = await RawPacketRepository.create(self.FULL_PACKET, 1700000000)
+
+        # Decrypt the packet
+        decrypted = try_decrypt_dm(
+            self.FULL_PACKET,
+            self.FACE12_PRIV,
+            self.A1B2C3_PUB,
+            our_public_key=self.FACE12_PUB,
+        )
+
+        assert decrypted is not None
+        assert decrypted.message == self.EXPECTED_MESSAGE
+
+        # Determine direction (src_hash = a1 matches A1B2C3, so it's inbound)
+        outgoing = decrypted.src_hash == format(self.FACE12_PUB[0], "02x")
+        assert outgoing is False  # This is an inbound message
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        # Create the message
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB.hex(),
+                our_public_key=self.FACE12_PUB.hex(),
+                received_at=1700000000,
+                outgoing=outgoing,
+            )
+
+        assert msg_id is not None
+
+        # Verify the message is stored correctly
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.hex().lower(), limit=10
+        )
+        assert len(messages) == 1
+        assert messages[0].text == self.EXPECTED_MESSAGE
+        assert messages[0].outgoing is False
+
+        # Verify raw packet is linked
+        undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
+        assert packet_id not in [p.id for p in undecrypted]

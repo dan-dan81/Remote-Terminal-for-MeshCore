@@ -48,6 +48,11 @@ async def lifespan(app: FastAPI):
         if radio_manager.meshcore:
             register_event_handlers(radio_manager.meshcore)
 
+            # Export and store private key for server-side DM decryption
+            from app.keystore import export_and_store_private_key
+
+            await export_and_store_private_key(radio_manager.meshcore)
+
             # Sync radio clock with system time
             await sync_radio_time()
 

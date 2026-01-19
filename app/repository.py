@@ -6,7 +6,7 @@ from hashlib import sha256
 from typing import Any
 
 from app.database import db
-from app.decoder import extract_payload
+from app.decoder import PayloadType, extract_payload, get_packet_payload_type
 from app.models import Channel, Contact, Message, MessagePath, RawPacket
 
 logger = logging.getLogger(__name__)
@@ -681,3 +681,25 @@ class RawPacketRepository:
         )
         await db.conn.commit()
         return cursor.rowcount
+
+    @staticmethod
+    async def get_undecrypted_text_messages() -> list[tuple[int, bytes, int]]:
+        """Get all undecrypted TEXT_MESSAGE packets as (id, data, timestamp) tuples.
+
+        Filters raw packets to only include those with PayloadType.TEXT_MESSAGE (0x02).
+        These are direct messages that can be decrypted with contact ECDH keys.
+        """
+        cursor = await db.conn.execute(
+            "SELECT id, data, timestamp FROM raw_packets WHERE message_id IS NULL ORDER BY timestamp ASC"
+        )
+        rows = await cursor.fetchall()
+
+        # Filter for TEXT_MESSAGE packets
+        result = []
+        for row in rows:
+            data = bytes(row["data"])
+            payload_type = get_packet_payload_type(data)
+            if payload_type == PayloadType.TEXT_MESSAGE:
+                result.append((row["id"], data, row["timestamp"]))
+
+        return result

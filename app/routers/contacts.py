@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from meshcore import EventType
 
 from app.dependencies import require_connected
@@ -11,6 +11,7 @@ from app.models import (
     CommandRequest,
     CommandResponse,
     Contact,
+    CreateContactRequest,
     NeighborInfo,
     TelemetryRequest,
     TelemetryResponse,
@@ -18,6 +19,7 @@ from app.models import (
 from app.radio import radio_manager
 from app.radio_sync import pause_polling
 from app.repository import ContactRepository
+from app.routers.packets import _run_historical_dm_decryption
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,111 @@ async def list_contacts(
 ) -> list[Contact]:
     """List contacts from the database."""
     return await ContactRepository.get_all(limit=limit, offset=offset)
+
+
+@router.post("", response_model=Contact)
+async def create_contact(
+    request: CreateContactRequest, background_tasks: BackgroundTasks
+) -> Contact:
+    """Create a new contact in the database.
+
+    If the contact already exists, updates the name (if provided).
+    If try_historical is True, attempts to decrypt historical DM packets.
+    """
+    # Validate hex format
+    try:
+        contact_public_key_bytes = bytes.fromhex(request.public_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid public key: must be valid hex") from e
+
+    # Check if contact already exists
+    existing = await ContactRepository.get_by_key_or_prefix(request.public_key)
+    if existing:
+        # Update name if provided
+        if request.name:
+            await ContactRepository.upsert(
+                {
+                    "public_key": existing.public_key,
+                    "name": request.name,
+                    "type": existing.type,
+                    "flags": existing.flags,
+                    "last_path": existing.last_path,
+                    "last_path_len": existing.last_path_len,
+                    "last_advert": existing.last_advert,
+                    "lat": existing.lat,
+                    "lon": existing.lon,
+                    "last_seen": existing.last_seen,
+                    "on_radio": existing.on_radio,
+                    "last_contacted": existing.last_contacted,
+                }
+            )
+            existing.name = request.name
+
+        # Trigger historical decryption if requested (even for existing contacts)
+        if request.try_historical:
+            await _start_historical_dm_decryption(
+                background_tasks, contact_public_key_bytes, request.public_key
+            )
+
+        return existing
+
+    # Create new contact
+    contact_data = {
+        "public_key": request.public_key,
+        "name": request.name,
+        "type": 0,  # Unknown
+        "flags": 0,
+        "last_path": None,
+        "last_path_len": -1,
+        "last_advert": None,
+        "lat": None,
+        "lon": None,
+        "last_seen": None,
+        "on_radio": False,
+        "last_contacted": None,
+    }
+    await ContactRepository.upsert(contact_data)
+    logger.info("Created contact %s", request.public_key[:12])
+
+    # Trigger historical decryption if requested
+    if request.try_historical:
+        await _start_historical_dm_decryption(
+            background_tasks, contact_public_key_bytes, request.public_key
+        )
+
+    return Contact(**contact_data)
+
+
+async def _start_historical_dm_decryption(
+    background_tasks: BackgroundTasks,
+    contact_public_key_bytes: bytes,
+    contact_public_key_hex: str,
+) -> None:
+    """Start historical DM decryption using the stored private key."""
+    from app.keystore import get_private_key, has_private_key
+    from app.websocket import broadcast_error
+
+    if not has_private_key():
+        logger.warning(
+            "Cannot start historical DM decryption: private key not available. "
+            "Ensure radio firmware has ENABLE_PRIVATE_KEY_EXPORT=1."
+        )
+        broadcast_error(
+            "Cannot decrypt historical DMs",
+            "Private key not available. Radio firmware may need ENABLE_PRIVATE_KEY_EXPORT=1.",
+        )
+        return
+
+    private_key_bytes = get_private_key()
+    assert private_key_bytes is not None  # Guaranteed by has_private_key check
+
+    logger.info("Starting historical DM decryption for contact %s", contact_public_key_hex[:12])
+    background_tasks.add_task(
+        _run_historical_dm_decryption,
+        private_key_bytes,
+        contact_public_key_bytes,
+        contact_public_key_hex.lower(),
+    )
 
 
 @router.get("/{public_key}", response_model=Contact)

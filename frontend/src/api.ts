@@ -94,6 +94,11 @@ export const api = {
     fetchJson<{ status: string }>(`/contacts/${publicKey}`, {
       method: 'DELETE',
     }),
+  createContact: (publicKey: string, name?: string, tryHistorical?: boolean) =>
+    fetchJson<Contact>('/contacts', {
+      method: 'POST',
+      body: JSON.stringify({ public_key: publicKey, name, try_historical: tryHistorical }),
+    }),
   markContactRead: (publicKey: string) =>
     fetchJson<{ status: string; public_key: string }>(`/contacts/${publicKey}/mark-read`, {
       method: 'POST',

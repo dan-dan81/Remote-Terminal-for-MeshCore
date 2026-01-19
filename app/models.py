@@ -55,6 +55,17 @@ class Contact(BaseModel):
         }
 
 
+class CreateContactRequest(BaseModel):
+    """Request to create a new contact."""
+
+    public_key: str = Field(min_length=64, max_length=64, description="Public key (64-char hex)")
+    name: str | None = Field(default=None, description="Display name for the contact")
+    try_historical: bool = Field(
+        default=False,
+        description="Attempt to decrypt historical DM packets for this contact",
+    )
+
+
 # Contact type constants
 CONTACT_TYPE_REPEATER = 2
 

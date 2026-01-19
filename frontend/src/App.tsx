@@ -467,32 +467,15 @@ export function App() {
   // Create contact handler
   const handleCreateContact = useCallback(
     async (name: string, publicKey: string, tryHistorical: boolean) => {
-      const newContact: Contact = {
-        public_key: publicKey,
-        name,
-        type: 0,
-        flags: 0,
-        last_path: null,
-        last_path_len: -1,
-        last_advert: null,
-        lat: null,
-        lon: null,
-        last_seen: null,
-        on_radio: false,
-        last_contacted: null,
-        last_read_at: null,
-      };
-      setContacts((prev) => [...prev, newContact]);
+      const created = await api.createContact(publicKey, name || undefined, tryHistorical);
+      const data = await api.getContacts();
+      setContacts(data);
 
       setActiveConversation({
         type: 'contact',
-        id: publicKey,
-        name: getContactDisplayName(name, publicKey),
+        id: created.public_key,
+        name: getContactDisplayName(created.name, created.public_key),
       });
-
-      if (tryHistorical) {
-        console.log('Contact historical decryption not yet supported');
-      }
     },
     []
   );

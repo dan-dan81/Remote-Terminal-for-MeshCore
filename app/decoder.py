@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum
 
+import nacl.bindings
 from Crypto.Cipher import AES
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,17 @@ class DecryptedGroupText:
     sender: str | None
     message: str
     channel_hash: str
+
+
+@dataclass
+class DecryptedDirectMessage:
+    """Result of decrypting a TEXT_MESSAGE (direct message)."""
+
+    timestamp: int
+    flags: int
+    message: str
+    dest_hash: str  # First byte of destination pubkey as hex
+    src_hash: str  # First byte of sender pubkey as hex
 
 
 @dataclass
@@ -394,3 +406,216 @@ def try_parse_advertisement(raw_packet: bytes) -> ParsedAdvertisement | None:
         return None
 
     return parse_advertisement(packet_info.payload)
+
+
+# =============================================================================
+# Direct Message (TEXT_MESSAGE) Decryption
+# =============================================================================
+
+
+def _clamp_scalar(k: bytes) -> bytes:
+    """
+    Clamp a 32-byte scalar for X25519.
+
+    This applies the standard X25519 clamping to ensure the scalar
+    is in the correct form for elliptic curve operations.
+
+    Note: MeshCore private keys are already clamped (they store the post-SHA-512
+    scalar directly rather than a seed). Clamping is idempotent, so this is safe.
+    """
+    clamped = bytearray(k[:32])
+    clamped[0] &= 248
+    clamped[31] &= 63
+    clamped[31] |= 64
+    return bytes(clamped)
+
+
+def derive_public_key(private_key: bytes) -> bytes:
+    """
+    Derive the Ed25519 public key from a MeshCore private key.
+
+    **MeshCore Key Format:**
+    MeshCore stores a non-standard Ed25519 private key format:
+    - First 32 bytes: The scalar (already post-SHA-512 and clamped)
+    - Last 32 bytes: The signing prefix (used during signature generation)
+
+    Standard Ed25519 libraries expect a 32-byte seed and derive the scalar via
+    SHA-512. Using `SigningKey(private_bytes)` will produce the WRONG public key.
+
+    To derive the correct public key, we use direct scalar × basepoint multiplication
+    with the noclamp variant (since the scalar is already clamped).
+
+    Args:
+        private_key: 64-byte MeshCore private key (or just the first 32 bytes)
+
+    Returns:
+        32-byte Ed25519 public key
+    """
+    scalar = private_key[:32]
+    # Use noclamp because MeshCore stores already-clamped scalars
+    return nacl.bindings.crypto_scalarmult_ed25519_base_noclamp(scalar)
+
+
+def derive_shared_secret(our_private_key: bytes, their_public_key: bytes) -> bytes:
+    """
+    Derive ECDH shared secret from Ed25519 keys.
+
+    MeshCore uses Ed25519 keys, but ECDH requires X25519. This function:
+    1. Clamps our private key scalar for X25519 (idempotent since already clamped)
+    2. Converts their Ed25519 public key to X25519
+    3. Performs X25519 scalar multiplication to get the shared secret
+
+    **MeshCore Key Format:**
+    MeshCore private keys store the scalar directly (not a seed), so the first
+    32 bytes are already the post-SHA-512 clamped scalar. See `derive_public_key`
+    for details.
+
+    Args:
+        our_private_key: 64-byte MeshCore private key (only first 32 bytes used)
+        their_public_key: Their 32-byte Ed25519 public key
+
+    Returns:
+        32-byte shared secret
+    """
+    # Clamp the first 32 bytes of our private key (idempotent for MeshCore keys)
+    clamped = _clamp_scalar(our_private_key[:32])
+
+    # Convert their Ed25519 public key to X25519
+    x25519_pub = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(their_public_key)
+
+    # Perform X25519 ECDH
+    return nacl.bindings.crypto_scalarmult(clamped, x25519_pub)
+
+
+def decrypt_direct_message(payload: bytes, shared_secret: bytes) -> DecryptedDirectMessage | None:
+    """
+    Decrypt a TEXT_MESSAGE payload using the ECDH shared secret.
+
+    TEXT_MESSAGE payload structure:
+    - dest_hash (1 byte): First byte of destination public key
+    - src_hash (1 byte): First byte of sender public key
+    - mac (2 bytes): First 2 bytes of HMAC-SHA256(shared_secret, ciphertext)
+    - ciphertext (rest): AES-128-ECB encrypted content
+
+    Decrypted content structure:
+    - timestamp (4 bytes, little-endian)
+    - flags (1 byte)
+    - message text (null-padded)
+
+    Args:
+        payload: The TEXT_MESSAGE payload bytes
+        shared_secret: 32-byte ECDH shared secret
+
+    Returns:
+        DecryptedDirectMessage if successful, None otherwise
+    """
+    if len(payload) < 4:
+        return None
+
+    dest_hash = format(payload[0], "02x")
+    src_hash = format(payload[1], "02x")
+    mac = payload[2:4]
+    ciphertext = payload[4:]
+
+    if len(ciphertext) == 0 or len(ciphertext) % 16 != 0:
+        # AES requires 16-byte blocks
+        return None
+
+    # Verify MAC: HMAC-SHA256(shared_secret, ciphertext)[:2]
+    calculated_mac = hmac.new(shared_secret, ciphertext, hashlib.sha256).digest()[:2]
+    if calculated_mac != mac:
+        return None
+
+    # Decrypt using AES-128-ECB with shared_secret[:16]
+    try:
+        cipher = AES.new(shared_secret[:16], AES.MODE_ECB)
+        decrypted = cipher.decrypt(ciphertext)
+    except Exception as e:
+        logger.debug("AES decryption failed for DM: %s", e)
+        return None
+
+    if len(decrypted) < 5:
+        return None
+
+    # Parse decrypted content
+    timestamp = int.from_bytes(decrypted[0:4], "little")
+    flags = decrypted[4]
+
+    # Extract message text (UTF-8, null-padded)
+    message_bytes = decrypted[5:]
+    try:
+        message_text = message_bytes.decode("utf-8")
+        # Remove null terminator and any padding
+        message_text = message_text.rstrip("\x00")
+    except UnicodeDecodeError:
+        return None
+
+    return DecryptedDirectMessage(
+        timestamp=timestamp,
+        flags=flags,
+        message=message_text,
+        dest_hash=dest_hash,
+        src_hash=src_hash,
+    )
+
+
+def try_decrypt_dm(
+    raw_packet: bytes,
+    our_private_key: bytes,
+    their_public_key: bytes,
+    our_public_key: bytes | None = None,
+) -> DecryptedDirectMessage | None:
+    """
+    Try to decrypt a raw packet as a direct message.
+
+    This performs several checks before attempting expensive ECDH:
+    1. Packet must be TEXT_MESSAGE type
+    2. dest_hash must match first byte of our public key (or their key for outbound)
+    3. src_hash must match first byte of their public key (or our key for outbound)
+
+    Args:
+        raw_packet: The complete raw packet bytes
+        our_private_key: Our 64-byte Ed25519 private key
+        their_public_key: Their 32-byte Ed25519 public key
+        our_public_key: Our 32-byte Ed25519 public key (optional, for bidirectional check)
+
+    Returns:
+        DecryptedDirectMessage if successful, None otherwise
+    """
+    packet_info = parse_packet(raw_packet)
+    if packet_info is None:
+        return None
+
+    # Only TEXT_MESSAGE packets can be decrypted as DMs
+    if packet_info.payload_type != PayloadType.TEXT_MESSAGE:
+        return None
+
+    if len(packet_info.payload) < 4:
+        return None
+
+    # Extract dest/src hashes from payload
+    dest_hash = packet_info.payload[0]
+    src_hash = packet_info.payload[1]
+
+    # Check if this packet is for us (inbound: them -> us)
+    their_first_byte = their_public_key[0]
+    is_inbound = src_hash == their_first_byte
+
+    # Check if this packet is from us (outbound: us -> them)
+    is_outbound = False
+    if our_public_key is not None:
+        our_first_byte = our_public_key[0]
+        is_outbound = src_hash == our_first_byte and dest_hash == their_first_byte
+
+    if not is_inbound and not is_outbound:
+        # Packet doesn't match this contact conversation
+        return None
+
+    # Derive shared secret and attempt decryption
+    try:
+        shared_secret = derive_shared_secret(our_private_key, their_public_key)
+    except Exception as e:
+        logger.debug("Failed to derive shared secret: %s", e)
+        return None
+
+    return decrypt_direct_message(packet_info.payload, shared_secret)

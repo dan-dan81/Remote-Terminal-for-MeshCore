@@ -17,12 +17,15 @@ import logging
 import time
 
 from app.decoder import (
+    DecryptedDirectMessage,
     PacketInfo,
     PayloadType,
     parse_advertisement,
     parse_packet,
+    try_decrypt_dm,
     try_decrypt_packet_with_channel_key,
 )
+from app.keystore import get_private_key, get_public_key, has_private_key
 from app.models import CONTACT_TYPE_REPEATER, RawPacketBroadcast, RawPacketDecryptedInfo
 from app.repository import (
     ChannelRepository,
@@ -161,6 +164,133 @@ async def create_message_from_decrypted(
     return msg_id
 
 
+async def create_dm_message_from_decrypted(
+    packet_id: int,
+    decrypted: DecryptedDirectMessage,
+    their_public_key: str,
+    our_public_key: str | None,
+    received_at: int | None = None,
+    path: str | None = None,
+    outgoing: bool = False,
+) -> int | None:
+    """Create a message record from decrypted direct message packet content.
+
+    This is the shared logic for storing decrypted direct messages,
+    used by both real-time packet processing and historical decryption.
+
+    Args:
+        packet_id: ID of the raw packet being processed
+        decrypted: DecryptedDirectMessage from decoder
+        their_public_key: The contact's full 64-char public key (conversation_key)
+        our_public_key: Our public key (to determine direction), or None
+        received_at: When the packet was received (defaults to now)
+        path: Hex-encoded routing path (None for historical decryption)
+        outgoing: Whether this is an outgoing message (we sent it)
+
+    Returns the message ID if created, None if duplicate.
+    """
+    received = received_at or int(time.time())
+
+    # conversation_key is always the other party's public key
+    conversation_key = their_public_key.lower()
+
+    # Try to create message - INSERT OR IGNORE handles duplicates atomically
+    msg_id = await MessageRepository.create(
+        msg_type="PRIV",
+        text=decrypted.message,
+        conversation_key=conversation_key,
+        sender_timestamp=decrypted.timestamp,
+        received_at=received,
+        path=path,
+        outgoing=outgoing,
+    )
+
+    if msg_id is None:
+        # Duplicate message detected
+        existing_msg = await MessageRepository.get_by_content(
+            msg_type="PRIV",
+            conversation_key=conversation_key,
+            text=decrypted.message,
+            sender_timestamp=decrypted.timestamp,
+        )
+        if not existing_msg:
+            logger.warning(
+                "Duplicate DM for contact %s but couldn't find existing",
+                conversation_key[:12],
+            )
+            return None
+
+        logger.debug(
+            "Duplicate DM for contact %s (msg_id=%d, outgoing=%s) - adding path",
+            conversation_key[:12],
+            existing_msg.id,
+            existing_msg.outgoing,
+        )
+
+        # Add path if provided
+        if path is not None:
+            paths = await MessageRepository.add_path(existing_msg.id, path, received)
+        else:
+            paths = existing_msg.paths or []
+
+        # Increment ack count for outgoing messages (echo confirmation)
+        if existing_msg.outgoing:
+            ack_count = await MessageRepository.increment_ack_count(existing_msg.id)
+        else:
+            ack_count = await MessageRepository.get_ack_count(existing_msg.id)
+
+        # Broadcast updated paths
+        broadcast_event(
+            "message_acked",
+            {
+                "message_id": existing_msg.id,
+                "ack_count": ack_count,
+                "paths": [p.model_dump() for p in paths] if paths else [],
+            },
+        )
+
+        # Mark this packet as decrypted
+        await RawPacketRepository.mark_decrypted(packet_id, existing_msg.id)
+
+        return None
+
+    logger.info(
+        "Stored direct message %d for contact %s (outgoing=%s)",
+        msg_id,
+        conversation_key[:12],
+        outgoing,
+    )
+
+    # Mark the raw packet as decrypted
+    await RawPacketRepository.mark_decrypted(packet_id, msg_id)
+
+    # Build paths array for broadcast
+    paths = [{"path": path or "", "received_at": received}] if path is not None else None
+
+    # Broadcast new message to connected clients
+    broadcast_event(
+        "message",
+        {
+            "id": msg_id,
+            "type": "PRIV",
+            "conversation_key": conversation_key,
+            "text": decrypted.message,
+            "sender_timestamp": decrypted.timestamp,
+            "received_at": received,
+            "paths": paths,
+            "txt_type": 0,
+            "signature": None,
+            "outgoing": outgoing,
+            "acked": 0,
+        },
+    )
+
+    # Update contact's last_contacted timestamp (for sorting)
+    await ContactRepository.update_last_contacted(conversation_key, received)
+
+    return msg_id
+
+
 async def process_raw_packet(
     raw_bytes: bytes,
     timestamp: int | None = None,
@@ -223,11 +353,11 @@ async def process_raw_packet(
         # Only process new advertisements (duplicates don't add value)
         await _process_advertisement(raw_bytes, ts, packet_info)
 
-    # TODO: Add TEXT_MESSAGE (direct message) decryption when private key is available
-    # elif payload_type == PayloadType.TEXT_MESSAGE:
-    #     decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
-    #     if decrypt_result:
-    #         result.update(decrypt_result)
+    elif payload_type == PayloadType.TEXT_MESSAGE:
+        # Try to decrypt direct messages using stored private key and known contacts
+        decrypt_result = await _process_direct_message(raw_bytes, packet_id, ts, packet_info)
+        if decrypt_result:
+            result.update(decrypt_result)
 
     # Always broadcast raw packet for the packet feed UI (even duplicates)
     # This enables the frontend cracker to see all incoming packets in real-time
@@ -416,3 +546,123 @@ async def _process_advertisement(
         from app.radio_sync import sync_recent_contacts_to_radio
 
         asyncio.create_task(sync_recent_contacts_to_radio())
+
+
+async def _process_direct_message(
+    raw_bytes: bytes,
+    packet_id: int,
+    timestamp: int,
+    packet_info: PacketInfo | None,
+) -> dict | None:
+    """
+    Process a TEXT_MESSAGE (direct message) packet.
+
+    Uses the stored private key and tries to decrypt with known contacts.
+    The src_hash (first byte of sender's public key) is used to narrow down
+    candidate contacts for decryption.
+    """
+    if not has_private_key():
+        # No private key available - can't decrypt DMs
+        return None
+
+    private_key = get_private_key()
+    our_public_key = get_public_key()
+    if private_key is None or our_public_key is None:
+        return None
+
+    # Parse packet to get the payload for src_hash extraction
+    if packet_info is None:
+        packet_info = parse_packet(raw_bytes)
+    if packet_info is None or packet_info.payload is None:
+        return None
+
+    # Extract src_hash from payload (second byte: [dest_hash:1][src_hash:1][MAC:2][ciphertext])
+    if len(packet_info.payload) < 4:
+        return None
+
+    dest_hash = format(packet_info.payload[0], "02x").lower()
+    src_hash = format(packet_info.payload[1], "02x").lower()
+
+    # Check if this message involves us (either as sender or recipient)
+    our_first_byte = format(our_public_key[0], "02x").lower()
+
+    # Determine direction based on which hash matches us:
+    # - dest_hash == us AND src_hash != us -> incoming (addressed to us from someone else)
+    # - src_hash == us AND dest_hash != us -> outgoing (we sent to someone else)
+    # - Both match us -> ambiguous (our first byte matches contact's), default to incoming
+    # - Neither matches us -> not our message
+    if dest_hash == our_first_byte and src_hash != our_first_byte:
+        is_outgoing = False  # Definitely incoming
+    elif src_hash == our_first_byte and dest_hash != our_first_byte:
+        is_outgoing = True  # Definitely outgoing
+    elif dest_hash == our_first_byte and src_hash == our_first_byte:
+        # Ambiguous: our first byte matches contact's first byte (1/256 chance)
+        # Default to incoming since dest_hash matching us is more indicative
+        is_outgoing = False
+        logger.debug("Ambiguous DM direction (first bytes match), defaulting to incoming")
+    else:
+        # Neither hash matches us - not our message
+        return None
+
+    # Find candidate contacts based on the relevant hash
+    # For incoming: match src_hash (sender's first byte)
+    # For outgoing: match dest_hash (recipient's first byte)
+    match_hash = dest_hash if is_outgoing else src_hash
+
+    # Get all contacts and filter by first byte of public key
+    contacts = await ContactRepository.get_all(limit=1000)
+    candidate_contacts = [c for c in contacts if c.public_key.lower().startswith(match_hash)]
+
+    if not candidate_contacts:
+        logger.debug(
+            "No contacts found matching hash %s for DM decryption",
+            match_hash,
+        )
+        return None
+
+    # Try decrypting with each candidate contact
+    for contact in candidate_contacts:
+        try:
+            contact_public_key = bytes.fromhex(contact.public_key)
+        except ValueError:
+            continue
+
+        # For incoming messages, pass our_public_key to enable the dest_hash filter
+        # For outgoing messages, skip the filter (dest_hash is the recipient, not us)
+        result = try_decrypt_dm(
+            raw_bytes,
+            private_key,
+            contact_public_key,
+            our_public_key=our_public_key if not is_outgoing else None,
+        )
+
+        if result is not None:
+            # Successfully decrypted!
+            logger.debug(
+                "Decrypted DM %s contact %s: %s",
+                "to" if is_outgoing else "from",
+                contact.name or contact.public_key[:12],
+                result.message[:50] if result.message else "",
+            )
+
+            # Create message (or add path to existing if duplicate)
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=result,
+                their_public_key=contact.public_key,
+                our_public_key=our_public_key.hex(),
+                received_at=timestamp,
+                path=packet_info.path.hex() if packet_info.path else None,
+                outgoing=is_outgoing,
+            )
+
+            return {
+                "decrypted": True,
+                "contact_name": contact.name,
+                "sender": contact.name or contact.public_key[:12],
+                "message_id": msg_id,
+            }
+
+    # Couldn't decrypt with any known contact
+    logger.debug("Could not decrypt DM with any of %d candidate contacts", len(candidate_contacts))
+    return None

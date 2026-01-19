@@ -4,6 +4,20 @@
 
 **NEVER make git commits.** A human must make all commits. You may stage files and prepare commit messages, but do not run `git commit`.
 
+If instructed to "run all tests" or "get ready for a commit" or other summative, work ending directives, make sure you run the following and that they all pass green:
+
+```bash
+uv run ruff check app/ tests/ --fix # check for python violations
+uv run ruff format app/ tests/ # format python
+uv run pyright app/ # type check python
+PYTHONPATH=. uv run pytest tests/ -v # test python
+
+cd frontend/ # move to frontend directory
+npm run lint:fix # fix lint violations
+npm run format # format the code
+npm run build # run a frontend build
+```
+
 ## Overview
 
 A web interface for MeshCore mesh radio networks. The backend connects to a MeshCore-compatible radio over serial and exposes REST/WebSocket APIs. The React frontend provides real-time messaging and radio configuration.
@@ -204,6 +218,7 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/radio/reboot` | Reboot radio or reconnect if disconnected |
 | PUT | `/api/radio/private-key` | Import private key to radio |
 | GET | `/api/contacts` | List contacts |
+| POST | `/api/contacts` | Create contact (optionally trigger historical DM decrypt) |
 | POST | `/api/contacts/sync` | Pull from radio |
 | POST | `/api/contacts/{key}/telemetry` | Request telemetry from repeater |
 | POST | `/api/contacts/{key}/command` | Send CLI command to repeater |
@@ -265,11 +280,11 @@ Read state (`last_read_at`) is tracked **server-side** for consistency across de
 
 ### Server-Side Decryption
 
-The server can decrypt historical channel packets using stored channel keys.
+The server can decrypt packets using stored keys, both in real-time and for historical packets.
 
 **Channel messages**: Decrypted automatically when a matching channel key is available.
 
-**Direct messages**: Currently decrypted only by the MeshCore library on the radio itself. Server-side direct message decryption is not yet implemented.
+**Direct messages**: Decrypted server-side using the private key exported from the radio on startup. This enables DM decryption even when the contact isn't loaded on the radio. The private key is stored in memory only (see `keystore.py`).
 
 ## MeshCore Library
 

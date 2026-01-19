@@ -291,12 +291,30 @@ if result:
 
 ### Direct Message Decryption
 
-Direct messages use ECDH key exchange (Ed25519 → X25519). Server-side decryption
-of direct messages is **not yet implemented**. Currently, direct messages are
-decrypted by the MeshCore library on the radio itself.
+Direct messages use ECDH key exchange (Ed25519 → X25519) for shared secret derivation.
 
-The decoder module contains a `try_decrypt_packet_with_contact_key()` function
-that could support this feature in the future.
+**Key storage**: The private key is exported from the radio on startup and stored in memory
+via `keystore.py`. This enables server-side DM decryption even when contacts aren't loaded
+on the radio.
+
+**Real-time decryption**: When a `RAW_DATA` event contains a `TEXT_MESSAGE` packet, the
+`packet_processor.py` attempts to decrypt it using known contact public keys and the
+stored private key.
+
+**Historical decryption**: When creating a contact with `try_historical=True`, the server
+attempts to decrypt all stored `TEXT_MESSAGE` packets for that contact.
+
+**Direction detection**: The decoder uses the 1-byte dest_hash and src_hash to determine
+if a message is incoming or outgoing. Edge case: when both bytes match (1/256 chance),
+defaults to treating as incoming.
+
+```python
+from app.decoder import try_decrypt_dm
+
+result = try_decrypt_dm(raw_bytes, private_key, contact_public_key)
+if result:
+    print(f"{result.message} (timestamp={result.timestamp})")
+```
 
 ## Advertisement Parsing (`decoder.py`)
 
@@ -407,6 +425,7 @@ All endpoints are prefixed with `/api`.
 ### Contacts
 - `GET /api/contacts` - List from database
 - `GET /api/contacts/{key}` - Get by public key or prefix
+- `POST /api/contacts` - Create contact (optionally trigger historical DM decryption)
 - `POST /api/contacts/sync` - Pull from radio to database
 - `POST /api/contacts/{key}/add-to-radio` - Push to radio
 - `POST /api/contacts/{key}/remove-from-radio` - Remove from radio
