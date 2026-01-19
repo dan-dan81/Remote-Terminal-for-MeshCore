@@ -67,9 +67,41 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
                   Path {index + 1} — received {formatTime(pathData.received_at)}
                 </div>
               )}
-              <PathVisualization resolved={pathData.resolved} senderInfo={senderInfo} />
+              <PathVisualization
+                resolved={pathData.resolved}
+                senderInfo={senderInfo}
+                hideStraightLine={!hasSinglePath}
+              />
             </div>
           ))}
+
+          {/* Straight-line distance shown once for multi-path (same for all routes) */}
+          {!hasSinglePath &&
+            resolvedPaths.length > 0 &&
+            (() => {
+              const first = resolvedPaths[0].resolved;
+              if (
+                isValidLocation(first.sender.lat, first.sender.lon) &&
+                isValidLocation(first.receiver.lat, first.receiver.lon)
+              ) {
+                return (
+                  <div className="pt-3 mt-1 border-t border-border">
+                    <span className="text-sm text-muted-foreground">Straight-line distance: </span>
+                    <span className="text-sm font-medium">
+                      {formatDistance(
+                        calculateDistance(
+                          first.sender.lat,
+                          first.sender.lon,
+                          first.receiver.lat,
+                          first.receiver.lon
+                        )!
+                      )}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
         </div>
 
         <DialogFooter>
@@ -83,9 +115,11 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
 interface PathVisualizationProps {
   resolved: ResolvedPath;
   senderInfo: SenderInfo;
+  /** If true, hide the straight-line distance (shown once at container level for multi-path) */
+  hideStraightLine?: boolean;
 }
 
-function PathVisualization({ resolved, senderInfo }: PathVisualizationProps) {
+function PathVisualization({ resolved, senderInfo, hideStraightLine }: PathVisualizationProps) {
   // Track previous location for each hop to calculate distances
   // Returns null if previous hop was ambiguous or has invalid location
   const getPrevLocation = (hopIndex: number): { lat: number | null; lon: number | null } | null => {
@@ -162,7 +196,8 @@ function PathVisualization({ resolved, senderInfo }: PathVisualizationProps) {
       )}
 
       {/* Straight-line distance (when both sender and receiver have coordinates) */}
-      {isValidLocation(resolved.sender.lat, resolved.sender.lon) &&
+      {!hideStraightLine &&
+        isValidLocation(resolved.sender.lat, resolved.sender.lon) &&
         isValidLocation(resolved.receiver.lat, resolved.receiver.lon) && (
           <div
             className={

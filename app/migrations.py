@@ -549,7 +549,7 @@ async def _migrate_008_convert_path_to_paths_array(conn: aiosqlite.Connection) -
     cursor = await conn.execute(
         "SELECT id, path, received_at FROM messages WHERE path IS NOT NULL AND paths IS NULL"
     )
-    rows = await cursor.fetchall()
+    rows = list(await cursor.fetchall())
 
     if rows:
         logger.info("Converting %d messages from path to paths array format...", len(rows))
