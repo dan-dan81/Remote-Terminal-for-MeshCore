@@ -43,6 +43,7 @@ export function NewMessageModal({
   const [contactKey, setContactKey] = useState('');
   const [roomKey, setRoomKey] = useState('');
   const [tryHistorical, setTryHistorical] = useState(false);
+  const [permitCapitals, setPermitCapitals] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const hashtagInputRef = useRef<HTMLInputElement>(null);
@@ -72,7 +73,9 @@ export function NewMessageModal({
           setError(validationError);
           return;
         }
-        await onCreateHashtagChannel(`#${channelName}`, tryHistorical);
+        // Normalize to lowercase unless user explicitly permits capitals
+        const normalizedName = permitCapitals ? channelName : channelName.toLowerCase();
+        await onCreateHashtagChannel(`#${normalizedName}`, tryHistorical);
       }
       onClose();
     } catch (err) {
@@ -103,7 +106,9 @@ export function NewMessageModal({
 
     setLoading(true);
     try {
-      await onCreateHashtagChannel(`#${channelName}`, tryHistorical);
+      // Normalize to lowercase unless user explicitly permits capitals
+      const normalizedName = permitCapitals ? channelName : channelName.toLowerCase();
+      await onCreateHashtagChannel(`#${normalizedName}`, tryHistorical);
       setName('');
       hashtagInputRef.current?.focus();
     } catch (err) {
@@ -236,6 +241,20 @@ export function NewMessageModal({
                   className="flex-1"
                 />
               </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={permitCapitals}
+                  onChange={(e) => setPermitCapitals(e.target.checked)}
+                  className="w-4 h-4 rounded border-input accent-primary"
+                />
+                <span className="text-sm">Permit capitals in room key derivation</span>
+              </label>
+              <p className="text-xs text-muted-foreground pl-7">
+                Not recommended; most companions normalize to lowercase
+              </p>
             </div>
           </TabsContent>
         </Tabs>
