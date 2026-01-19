@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { parseHashConversation, getConversationHash } from '../utils/urlHash';
+import { parseHashConversation, getConversationHash, getMapFocusHash } from '../utils/urlHash';
 import type { Conversation } from '../types';
 
 describe('parseHashConversation', () => {
@@ -34,6 +34,38 @@ describe('parseHashConversation', () => {
     const result = parseHashConversation();
 
     expect(result).toEqual({ type: 'raw', name: 'raw' });
+  });
+
+  it('parses #map as map type', () => {
+    window.location.hash = '#map';
+
+    const result = parseHashConversation();
+
+    expect(result).toEqual({ type: 'map', name: 'map' });
+  });
+
+  it('parses #map/focus/PUBKEY with focus key', () => {
+    window.location.hash = '#map/focus/ABCD1234';
+
+    const result = parseHashConversation();
+
+    expect(result).toEqual({ type: 'map', name: 'map', mapFocusKey: 'ABCD1234' });
+  });
+
+  it('parses #map/focus/ with empty focus as plain map', () => {
+    window.location.hash = '#map/focus/';
+
+    const result = parseHashConversation();
+
+    expect(result).toEqual({ type: 'map', name: 'map' });
+  });
+
+  it('decodes URL-encoded map focus key', () => {
+    window.location.hash = '#map/focus/AB%20CD';
+
+    const result = parseHashConversation();
+
+    expect(result).toEqual({ type: 'map', name: 'map', mapFocusKey: 'AB CD' });
   });
 
   it('parses channel hash', () => {
@@ -106,6 +138,14 @@ describe('getConversationHash', () => {
     const result = getConversationHash(conv);
 
     expect(result).toBe('#raw');
+  });
+
+  it('returns #map for map conversation', () => {
+    const conv: Conversation = { type: 'map', id: 'map', name: 'Node Map' };
+
+    const result = getConversationHash(conv);
+
+    expect(result).toBe('#map');
   });
 
   it('generates channel hash', () => {
@@ -188,5 +228,29 @@ describe('parseHashConversation and getConversationHash roundtrip', () => {
     const parsed = parseHashConversation();
 
     expect(parsed).toEqual({ type: 'raw', name: 'raw' });
+  });
+
+  it('map roundtrip preserves type', () => {
+    const conv: Conversation = { type: 'map', id: 'map', name: 'Node Map' };
+
+    const hash = getConversationHash(conv);
+    window.location.hash = hash;
+    const parsed = parseHashConversation();
+
+    expect(parsed).toEqual({ type: 'map', name: 'map' });
+  });
+});
+
+describe('getMapFocusHash', () => {
+  it('generates hash with focus key', () => {
+    const result = getMapFocusHash('ABCD1234');
+
+    expect(result).toBe('#map/focus/ABCD1234');
+  });
+
+  it('encodes special characters in key', () => {
+    const result = getMapFocusHash('AB CD/12');
+
+    expect(result).toBe('#map/focus/AB%20CD%2F12');
   });
 });

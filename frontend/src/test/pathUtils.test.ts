@@ -6,6 +6,7 @@ import {
   sortContactsByDistance,
   getHopCount,
   resolvePath,
+  formatDistance,
 } from '../utils/pathUtils';
 import type { Contact, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER, CONTACT_TYPE_CLIENT } from '../types';
@@ -472,5 +473,103 @@ describe('resolvePath', () => {
 
     // But second hop CAN have distance (from first hop)
     expect(result.hops[1].distanceFromPrev).not.toBeNull();
+  });
+
+  it('sets hasGaps to false when all hops are unambiguous with locations', () => {
+    const result = resolvePath('1A2B', sender, contacts, config);
+
+    expect(result.hasGaps).toBe(false);
+  });
+
+  it('sets hasGaps to true when path has unknown hops', () => {
+    const result = resolvePath('XX', sender, contacts, config);
+
+    expect(result.hasGaps).toBe(true);
+  });
+
+  it('sets hasGaps to true when path has ambiguous hops', () => {
+    const ambiguousContacts = [
+      createContact({
+        public_key: '1A' + 'A'.repeat(62),
+        name: 'Repeater1A',
+        type: CONTACT_TYPE_REPEATER,
+        lat: 40.75,
+        lon: -74.0,
+      }),
+      createContact({
+        public_key: '1A' + 'B'.repeat(62),
+        name: 'Repeater1B',
+        type: CONTACT_TYPE_REPEATER,
+        lat: 40.76,
+        lon: -73.99,
+      }),
+    ];
+
+    const result = resolvePath('1A', sender, ambiguousContacts, config);
+
+    expect(result.hasGaps).toBe(true);
+  });
+
+  it('sets hasGaps to true when sender has no location', () => {
+    const senderNoLocation = {
+      name: 'SenderNoLoc',
+      publicKeyOrPrefix: '5E' + 'E'.repeat(62),
+      lat: null,
+      lon: null,
+    };
+
+    const result = resolvePath('1A', senderNoLocation, contacts, config);
+
+    expect(result.hasGaps).toBe(true);
+  });
+
+  it('sets hasGaps to true when receiver has no valid location', () => {
+    const configNoLocation = createConfig({
+      public_key: 'FF' + 'F'.repeat(62),
+      name: 'MyRadio',
+      lat: 0,
+      lon: 0,
+    });
+
+    const result = resolvePath('1A', sender, contacts, configNoLocation);
+
+    expect(result.hasGaps).toBe(true);
+  });
+
+  it('includes receiver public key when config has one', () => {
+    const result = resolvePath('1A', sender, contacts, config);
+
+    expect(result.receiver.publicKey).toBe(config.public_key);
+  });
+
+  it('sets receiver public key to null when config has no public key', () => {
+    const configNoKey = createConfig({
+      public_key: undefined as unknown as string,
+      name: 'NoKeyRadio',
+    });
+
+    const result = resolvePath('1A', sender, contacts, configNoKey);
+
+    expect(result.receiver.publicKey).toBeNull();
+  });
+});
+
+describe('formatDistance', () => {
+  it('formats distances under 1km in meters', () => {
+    expect(formatDistance(0.5)).toBe('500m');
+    expect(formatDistance(0.123)).toBe('123m');
+    expect(formatDistance(0.9999)).toBe('1000m');
+  });
+
+  it('formats distances at or above 1km with one decimal', () => {
+    expect(formatDistance(1)).toBe('1.0km');
+    expect(formatDistance(1.5)).toBe('1.5km');
+    expect(formatDistance(12.34)).toBe('12.3km');
+    expect(formatDistance(100)).toBe('100.0km');
+  });
+
+  it('rounds meters to nearest integer', () => {
+    expect(formatDistance(0.4567)).toBe('457m');
+    expect(formatDistance(0.001)).toBe('1m');
   });
 });

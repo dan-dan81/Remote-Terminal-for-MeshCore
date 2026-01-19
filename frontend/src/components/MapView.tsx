@@ -1,13 +1,16 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
-import type { LatLngBoundsExpression } from 'leaflet';
+import type { LatLngBoundsExpression, CircleMarker as LeafletCircleMarker } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Contact } from '../types';
 import { formatTime } from '../utils/messageParser';
 import { CONTACT_TYPE_REPEATER } from '../types';
+import { pubkeysMatch } from '../utils/pubkey';
 
 interface MapViewProps {
   contacts: Contact[];
+  /** Public key (or prefix) of contact to focus on and open popup */
+  focusedKey?: string | null;
 }
 
 // Calculate marker color based on how recently the contact was heard
@@ -24,11 +27,24 @@ function getMarkerColor(lastSeen: number): string {
 }
 
 // Component to handle map bounds fitting
-function MapBoundsHandler({ contacts }: { contacts: Contact[] }) {
+function MapBoundsHandler({
+  contacts,
+  focusedContact,
+}: {
+  contacts: Contact[];
+  focusedContact: Contact | null;
+}) {
   const map = useMap();
   const [hasInitialized, setHasInitialized] = useState(false);
 
   useEffect(() => {
+    // If we have a focused contact, center on it immediately (even if already initialized)
+    if (focusedContact && focusedContact.lat != null && focusedContact.lon != null) {
+      map.setView([focusedContact.lat, focusedContact.lon], 12);
+      setHasInitialized(true);
+      return;
+    }
+
     if (hasInitialized) return;
 
     const fitToContacts = () => {
@@ -72,12 +88,12 @@ function MapBoundsHandler({ contacts }: { contacts: Contact[] }) {
       // No geolocation support - fit to contacts
       fitToContacts();
     }
-  }, [map, contacts, hasInitialized]);
+  }, [map, contacts, hasInitialized, focusedContact]);
 
   return null;
 }
 
-export function MapView({ contacts }: MapViewProps) {
+export function MapView({ contacts, focusedKey }: MapViewProps) {
   // Filter to contacts with GPS coordinates, heard within the last 7 days
   const mappableContacts = useMemo(() => {
     const sevenDaysAgo = Date.now() / 1000 - 7 * 24 * 60 * 60;
@@ -85,6 +101,31 @@ export function MapView({ contacts }: MapViewProps) {
       (c) => c.lat != null && c.lon != null && c.last_seen != null && c.last_seen > sevenDaysAgo
     );
   }, [contacts]);
+
+  // Find the focused contact by key prefix
+  const focusedContact = useMemo(() => {
+    if (!focusedKey) return null;
+    return mappableContacts.find((c) => pubkeysMatch(c.public_key, focusedKey)) || null;
+  }, [focusedKey, mappableContacts]);
+
+  // Track marker refs to open popup programmatically
+  const markerRefs = useRef<Record<string, LeafletCircleMarker | null>>({});
+
+  // Store ref for a marker
+  const setMarkerRef = useCallback((key: string, ref: LeafletCircleMarker | null) => {
+    markerRefs.current[key] = ref;
+  }, []);
+
+  // Open popup for focused contact after map is ready
+  useEffect(() => {
+    if (focusedContact && markerRefs.current[focusedContact.public_key]) {
+      // Small delay to ensure map has finished rendering
+      const timer = setTimeout(() => {
+        markerRefs.current[focusedContact.public_key]?.openPopup();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [focusedContact]);
 
   return (
     <div className="flex flex-col h-full">
@@ -122,7 +163,7 @@ export function MapView({ contacts }: MapViewProps) {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <MapBoundsHandler contacts={mappableContacts} />
+          <MapBoundsHandler contacts={mappableContacts} focusedContact={focusedContact} />
 
           {mappableContacts.map((contact) => {
             const isRepeater = contact.type === CONTACT_TYPE_REPEATER;
@@ -132,6 +173,7 @@ export function MapView({ contacts }: MapViewProps) {
             return (
               <CircleMarker
                 key={contact.public_key}
+                ref={(ref) => setMarkerRef(contact.public_key, ref)}
                 center={[contact.lat!, contact.lon!]}
                 radius={isRepeater ? 10 : 7}
                 pathOptions={{

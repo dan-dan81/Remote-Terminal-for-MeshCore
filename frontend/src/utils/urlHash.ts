@@ -3,9 +3,11 @@ import type { Conversation } from '../types';
 export interface ParsedHashConversation {
   type: 'channel' | 'contact' | 'raw' | 'map';
   name: string;
+  /** For map view: public key prefix to focus on */
+  mapFocusKey?: string;
 }
 
-// Parse URL hash to get conversation (e.g., #channel/Public or #contact/JohnDoe or #raw)
+// Parse URL hash to get conversation (e.g., #channel/Public or #contact/JohnDoe or #raw or #map/focus/ABCD1234)
 export function parseHashConversation(): ParsedHashConversation | null {
   const hash = window.location.hash.slice(1); // Remove leading #
   if (!hash) return null;
@@ -15,6 +17,15 @@ export function parseHashConversation(): ParsedHashConversation | null {
   }
 
   if (hash === 'map') {
+    return { type: 'map', name: 'map' };
+  }
+
+  // Check for map with focus: #map/focus/{pubkey_prefix}
+  if (hash.startsWith('map/focus/')) {
+    const focusKey = hash.slice('map/focus/'.length);
+    if (focusKey) {
+      return { type: 'map', name: 'map', mapFocusKey: decodeURIComponent(focusKey) };
+    }
     return { type: 'map', name: 'map' };
   }
 
@@ -28,6 +39,14 @@ export function parseHashConversation(): ParsedHashConversation | null {
     return { type, name };
   }
   return null;
+}
+
+/**
+ * Generate a URL hash for focusing on a contact in the map view
+ * @param publicKeyPrefix - The public key or prefix to focus on
+ */
+export function getMapFocusHash(publicKeyPrefix: string): string {
+  return `#map/focus/${encodeURIComponent(publicKeyPrefix)}`;
 }
 
 // Generate URL hash from conversation

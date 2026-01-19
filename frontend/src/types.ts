@@ -98,6 +98,8 @@ export interface Conversation {
   /** PublicKey for contacts, ChannelKey for channels, 'raw'/'map' for special views */
   id: string;
   name: string;
+  /** For map view: public key prefix to focus on */
+  mapFocusKey?: string;
 }
 
 export interface RawPacket {

@@ -21,7 +21,8 @@ import { Toaster, toast } from './components/ui/sonner';
 import { getStateKey } from './utils/conversationState';
 import { formatTime } from './utils/messageParser';
 import { pubkeysMatch, getContactDisplayName } from './utils/pubkey';
-import { parseHashConversation, updateUrlHash } from './utils/urlHash';
+import { parseHashConversation, updateUrlHash, getMapFocusHash } from './utils/urlHash';
+import { isValidLocation, calculateDistance, formatDistance } from './utils/pathUtils';
 import { loadFavorites, toggleFavorite, isFavorite, type Favorite } from './utils/favorites';
 import { cn } from '@/lib/utils';
 import type {
@@ -121,6 +122,8 @@ export function App() {
             toast.success('Radio connected', {
               description: data.serial_port ? `Connected to ${data.serial_port}` : undefined,
             });
+            // Refresh config after reconnection (may have changed after reboot)
+            api.getRadioConfig().then(setConfig).catch(console.error);
           } else {
             toast.error('Radio disconnected', {
               description: 'Check radio connection and power',
@@ -271,6 +274,14 @@ export function App() {
 
     if (hashConv.type === 'raw') {
       return { type: 'raw', id: 'raw', name: 'Raw Packet Feed' };
+    }
+    if (hashConv.type === 'map') {
+      return {
+        type: 'map',
+        id: 'map',
+        name: 'Node Map',
+        mapFocusKey: hashConv.mapFocusKey,
+      };
     }
     if (hashConv.type === 'channel') {
       const channel = channels.find(
@@ -588,7 +599,7 @@ export function App() {
                   Node Map
                 </div>
                 <div className="flex-1 overflow-hidden">
-                  <MapView contacts={contacts} />
+                  <MapView contacts={contacts} focusedKey={activeConversation.mapFocusKey} />
                 </div>
               </>
             ) : activeConversation.type === 'raw' ? (
@@ -612,8 +623,22 @@ export function App() {
                         : ''}
                       {activeConversation.name}
                     </span>
-                    <span className="font-normal text-sm text-muted-foreground font-mono truncate">
-                      {activeConversation.id}
+                    <span
+                      className="font-normal text-sm text-muted-foreground font-mono truncate cursor-pointer hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(activeConversation.id);
+                        toast.success(
+                          activeConversation.type === 'channel'
+                            ? 'Room key copied!'
+                            : 'Contact key copied!'
+                        );
+                      }}
+                      title="Click to copy"
+                    >
+                      {activeConversation.type === 'channel'
+                        ? activeConversation.id.toLowerCase()
+                        : activeConversation.id}
                     </span>
                     {activeConversation.type === 'contact' &&
                       (() => {
@@ -621,7 +646,7 @@ export function App() {
                           (c) => c.public_key === activeConversation.id
                         );
                         if (!contact) return null;
-                        const parts: string[] = [];
+                        const parts: React.ReactNode[] = [];
                         if (contact.last_seen) {
                           parts.push(`Last heard: ${formatTime(contact.last_seen)}`);
                         }
@@ -634,9 +659,43 @@ export function App() {
                             `${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`
                           );
                         }
+                        // Add coordinate link if contact has valid location
+                        if (isValidLocation(contact.lat, contact.lon)) {
+                          // Calculate distance from us if we have valid location
+                          const distFromUs =
+                            config && isValidLocation(config.lat, config.lon)
+                              ? calculateDistance(config.lat, config.lon, contact.lat, contact.lon)
+                              : null;
+                          parts.push(
+                            <span key="coords">
+                              <span
+                                className="font-mono cursor-pointer hover:text-primary hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const url =
+                                    window.location.origin +
+                                    window.location.pathname +
+                                    getMapFocusHash(contact.public_key);
+                                  window.open(url, '_blank');
+                                }}
+                                title="View on map"
+                              >
+                                {contact.lat!.toFixed(3)}, {contact.lon!.toFixed(3)}
+                              </span>
+                              {distFromUs !== null && ` (${formatDistance(distFromUs)})`}
+                            </span>
+                          );
+                        }
                         return parts.length > 0 ? (
                           <span className="font-normal text-sm text-muted-foreground flex-shrink-0">
-                            ({parts.join(', ')})
+                            (
+                            {parts.map((part, i) => (
+                              <span key={i}>
+                                {i > 0 && ', '}
+                                {part}
+                              </span>
+                            ))}
+                            )
                           </span>
                         ) : null;
                       })()}

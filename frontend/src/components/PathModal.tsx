@@ -12,10 +12,12 @@ import {
   resolvePath,
   calculateDistance,
   isValidLocation,
+  formatDistance,
   type SenderInfo,
   type ResolvedPath,
   type PathHop,
 } from '../utils/pathUtils';
+import { getMapFocusHash } from '../utils/urlHash';
 
 interface PathModalProps {
   open: boolean;
@@ -42,7 +44,7 @@ export function PathModal({ open, onClose, path, senderInfo, contacts, config }:
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto py-2">
-          <PathVisualization resolved={resolved} />
+          <PathVisualization resolved={resolved} senderInfo={senderInfo} />
         </div>
 
         <DialogFooter>
@@ -55,9 +57,10 @@ export function PathModal({ open, onClose, path, senderInfo, contacts, config }:
 
 interface PathVisualizationProps {
   resolved: ResolvedPath;
+  senderInfo: SenderInfo;
 }
 
-function PathVisualization({ resolved }: PathVisualizationProps) {
+function PathVisualization({ resolved, senderInfo }: PathVisualizationProps) {
   // Track previous location for each hop to calculate distances
   // Returns null if previous hop was ambiguous or has invalid location
   const getPrevLocation = (hopIndex: number): { lat: number | null; lon: number | null } | null => {
@@ -93,6 +96,9 @@ function PathVisualization({ resolved }: PathVisualizationProps) {
         prefix={resolved.sender.prefix}
         distance={null}
         isFirst
+        lat={resolved.sender.lat}
+        lon={resolved.sender.lon}
+        publicKey={senderInfo.publicKeyOrPrefix}
       />
 
       {/* Hops */}
@@ -112,6 +118,9 @@ function PathVisualization({ resolved }: PathVisualizationProps) {
         prefix={resolved.receiver.prefix}
         distance={calculateReceiverDistance(resolved)}
         isLast
+        lat={resolved.receiver.lat}
+        lon={resolved.receiver.lon}
+        publicKey={resolved.receiver.publicKey ?? undefined}
       />
 
       {/* Total distance */}
@@ -120,9 +129,36 @@ function PathVisualization({ resolved }: PathVisualizationProps) {
           <span className="text-sm text-muted-foreground">
             Presumed unambiguous distance covered:{' '}
           </span>
-          <span className="text-sm font-medium">{formatDistance(resolved.totalDistances[0])}</span>
+          <span className="text-sm font-medium">
+            {resolved.hasGaps ? '>' : ''}
+            {formatDistance(resolved.totalDistances[0])}
+          </span>
         </div>
       )}
+
+      {/* Straight-line distance (when both sender and receiver have coordinates) */}
+      {isValidLocation(resolved.sender.lat, resolved.sender.lon) &&
+        isValidLocation(resolved.receiver.lat, resolved.receiver.lon) && (
+          <div
+            className={
+              resolved.totalDistances && resolved.totalDistances.length > 0
+                ? 'pt-1'
+                : 'pt-3 mt-3 border-t border-border'
+            }
+          >
+            <span className="text-sm text-muted-foreground">Straight-line distance: </span>
+            <span className="text-sm font-medium">
+              {formatDistance(
+                calculateDistance(
+                  resolved.sender.lat,
+                  resolved.sender.lon,
+                  resolved.receiver.lat,
+                  resolved.receiver.lon
+                )!
+              )}
+            </span>
+          </div>
+        )}
     </div>
   );
 }
@@ -134,9 +170,26 @@ interface PathNodeProps {
   distance: number | null;
   isFirst?: boolean;
   isLast?: boolean;
+  /** Optional coordinates for map link */
+  lat?: number | null;
+  lon?: number | null;
+  /** Public key for map focus link (required if lat/lon provided) */
+  publicKey?: string;
 }
 
-function PathNode({ label, name, prefix, distance, isFirst, isLast }: PathNodeProps) {
+function PathNode({
+  label,
+  name,
+  prefix,
+  distance,
+  isFirst,
+  isLast,
+  lat,
+  lon,
+  publicKey,
+}: PathNodeProps) {
+  const hasLocation = isValidLocation(lat ?? null, lon ?? null) && publicKey;
+
   return (
     <div className="flex gap-3">
       {/* Vertical line and dot column */}
@@ -151,10 +204,11 @@ function PathNode({ label, name, prefix, distance, isFirst, isLast }: PathNodePr
         <div className="text-xs text-muted-foreground font-medium">{label}</div>
         <div className="font-medium truncate">
           {name} <span className="text-muted-foreground font-mono text-sm">({prefix})</span>
+          {distance !== null && (
+            <span className="text-xs text-muted-foreground ml-1">- {formatDistance(distance)}</span>
+          )}
+          {hasLocation && <CoordinateLink lat={lat!} lon={lon!} publicKey={publicKey!} />}
         </div>
-        {distance !== null && (
-          <div className="text-xs text-muted-foreground">{formatDistance(distance)}</div>
-        )}
       </div>
     </div>
   );
@@ -210,6 +264,7 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
           <div>
             {hop.matches.map((contact) => {
               const dist = getDistanceForContact(contact);
+              const hasLocation = isValidLocation(contact.lat, contact.lon);
               return (
                 <div key={contact.public_key} className="font-medium truncate">
                   {contact.name || contact.public_key.slice(0, 12)}{' '}
@@ -220,6 +275,13 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
                     <span className="text-xs text-muted-foreground ml-1">
                       - {formatDistance(dist)}
                     </span>
+                  )}
+                  {hasLocation && (
+                    <CoordinateLink
+                      lat={contact.lat!}
+                      lon={contact.lon!}
+                      publicKey={contact.public_key}
+                    />
                   )}
                 </div>
               );
@@ -234,6 +296,13 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
                 - {formatDistance(hop.distanceFromPrev)}
               </span>
             )}
+            {isValidLocation(hop.matches[0].lat, hop.matches[0].lon) && (
+              <CoordinateLink
+                lat={hop.matches[0].lat!}
+                lon={hop.matches[0].lon!}
+                publicKey={hop.matches[0].public_key}
+              />
+            )}
           </div>
         )}
       </div>
@@ -241,11 +310,27 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
   );
 }
 
-function formatDistance(km: number): string {
-  if (km < 1) {
-    return `${Math.round(km * 1000)}m`;
-  }
-  return `${km.toFixed(1)}km`;
+/**
+ * Render clickable coordinates that open the map focused on the contact
+ */
+function CoordinateLink({ lat, lon, publicKey }: { lat: number; lon: number; publicKey: string }) {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Open map in new tab with focus on this contact
+    const url = window.location.origin + window.location.pathname + getMapFocusHash(publicKey);
+    window.open(url, '_blank');
+  };
+
+  return (
+    <span
+      className="text-xs text-muted-foreground/70 font-mono cursor-pointer hover:text-primary hover:underline ml-1"
+      onClick={handleClick}
+      title="View on map"
+    >
+      ({lat.toFixed(4)}, {lon.toFixed(4)})
+    </span>
+  );
 }
 
 function calculateReceiverDistance(resolved: ResolvedPath): number | null {

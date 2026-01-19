@@ -10,8 +10,16 @@ export interface PathHop {
 export interface ResolvedPath {
   sender: { name: string; prefix: string; lat: number | null; lon: number | null };
   hops: PathHop[];
-  receiver: { name: string; prefix: string; lat: number | null; lon: number | null };
+  receiver: {
+    name: string;
+    prefix: string;
+    lat: number | null;
+    lon: number | null;
+    publicKey: string | null;
+  };
   totalDistances: number[] | null; // Single-element array with sum of unambiguous distances
+  /** True if path has any gaps (unknown, ambiguous, or missing location hops) */
+  hasGaps: boolean;
 }
 
 export interface SenderInfo {
@@ -102,6 +110,16 @@ export function isValidLocation(lat: number | null, lon: number | null): boolean
 }
 
 /**
+ * Format distance in human-readable form (m or km)
+ */
+export function formatDistance(km: number): string {
+  if (km < 1) {
+    return `${Math.round(km * 1000)}m`;
+  }
+  return `${km.toFixed(1)}km`;
+}
+
+/**
  * Sort contacts by distance from a reference point
  * Contacts without location are placed at the end
  */
@@ -164,6 +182,7 @@ export function resolvePath(
     prefix: receiverPrefix,
     lat: config?.lat ?? null,
     lon: config?.lon ?? null,
+    publicKey: config?.public_key ?? null,
   };
 
   // Build hops
@@ -229,11 +248,20 @@ export function resolvePath(
   // Calculate total distances (can be multiple if ambiguous)
   const totalDistances = calculateTotalDistances(resolvedSender, hops, resolvedReceiver);
 
+  // Determine if path has any gaps (unknown, ambiguous, or missing location)
+  const hasGaps =
+    !isValidLocation(resolvedSender.lat, resolvedSender.lon) ||
+    !isValidLocation(resolvedReceiver.lat, resolvedReceiver.lon) ||
+    hops.some(
+      (hop) => hop.matches.length !== 1 || !isValidLocation(hop.matches[0].lat, hop.matches[0].lon)
+    );
+
   return {
     sender: resolvedSender,
     hops,
     receiver: resolvedReceiver,
     totalDistances,
+    hasGaps,
   };
 }
 
