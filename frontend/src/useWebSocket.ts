@@ -11,6 +11,11 @@ interface ErrorEvent {
   details?: string;
 }
 
+interface SuccessEvent {
+  message: string;
+  details?: string;
+}
+
 interface UseWebSocketOptions {
   onHealth?: (health: HealthStatus) => void;
   onContacts?: (contacts: Contact[]) => void;
@@ -20,6 +25,7 @@ interface UseWebSocketOptions {
   onRawPacket?: (packet: RawPacket) => void;
   onMessageAcked?: (messageId: number, ackCount: number, paths?: MessagePath[]) => void;
   onError?: (error: ErrorEvent) => void;
+  onSuccess?: (success: SuccessEvent) => void;
 }
 
 export function useWebSocket(options: UseWebSocketOptions) {
@@ -93,6 +99,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
           }
           case 'error':
             options.onError?.(msg.data as ErrorEvent);
+            break;
+          case 'success':
+            options.onSuccess?.(msg.data as SuccessEvent);
             break;
           case 'pong':
             // Heartbeat response, ignore

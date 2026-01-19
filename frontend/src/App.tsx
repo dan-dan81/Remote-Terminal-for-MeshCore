@@ -137,6 +137,11 @@ export function App() {
           description: error.details,
         });
       },
+      onSuccess: (success: { message: string; details?: string }) => {
+        toast.success(success.message, {
+          description: success.details,
+        });
+      },
       onContacts: (data: Contact[]) => setContacts(data),
       onChannels: (data: Channel[]) => setChannels(data),
       onMessage: (msg: Message) => {

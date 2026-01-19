@@ -5,14 +5,10 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.database import db
-from app.decoder import (
-    derive_public_key,
-    parse_packet,
-    try_decrypt_dm,
-    try_decrypt_packet_with_channel_key,
-)
-from app.packet_processor import create_dm_message_from_decrypted, create_message_from_decrypted
-from app.repository import RawPacketRepository
+from app.decoder import parse_packet, try_decrypt_packet_with_channel_key
+from app.packet_processor import create_message_from_decrypted, run_historical_dm_decryption
+from app.repository import ChannelRepository, RawPacketRepository
+from app.websocket import broadcast_success
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/packets", tags=["packets"])
@@ -42,42 +38,24 @@ class DecryptResult(BaseModel):
     message: str
 
 
-class DecryptProgress(BaseModel):
-    total: int
-    processed: int
-    decrypted: int
-    in_progress: bool
-
-
-# Global state for tracking decryption progress
-_decrypt_progress: DecryptProgress | None = None
-
-
-async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: str) -> None:
+async def _run_historical_channel_decryption(
+    channel_key_bytes: bytes, channel_key_hex: str, display_name: str | None = None
+) -> None:
     """Background task to decrypt historical packets with a channel key."""
-    global _decrypt_progress
-
     packets = await RawPacketRepository.get_all_undecrypted()
     total = len(packets)
-    processed = 0
     decrypted_count = 0
 
-    _decrypt_progress = DecryptProgress(total=total, processed=0, decrypted=0, in_progress=True)
+    if total == 0:
+        logger.info("No undecrypted packets to process")
+        return
 
-    logger.info("Starting historical decryption of %d packets", total)
+    logger.info("Starting historical channel decryption of %d packets", total)
 
     for packet_id, packet_data, packet_timestamp in packets:
         result = try_decrypt_packet_with_channel_key(packet_data, channel_key_bytes)
 
         if result is not None:
-            # Successfully decrypted - use shared logic to store message
-            logger.debug(
-                "Decrypted packet %d: sender=%s, message=%s",
-                packet_id,
-                result.sender,
-                result.message[:50] if result.message else "",
-            )
-
             # Extract path from the raw packet for storage
             packet_info = parse_packet(packet_data)
             path_hex = packet_info.path.hex() if packet_info else None
@@ -88,101 +66,24 @@ async def _run_historical_decryption(channel_key_bytes: bytes, channel_key_hex: 
                 sender=result.sender,
                 message_text=result.message,
                 timestamp=result.timestamp,
-                received_at=packet_timestamp,  # Use original packet timestamp for correct ordering
-                path=path_hex,
-            )
-
-            if msg_id is not None:
-                decrypted_count += 1
-
-        processed += 1
-        _decrypt_progress = DecryptProgress(
-            total=total, processed=processed, decrypted=decrypted_count, in_progress=True
-        )
-
-    _decrypt_progress = DecryptProgress(
-        total=total, processed=processed, decrypted=decrypted_count, in_progress=False
-    )
-
-    logger.info("Historical decryption complete: %d/%d packets decrypted", decrypted_count, total)
-
-
-async def _run_historical_dm_decryption(
-    private_key_bytes: bytes,
-    contact_public_key_bytes: bytes,
-    contact_public_key_hex: str,
-) -> None:
-    """Background task to decrypt historical DM packets with contact's key."""
-    global _decrypt_progress
-
-    # Get only TEXT_MESSAGE packets (undecrypted)
-    packets = await RawPacketRepository.get_undecrypted_text_messages()
-    total = len(packets)
-    processed = 0
-    decrypted_count = 0
-
-    _decrypt_progress = DecryptProgress(total=total, processed=0, decrypted=0, in_progress=True)
-
-    logger.info("Starting historical DM decryption of %d TEXT_MESSAGE packets", total)
-
-    # Derive our public key from the private key using Ed25519 scalar multiplication.
-    # Note: MeshCore stores the scalar directly (not a seed), so we use noclamp variant.
-    # See derive_public_key() for details on the MeshCore key format.
-    our_public_key_bytes = derive_public_key(private_key_bytes)
-
-    for packet_id, packet_data, packet_timestamp in packets:
-        # Don't pass our_public_key - we want to decrypt both incoming AND outgoing messages.
-        # The our_public_key filter in try_decrypt_dm only matches incoming (dest_hash == us),
-        # which would skip outgoing messages (where dest_hash == contact).
-        result = try_decrypt_dm(
-            packet_data,
-            private_key_bytes,
-            contact_public_key_bytes,
-            our_public_key=None,
-        )
-
-        if result is not None:
-            # Successfully decrypted - determine if inbound or outbound by checking src_hash
-            src_hash = result.src_hash.lower()
-            our_first_byte = format(our_public_key_bytes[0], "02x").lower()
-            outgoing = src_hash == our_first_byte
-
-            logger.debug(
-                "Decrypted DM packet %d: message=%s (outgoing=%s)",
-                packet_id,
-                result.message[:50] if result.message else "",
-                outgoing,
-            )
-
-            # Extract path from the raw packet for storage
-            packet_info = parse_packet(packet_data)
-            path_hex = packet_info.path.hex() if packet_info else None
-
-            msg_id = await create_dm_message_from_decrypted(
-                packet_id=packet_id,
-                decrypted=result,
-                their_public_key=contact_public_key_hex,
-                our_public_key=our_public_key_bytes.hex(),
                 received_at=packet_timestamp,
                 path=path_hex,
-                outgoing=outgoing,
             )
 
             if msg_id is not None:
                 decrypted_count += 1
 
-        processed += 1
-        _decrypt_progress = DecryptProgress(
-            total=total, processed=processed, decrypted=decrypted_count, in_progress=True
-        )
-
-    _decrypt_progress = DecryptProgress(
-        total=total, processed=processed, decrypted=decrypted_count, in_progress=False
-    )
-
     logger.info(
-        "Historical DM decryption complete: %d/%d packets decrypted", decrypted_count, total
+        "Historical channel decryption complete: %d/%d packets decrypted", decrypted_count, total
     )
+
+    # Notify frontend
+    if decrypted_count > 0:
+        name = display_name or channel_key_hex[:12]
+        broadcast_success(
+            f"Historical decrypt complete for {name}",
+            f"Decrypted {decrypted_count} message{'s' if decrypted_count != 1 else ''}",
+        )
 
 
 @router.get("/undecrypted/count")
@@ -198,25 +99,11 @@ async def decrypt_historical_packets(
 ) -> DecryptResult:
     """
     Attempt to decrypt historical packets with the provided key.
-    Runs in the background to avoid blocking.
+    Runs in the background. Multiple decrypt jobs can run concurrently.
     """
-    global _decrypt_progress
-
-    # Check if decryption is already in progress
-    if _decrypt_progress and _decrypt_progress.in_progress:
-        return DecryptResult(
-            started=False,
-            total_packets=_decrypt_progress.total,
-            message=f"Decryption already in progress: {_decrypt_progress.processed}/{_decrypt_progress.total}",
-        )
-
-    # Determine the channel key
-    channel_key_bytes: bytes | None = None
-    channel_key_hex: str | None = None
-
     if request.key_type == "channel":
+        # Channel decryption
         if request.channel_key:
-            # Direct key provided
             try:
                 channel_key_bytes = bytes.fromhex(request.channel_key)
                 if len(channel_key_bytes) != 16:
@@ -233,7 +120,6 @@ async def decrypt_historical_packets(
                     message="Invalid hex string for channel key",
                 )
         elif request.channel_name:
-            # Derive key from channel name (hashtag channel)
             channel_key_bytes = sha256(request.channel_name.encode("utf-8")).digest()[:16]
             channel_key_hex = channel_key_bytes.hex().upper()
         else:
@@ -242,8 +128,30 @@ async def decrypt_historical_packets(
                 total_packets=0,
                 message="Must provide channel_key or channel_name",
             )
+
+        # Get count and lookup channel name for display
+        count = await RawPacketRepository.get_undecrypted_count()
+        if count == 0:
+            return DecryptResult(
+                started=False, total_packets=0, message="No undecrypted packets to process"
+            )
+
+        # Try to find channel name for display
+        channel = await ChannelRepository.get_by_key(channel_key_hex)
+        display_name = channel.name if channel else request.channel_name
+
+        background_tasks.add_task(
+            _run_historical_channel_decryption, channel_key_bytes, channel_key_hex, display_name
+        )
+
+        return DecryptResult(
+            started=True,
+            total_packets=count,
+            message=f"Started channel decryption of {count} packets in background",
+        )
+
     elif request.key_type == "contact":
-        # Validate required fields for contact decryption
+        # DM decryption
         if not request.private_key:
             return DecryptResult(
                 started=False,
@@ -257,7 +165,6 @@ async def decrypt_historical_packets(
                 message="Must provide contact_public_key for contact decryption",
             )
 
-        # Parse private key
         try:
             private_key_bytes = bytes.fromhex(request.private_key)
             if len(private_key_bytes) != 64:
@@ -273,7 +180,6 @@ async def decrypt_historical_packets(
                 message="Invalid hex string for private key",
             )
 
-        # Parse contact public key
         try:
             contact_public_key_bytes = bytes.fromhex(request.contact_public_key)
             if len(contact_public_key_bytes) != 32:
@@ -290,7 +196,6 @@ async def decrypt_historical_packets(
                 message="Invalid hex string for contact public key",
             )
 
-        # Get count of undecrypted TEXT_MESSAGE packets
         packets = await RawPacketRepository.get_undecrypted_text_messages()
         count = len(packets)
         if count == 0:
@@ -300,12 +205,18 @@ async def decrypt_historical_packets(
                 message="No undecrypted TEXT_MESSAGE packets to process",
             )
 
-        # Start background decryption
+        # Try to find contact name for display
+        from app.repository import ContactRepository
+
+        contact = await ContactRepository.get_by_key_or_prefix(contact_public_key_hex)
+        display_name = contact.name if contact else None
+
         background_tasks.add_task(
-            _run_historical_dm_decryption,
+            run_historical_dm_decryption,
             private_key_bytes,
             contact_public_key_bytes,
             contact_public_key_hex,
+            display_name,
         )
 
         return DecryptResult(
@@ -313,34 +224,12 @@ async def decrypt_historical_packets(
             total_packets=count,
             message=f"Started DM decryption of {count} TEXT_MESSAGE packets in background",
         )
-    else:
-        return DecryptResult(
-            started=False,
-            total_packets=0,
-            message="key_type must be 'channel' or 'contact'",
-        )
-
-    # Get count of undecrypted packets
-    count = await RawPacketRepository.get_undecrypted_count()
-    if count == 0:
-        return DecryptResult(
-            started=False, total_packets=0, message="No undecrypted packets to process"
-        )
-
-    # Start background decryption
-    background_tasks.add_task(_run_historical_decryption, channel_key_bytes, channel_key_hex)
 
     return DecryptResult(
-        started=True,
-        total_packets=count,
-        message=f"Started decryption of {count} packets in background",
+        started=False,
+        total_packets=0,
+        message="key_type must be 'channel' or 'contact'",
     )
-
-
-@router.get("/decrypt/progress", response_model=DecryptProgress | None)
-async def get_decrypt_progress() -> DecryptProgress | None:
-    """Get the current progress of historical decryption."""
-    return _decrypt_progress
 
 
 class MaintenanceRequest(BaseModel):

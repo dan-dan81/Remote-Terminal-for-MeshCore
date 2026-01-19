@@ -579,7 +579,7 @@ class RawPacketRepository:
 
         if existing:
             # Duplicate - return existing packet ID
-            logger.info(
+            logger.debug(
                 "Duplicate payload detected (hash=%s..., existing_id=%d)",
                 payload_hash[:12],
                 existing["id"],

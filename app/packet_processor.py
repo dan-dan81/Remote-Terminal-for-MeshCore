@@ -20,6 +20,7 @@ from app.decoder import (
     DecryptedDirectMessage,
     PacketInfo,
     PayloadType,
+    derive_public_key,
     parse_advertisement,
     parse_packet,
     try_decrypt_dm,
@@ -33,7 +34,7 @@ from app.repository import (
     MessageRepository,
     RawPacketRepository,
 )
-from app.websocket import broadcast_event
+from app.websocket import broadcast_error, broadcast_event
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,125 @@ async def create_dm_message_from_decrypted(
     return msg_id
 
 
+async def run_historical_dm_decryption(
+    private_key_bytes: bytes,
+    contact_public_key_bytes: bytes,
+    contact_public_key_hex: str,
+    display_name: str | None = None,
+) -> None:
+    """Background task to decrypt historical DM packets with contact's key."""
+    from app.websocket import broadcast_success
+
+    packets = await RawPacketRepository.get_undecrypted_text_messages()
+    total = len(packets)
+    decrypted_count = 0
+
+    if total == 0:
+        logger.info("No undecrypted TEXT_MESSAGE packets to process")
+        return
+
+    logger.info("Starting historical DM decryption of %d TEXT_MESSAGE packets", total)
+
+    # Derive our public key from the private key
+    our_public_key_bytes = derive_public_key(private_key_bytes)
+
+    for packet_id, packet_data, packet_timestamp in packets:
+        # Don't pass our_public_key - we want to decrypt both incoming AND outgoing messages.
+        result = try_decrypt_dm(
+            packet_data,
+            private_key_bytes,
+            contact_public_key_bytes,
+            our_public_key=None,
+        )
+
+        if result is not None:
+            # Determine direction by checking src_hash
+            src_hash = result.src_hash.lower()
+            our_first_byte = format(our_public_key_bytes[0], "02x").lower()
+            outgoing = src_hash == our_first_byte
+
+            # Extract path from the raw packet for storage
+            packet_info = parse_packet(packet_data)
+            path_hex = packet_info.path.hex() if packet_info else None
+
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=result,
+                their_public_key=contact_public_key_hex,
+                our_public_key=our_public_key_bytes.hex(),
+                received_at=packet_timestamp,
+                path=path_hex,
+                outgoing=outgoing,
+            )
+
+            if msg_id is not None:
+                decrypted_count += 1
+
+    logger.info(
+        "Historical DM decryption complete: %d/%d packets decrypted",
+        decrypted_count,
+        total,
+    )
+
+    # Notify frontend
+    if decrypted_count > 0:
+        name = display_name or contact_public_key_hex[:12]
+        broadcast_success(
+            f"Historical decrypt complete for {name}",
+            f"Decrypted {decrypted_count} message{'s' if decrypted_count != 1 else ''}",
+        )
+
+
+async def start_historical_dm_decryption(
+    background_tasks,
+    contact_public_key_hex: str,
+    display_name: str | None = None,
+) -> None:
+    """Start historical DM decryption using the stored private key."""
+    if not has_private_key():
+        logger.warning(
+            "Cannot start historical DM decryption: private key not available. "
+            "Ensure radio firmware has ENABLE_PRIVATE_KEY_EXPORT=1."
+        )
+        broadcast_error(
+            "Cannot decrypt historical DMs",
+            "Private key not available. Radio firmware may need ENABLE_PRIVATE_KEY_EXPORT=1.",
+        )
+        return
+
+    private_key_bytes = get_private_key()
+    if private_key_bytes is None:
+        return
+
+    try:
+        contact_public_key_bytes = bytes.fromhex(contact_public_key_hex)
+    except ValueError:
+        logger.warning(
+            "Cannot start historical DM decryption: invalid contact key %s",
+            contact_public_key_hex,
+        )
+        return
+
+    logger.info("Starting historical DM decryption for contact %s", contact_public_key_hex[:12])
+    if background_tasks is None:
+        asyncio.create_task(
+            run_historical_dm_decryption(
+                private_key_bytes,
+                contact_public_key_bytes,
+                contact_public_key_hex.lower(),
+                display_name,
+            )
+        )
+    else:
+        background_tasks.add_task(
+            run_historical_dm_decryption,
+            private_key_bytes,
+            contact_public_key_bytes,
+            contact_public_key_hex.lower(),
+            display_name,
+        )
+
+
 async def process_raw_packet(
     raw_bytes: bytes,
     timestamp: int | None = None,
@@ -538,6 +658,10 @@ async def _process_advertisement(
             "on_radio": existing.on_radio if existing else False,
         },
     )
+
+    # For new contacts, attempt to decrypt any historical DMs we may have stored
+    if existing is None:
+        await start_historical_dm_decryption(None, advert.public_key, advert.name)
 
     # If this is not a repeater, trigger recent contacts sync to radio
     # This ensures we can auto-ACK DMs from recent contacts

@@ -9,7 +9,7 @@ between backend and frontend - both sides test against the same data.
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -255,6 +255,58 @@ class TestAdvertisementPipeline:
         assert contact.last_path_len == 0
         # Empty path stored as None or ""
         assert contact.last_path in (None, "")
+
+    @pytest.mark.asyncio
+    async def test_advertisement_triggers_historical_decrypt_for_new_contact(
+        self, test_db, captured_broadcasts
+    ):
+        """New contact via advertisement starts historical DM decryption."""
+        from app.packet_processor import process_raw_packet
+
+        fixture = FIXTURES["advertisement_with_gps"]
+        packet_bytes = bytes.fromhex(fixture["raw_packet_hex"])
+        expected = fixture["expected_ws_event"]["data"]
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch(
+                "app.packet_processor.start_historical_dm_decryption", new=AsyncMock()
+            ) as mock_start:
+                await process_raw_packet(packet_bytes, timestamp=1700000000)
+
+        mock_start.assert_awaited_once_with(None, expected["public_key"], expected["name"])
+
+    @pytest.mark.asyncio
+    async def test_advertisement_skips_historical_decrypt_for_existing_contact(
+        self, test_db, captured_broadcasts
+    ):
+        """Existing contact via advertisement does not start historical DM decryption."""
+        from app.packet_processor import process_raw_packet
+
+        fixture = FIXTURES["advertisement_chat_node"]
+        packet_bytes = bytes.fromhex(fixture["raw_packet_hex"])
+        expected = fixture["expected_ws_event"]["data"]
+
+        await ContactRepository.upsert(
+            {
+                "public_key": expected["public_key"],
+                "name": "Existing",
+                "type": 0,
+                "lat": None,
+                "lon": None,
+            }
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch(
+                "app.packet_processor.start_historical_dm_decryption", new=AsyncMock()
+            ) as mock_start:
+                await process_raw_packet(packet_bytes, timestamp=1700000000)
+
+        assert mock_start.await_count == 0
 
     @pytest.mark.asyncio
     async def test_advertisement_keeps_shorter_path_within_window(

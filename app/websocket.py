@@ -86,6 +86,17 @@ def broadcast_error(message: str, details: str | None = None) -> None:
     asyncio.create_task(ws_manager.broadcast("error", data))
 
 
+def broadcast_success(message: str, details: str | None = None) -> None:
+    """Broadcast a success notification to all connected clients.
+
+    This appears as a toast notification in the frontend.
+    """
+    data = {"message": message}
+    if details:
+        data["details"] = details
+    asyncio.create_task(ws_manager.broadcast("success", data))
+
+
 def broadcast_health(radio_connected: bool, serial_port: str | None = None) -> None:
     """Broadcast health status change to all connected clients."""
     from app.repository import RawPacketRepository
