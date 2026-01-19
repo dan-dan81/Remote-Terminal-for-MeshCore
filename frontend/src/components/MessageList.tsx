@@ -336,21 +336,27 @@ export function MessageList({
                     <span className="font-normal text-muted-foreground/70 ml-2 text-[11px]">
                       {formatTime(msg.sender_timestamp || msg.received_at)}
                     </span>
-                    {!msg.outgoing && msg.path && (
-                      <span
-                        className="font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPath({
-                            path: msg.path!,
-                            senderInfo: getSenderInfo(msg, contact, sender),
-                          });
-                        }}
-                        title="View message path"
-                      >
-                        ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
-                      </span>
-                    )}
+                    {!msg.outgoing &&
+                      msg.path &&
+                      (getHopCount(msg.path) === 0 ? (
+                        <span className="font-normal text-muted-foreground/70 ml-1 text-[11px]">
+                          (direct)
+                        </span>
+                      ) : (
+                        <span
+                          className="font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPath({
+                              path: msg.path!,
+                              senderInfo: getSenderInfo(msg, contact, sender),
+                            });
+                          }}
+                          title="View message path"
+                        >
+                          ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
+                        </span>
+                      ))}
                   </div>
                 )}
                 <div className="break-words whitespace-pre-wrap">
@@ -365,21 +371,27 @@ export function MessageList({
                       <span className="text-[10px] text-muted-foreground/50 ml-2">
                         {formatTime(msg.sender_timestamp || msg.received_at)}
                       </span>
-                      {!msg.outgoing && msg.path && (
-                        <span
-                          className="text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPath({
-                              path: msg.path!,
-                              senderInfo: getSenderInfo(msg, contact, sender),
-                            });
-                          }}
-                          title="View message path"
-                        >
-                          ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
-                        </span>
-                      )}
+                      {!msg.outgoing &&
+                        msg.path &&
+                        (getHopCount(msg.path) === 0 ? (
+                          <span className="text-[10px] text-muted-foreground/50 ml-1">
+                            (direct)
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPath({
+                                path: msg.path!,
+                                senderInfo: getSenderInfo(msg, contact, sender),
+                              });
+                            }}
+                            title="View message path"
+                          >
+                            ({getHopCount(msg.path)} hop{getHopCount(msg.path) !== 1 ? 's' : ''})
+                          </span>
+                        ))}
                     </>
                   )}
                   {msg.outgoing && (msg.acked > 0 ? ` ✓${msg.acked > 1 ? msg.acked : ''}` : ' ?')}
