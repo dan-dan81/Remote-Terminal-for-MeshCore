@@ -637,22 +637,26 @@ export function App() {
   );
 
   // Handle sort order change via API with optimistic update
-  const handleSortOrderChange = useCallback(async (order: 'recent' | 'alpha') => {
-    // Optimistic update for responsive UI
-    setAppSettings((prev) => (prev ? { ...prev, sidebar_sort_order: order } : prev));
+  const handleSortOrderChange = useCallback(
+    async (order: 'recent' | 'alpha') => {
+      // Capture previous value for rollback on error
+      const previousOrder = appSettings?.sidebar_sort_order ?? 'recent';
 
-    try {
-      const updatedSettings = await api.updateSettings({ sidebar_sort_order: order });
-      setAppSettings(updatedSettings);
-    } catch (err) {
-      console.error('Failed to update sort order:', err);
-      // Revert on error
-      setAppSettings((prev) =>
-        prev ? { ...prev, sidebar_sort_order: order === 'recent' ? 'alpha' : 'recent' } : prev
-      );
-      toast.error('Failed to save sort preference');
-    }
-  }, []);
+      // Optimistic update for responsive UI
+      setAppSettings((prev) => (prev ? { ...prev, sidebar_sort_order: order } : prev));
+
+      try {
+        const updatedSettings = await api.updateSettings({ sidebar_sort_order: order });
+        setAppSettings(updatedSettings);
+      } catch (err) {
+        console.error('Failed to update sort order:', err);
+        // Revert to previous value on error (not inverting the new value)
+        setAppSettings((prev) => (prev ? { ...prev, sidebar_sort_order: previousOrder } : prev));
+        toast.error('Failed to save sort preference');
+      }
+    },
+    [appSettings?.sidebar_sort_order]
+  );
 
   // Sidebar content (shared between desktop and mobile)
   const sidebarContent = (

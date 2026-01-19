@@ -33,6 +33,19 @@ export function useWebSocket(options: UseWebSocketOptions) {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const [connected, setConnected] = useState(false);
 
+  // Store options in ref to avoid stale closures in WebSocket handlers.
+  // The onmessage callback captures this ref, and we keep the ref updated
+  // with the latest handlers. This way, even though the WebSocket connection
+  // is only created once, it always calls the current handlers.
+  const optionsRef = useRef<UseWebSocketOptions>(options);
+
+  // Keep the ref updated with latest options
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
+  // Connect function - uses ref for handlers to avoid stale closures
+  // No dependencies needed since we access handlers through ref
   const connect = useCallback(() => {
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -68,25 +81,27 @@ export function useWebSocket(options: UseWebSocketOptions) {
     ws.onmessage = (event) => {
       try {
         const msg: WebSocketMessage = JSON.parse(event.data);
+        // Access handlers through ref to always use current versions
+        const handlers = optionsRef.current;
 
         switch (msg.type) {
           case 'health':
-            options.onHealth?.(msg.data as HealthStatus);
+            handlers.onHealth?.(msg.data as HealthStatus);
             break;
           case 'contacts':
-            options.onContacts?.(msg.data as Contact[]);
+            handlers.onContacts?.(msg.data as Contact[]);
             break;
           case 'channels':
-            options.onChannels?.(msg.data as Channel[]);
+            handlers.onChannels?.(msg.data as Channel[]);
             break;
           case 'message':
-            options.onMessage?.(msg.data as Message);
+            handlers.onMessage?.(msg.data as Message);
             break;
           case 'contact':
-            options.onContact?.(msg.data as Contact);
+            handlers.onContact?.(msg.data as Contact);
             break;
           case 'raw_packet':
-            options.onRawPacket?.(msg.data as RawPacket);
+            handlers.onRawPacket?.(msg.data as RawPacket);
             break;
           case 'message_acked': {
             const ackData = msg.data as {
@@ -94,14 +109,14 @@ export function useWebSocket(options: UseWebSocketOptions) {
               ack_count: number;
               paths?: MessagePath[];
             };
-            options.onMessageAcked?.(ackData.message_id, ackData.ack_count, ackData.paths);
+            handlers.onMessageAcked?.(ackData.message_id, ackData.ack_count, ackData.paths);
             break;
           }
           case 'error':
-            options.onError?.(msg.data as ErrorEvent);
+            handlers.onError?.(msg.data as ErrorEvent);
             break;
           case 'success':
-            options.onSuccess?.(msg.data as SuccessEvent);
+            handlers.onSuccess?.(msg.data as SuccessEvent);
             break;
           case 'pong':
             // Heartbeat response, ignore
@@ -115,7 +130,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
     };
 
     wsRef.current = ws;
-  }, [options]);
+  }, []); // No dependencies - handlers accessed through ref
 
   useEffect(() => {
     connect();

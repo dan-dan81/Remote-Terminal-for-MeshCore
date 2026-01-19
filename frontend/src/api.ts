@@ -45,6 +45,16 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Check if an error is an AbortError (request was cancelled) */
+export function isAbortError(err: unknown): boolean {
+  // DOMException is thrown by fetch when aborted, and it's not an Error subclass
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return true;
+  }
+  // Also check for Error with AbortError name (for compatibility)
+  return err instanceof Error && err.name === 'AbortError';
+}
+
 interface DecryptResult {
   started: boolean;
   total_packets: number;
@@ -134,19 +144,22 @@ export const api = {
     }),
 
   // Messages
-  getMessages: (params?: {
-    limit?: number;
-    offset?: number;
-    type?: 'PRIV' | 'CHAN';
-    conversation_key?: string;
-  }) => {
+  getMessages: (
+    params?: {
+      limit?: number;
+      offset?: number;
+      type?: 'PRIV' | 'CHAN';
+      conversation_key?: string;
+    },
+    signal?: AbortSignal
+  ) => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', params.limit.toString());
     if (params?.offset) searchParams.set('offset', params.offset.toString());
     if (params?.type) searchParams.set('type', params.type);
     if (params?.conversation_key) searchParams.set('conversation_key', params.conversation_key);
     const query = searchParams.toString();
-    return fetchJson<Message[]>(`/messages${query ? `?${query}` : ''}`);
+    return fetchJson<Message[]>(`/messages${query ? `?${query}` : ''}`, { signal });
   },
   getMessagesBulk: (
     conversations: Array<{ type: 'PRIV' | 'CHAN'; conversation_key: string }>,

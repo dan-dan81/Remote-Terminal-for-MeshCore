@@ -12,6 +12,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Timeout for individual WebSocket send operations (seconds)
+# Prevents a slow client from blocking broadcasts to other clients
+SEND_TIMEOUT_SECONDS = 5.0
+
 
 class WebSocketManager:
     """Manages WebSocket connections and broadcasts events."""
@@ -33,25 +37,50 @@ class WebSocketManager:
         logger.info("WebSocket client disconnected (%d remaining)", len(self.active_connections))
 
     async def broadcast(self, event_type: str, data: Any) -> None:
-        """Broadcast an event to all connected clients."""
+        """Broadcast an event to all connected clients.
+
+        Uses a copy-then-send pattern to avoid holding the lock during I/O:
+        1. Copy connection list while holding lock
+        2. Release lock before sending
+        3. Send to all clients concurrently with timeout
+        4. Re-acquire lock to clean up disconnected clients
+        """
         if not self.active_connections:
             return
 
         message = json.dumps({"type": event_type, "data": data})
 
+        # Copy connection list under lock to avoid holding lock during I/O
         async with self._lock:
-            disconnected = []
-            for connection in self.active_connections:
-                try:
-                    await connection.send_text(message)
-                except Exception as e:
-                    logger.debug("Failed to send to client: %s", e)
-                    disconnected.append(connection)
+            connections = list(self.active_connections)
 
-            # Clean up disconnected clients
-            for conn in disconnected:
-                if conn in self.active_connections:
-                    self.active_connections.remove(conn)
+        if not connections:
+            return
+
+        # Send to all clients concurrently, collect failures
+        disconnected: list[WebSocket] = []
+
+        async def send_to_client(connection: WebSocket) -> None:
+            try:
+                # Timeout prevents blocking on slow/unresponsive clients
+                await asyncio.wait_for(connection.send_text(message), timeout=SEND_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.debug("Timeout sending to WebSocket client, marking disconnected")
+                disconnected.append(connection)
+            except Exception as e:
+                logger.debug("Failed to send to client: %s", e)
+                disconnected.append(connection)
+
+        # Send to all clients concurrently
+        await asyncio.gather(*[send_to_client(conn) for conn in connections])
+
+        # Clean up disconnected clients (re-acquire lock)
+        if disconnected:
+            async with self._lock:
+                for conn in disconnected:
+                    if conn in self.active_connections:
+                        self.active_connections.remove(conn)
+            logger.debug("Removed %d disconnected WebSocket clients", len(disconnected))
 
     async def send_personal(self, websocket: WebSocket, event_type: str, data: Any) -> None:
         """Send an event to a specific client."""

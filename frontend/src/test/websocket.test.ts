@@ -193,3 +193,80 @@ describe('parseWebSocketMessage', () => {
     expect(onRawPacket).toHaveBeenCalledWith(packetData);
   });
 });
+
+describe('useWebSocket ref-based handler pattern', () => {
+  /**
+   * These tests verify the pattern used in useWebSocket to avoid stale closures.
+   * The hook stores handlers in a ref and accesses them through the ref in callbacks.
+   * This ensures that when handlers are updated, the WebSocket still calls the latest version.
+   */
+
+  it('demonstrates ref pattern prevents stale closure', () => {
+    // Simulate the ref pattern used in useWebSocket
+    interface Handlers {
+      onMessage?: (msg: string) => void;
+    }
+
+    // This simulates what the hook does: store handlers in a ref
+    const handlersRef: { current: Handlers } = { current: {} };
+
+    // First handler version
+    const firstHandler = vi.fn();
+    handlersRef.current = { onMessage: firstHandler };
+
+    // Simulate what onmessage does: access handlers through ref
+    const processMessage = (data: string) => {
+      // This is the pattern: access through ref.current, not closed-over variable
+      handlersRef.current.onMessage?.(data);
+    };
+
+    // Send first message
+    processMessage('message1');
+    expect(firstHandler).toHaveBeenCalledWith('message1');
+
+    // Update handler (simulates React re-render with new handler)
+    const secondHandler = vi.fn();
+    handlersRef.current = { onMessage: secondHandler };
+
+    // Send second message
+    processMessage('message2');
+
+    // First handler should NOT be called again (would happen with stale closure)
+    expect(firstHandler).toHaveBeenCalledTimes(1);
+    // Second handler should be called (ref pattern works)
+    expect(secondHandler).toHaveBeenCalledWith('message2');
+  });
+
+  it('demonstrates stale closure problem without ref pattern', () => {
+    // This demonstrates the bug we fixed - without refs, handlers become stale
+    interface Handlers {
+      onMessage?: (msg: string) => void;
+    }
+
+    // First handler version
+    const firstHandler = vi.fn();
+    let handlers: Handlers = { onMessage: firstHandler };
+
+    // BAD PATTERN: capture handlers in closure (this is what we fixed)
+    const capturedHandlers = handlers;
+    const processMessageBad = (data: string) => {
+      // This captures `capturedHandlers` at creation time - STALE!
+      capturedHandlers.onMessage?.(data);
+    };
+
+    // Send first message
+    processMessageBad('message1');
+    expect(firstHandler).toHaveBeenCalledWith('message1');
+
+    // Update handler
+    const secondHandler = vi.fn();
+    handlers = { onMessage: secondHandler };
+
+    // Send second message - BUG: still calls first handler!
+    processMessageBad('message2');
+
+    // This demonstrates the stale closure bug
+    expect(firstHandler).toHaveBeenCalledTimes(2); // Called twice - bug!
+    expect(secondHandler).not.toHaveBeenCalled(); // Never called - bug!
+  });
+});
