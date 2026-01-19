@@ -44,7 +44,7 @@ export function StatusBar({ health, config, onSettingsClick, onMenuClick }: Stat
         </button>
       )}
 
-      <h1 className="hidden lg:block text-base font-semibold mr-auto">RemoteTerm</h1>
+      <h1 className="text-base font-semibold mr-auto">RemoteTerm</h1>
 
       <div className="flex items-center gap-1 text-[#888]">
         <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#4caf50]' : 'bg-[#666]'}`} />
@@ -54,13 +54,20 @@ export function StatusBar({ health, config, onSettingsClick, onMenuClick }: Stat
       </div>
 
       {config && (
-        <div className="hidden lg:flex items-center gap-1 text-[#888]">
+        <div className="hidden lg:flex items-center gap-2 text-[#888]">
           <span className="text-[#e0e0e0]">{config.name || 'Unnamed'}</span>
+          <span
+            className="font-mono text-[#888] cursor-pointer hover:text-[#4a9eff]"
+            onClick={() => {
+              navigator.clipboard.writeText(config.public_key);
+              toast.success('Public key copied!');
+            }}
+            title="Click to copy public key"
+          >
+            {config.public_key.toLowerCase()}
+          </span>
         </div>
       )}
-
-      {/* Spacer to push buttons right on mobile */}
-      <div className="flex-1 lg:hidden" />
 
       {!connected && (
         <button
