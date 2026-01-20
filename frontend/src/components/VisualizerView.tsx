@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Contact, RawPacket, Channel, RadioConfig } from '../types';
+import type { Contact, RawPacket, RadioConfig } from '../types';
 import { PacketVisualizer } from './PacketVisualizer';
 import { RawPacketList } from './RawPacketList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -9,11 +9,10 @@ import { cn } from '@/lib/utils';
 interface VisualizerViewProps {
   packets: RawPacket[];
   contacts: Contact[];
-  channels: Channel[];
   config: RadioConfig | null;
 }
 
-export function VisualizerView({ packets, contacts, channels, config }: VisualizerViewProps) {
+export function VisualizerView({ packets, contacts, config }: VisualizerViewProps) {
   const [fullScreen, setFullScreen] = useState(false);
 
   return (
@@ -42,7 +41,6 @@ export function VisualizerView({ packets, contacts, channels, config }: Visualiz
             <PacketVisualizer
               packets={packets}
               contacts={contacts}
-              channels={channels}
               config={config}
             />
           </TabsContent>
@@ -64,7 +62,6 @@ export function VisualizerView({ packets, contacts, channels, config }: Visualiz
           <PacketVisualizer
             packets={packets}
             contacts={contacts}
-            channels={channels}
             config={config}
           />
         </div>

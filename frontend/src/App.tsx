@@ -724,7 +724,6 @@ export function App() {
               <VisualizerView
                 packets={rawPackets}
                 contacts={contacts}
-                channels={channels}
                 config={config}
               />
             ) : activeConversation.type === 'raw' ? (
