@@ -38,11 +38,7 @@ export function VisualizerView({ packets, contacts, config }: VisualizerViewProp
             <TabsTrigger value="packets">Packet Feed</TabsTrigger>
           </TabsList>
           <TabsContent value="visualizer" className="flex-1 m-0 overflow-hidden">
-            <PacketVisualizer
-              packets={packets}
-              contacts={contacts}
-              config={config}
-            />
+            <PacketVisualizer packets={packets} contacts={contacts} config={config} />
           </TabsContent>
           <TabsContent value="packets" className="flex-1 m-0 overflow-hidden">
             <RawPacketList packets={packets} />
@@ -59,11 +55,7 @@ export function VisualizerView({ packets, contacts, config }: VisualizerViewProp
             fullScreen ? 'flex-1' : 'flex-1 border-r border-border'
           )}
         >
-          <PacketVisualizer
-            packets={packets}
-            contacts={contacts}
-            config={config}
-          />
+          <PacketVisualizer packets={packets} contacts={contacts} config={config} />
         </div>
 
         {/* Packet feed panel - hidden when full screen */}

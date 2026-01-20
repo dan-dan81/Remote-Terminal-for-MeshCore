@@ -86,13 +86,13 @@ const COLORS = {
   background: '#0a0a0a',
   link: '#4b5563',
   ambiguous: '#9ca3af',
-  particleAD: '#f59e0b',    // amber - advertisements
-  particleGT: '#06b6d4',    // cyan - group text
-  particleDM: '#8b5cf6',    // purple - direct messages
-  particleACK: '#22c55e',   // green - acknowledgments
-  particleTR: '#f97316',    // orange - trace packets
-  particleRQ: '#ec4899',    // pink - requests
-  particleRS: '#14b8a6',    // teal - responses
+  particleAD: '#f59e0b', // amber - advertisements
+  particleGT: '#06b6d4', // cyan - group text
+  particleDM: '#8b5cf6', // purple - direct messages
+  particleACK: '#22c55e', // green - acknowledgments
+  particleTR: '#f97316', // orange - trace packets
+  particleRQ: '#ec4899', // pink - requests
+  particleRS: '#14b8a6', // teal - responses
   particleUnknown: '#6b7280', // gray - unknown
 } as const;
 
@@ -176,14 +176,22 @@ function parsePacket(hexData: string): ParsedPacket | null {
 
 function getPacketLabel(payloadType: number): PacketLabel {
   switch (payloadType) {
-    case PayloadType.Advert: return 'AD';
-    case PayloadType.GroupText: return 'GT';
-    case PayloadType.TextMessage: return 'DM';
-    case PayloadType.Ack: return 'ACK';
-    case PayloadType.Trace: return 'TR';
-    case PayloadType.Request: return 'RQ';
-    case PayloadType.Response: return 'RS';
-    default: return '?';
+    case PayloadType.Advert:
+      return 'AD';
+    case PayloadType.GroupText:
+      return 'GT';
+    case PayloadType.TextMessage:
+      return 'DM';
+    case PayloadType.Ack:
+      return 'ACK';
+    case PayloadType.Trace:
+      return 'TR';
+    case PayloadType.Request:
+      return 'RQ';
+    case PayloadType.Response:
+      return 'RS';
+    default:
+      return '?';
   }
 }
 
@@ -255,6 +263,7 @@ interface VisualizerData {
   particles: Particle[];
   simulation: Simulation<GraphNode, GraphLink> | null;
   stats: { processed: number; animated: number; nodes: number; links: number };
+  randomizePositions: () => void;
 }
 
 function useVisualizerData({
@@ -279,18 +288,37 @@ function useVisualizerData({
   // Initialize simulation
   useEffect(() => {
     const sim = forceSimulation<GraphNode, GraphLink>([])
-      .force('link', forceLink<GraphNode, GraphLink>([]).id((d) => d.id).distance(80).strength(0.3))
-      .force('charge', forceManyBody<GraphNode>().strength((d) => (d.id === 'self' ? -1200 : -200)).distanceMax(500))
+      .force(
+        'link',
+        forceLink<GraphNode, GraphLink>([])
+          .id((d) => d.id)
+          .distance(80)
+          .strength(0.3)
+      )
+      .force(
+        'charge',
+        forceManyBody<GraphNode>()
+          .strength((d) => (d.id === 'self' ? -1200 : -200))
+          .distanceMax(500)
+      )
       .force('center', forceCenter(dimensions.width / 2, dimensions.height / 2))
       .force('collide', forceCollide(40))
-      .force('selfX', forceX<GraphNode>(dimensions.width / 2).strength((d) => (d.id === 'self' ? 0.1 : 0)))
-      .force('selfY', forceY<GraphNode>(dimensions.height / 2).strength((d) => (d.id === 'self' ? 0.1 : 0)))
+      .force(
+        'selfX',
+        forceX<GraphNode>(dimensions.width / 2).strength((d) => (d.id === 'self' ? 0.1 : 0))
+      )
+      .force(
+        'selfY',
+        forceY<GraphNode>(dimensions.height / 2).strength((d) => (d.id === 'self' ? 0.1 : 0))
+      )
       .alphaDecay(0.02)
       .velocityDecay(0.5)
       .alphaTarget(0.03);
 
     simulationRef.current = sim;
-    return () => { sim.stop(); };
+    return () => {
+      sim.stop();
+    };
   }, []);
 
   // Update simulation forces when dimensions/charge change
@@ -299,9 +327,20 @@ function useVisualizerData({
     if (!sim) return;
 
     sim.force('center', forceCenter(dimensions.width / 2, dimensions.height / 2));
-    sim.force('selfX', forceX<GraphNode>(dimensions.width / 2).strength((d) => (d.id === 'self' ? 0.1 : 0)));
-    sim.force('selfY', forceY<GraphNode>(dimensions.height / 2).strength((d) => (d.id === 'self' ? 0.1 : 0)));
-    sim.force('charge', forceManyBody<GraphNode>().strength((d) => (d.id === 'self' ? chargeStrength * 6 : chargeStrength)).distanceMax(500));
+    sim.force(
+      'selfX',
+      forceX<GraphNode>(dimensions.width / 2).strength((d) => (d.id === 'self' ? 0.1 : 0))
+    );
+    sim.force(
+      'selfY',
+      forceY<GraphNode>(dimensions.height / 2).strength((d) => (d.id === 'self' ? 0.1 : 0))
+    );
+    sim.force(
+      'charge',
+      forceManyBody<GraphNode>()
+        .strength((d) => (d.id === 'self' ? chargeStrength * 6 : chargeStrength))
+        .distanceMax(500)
+    );
     sim.alpha(0.3).restart();
   }, [dimensions, chargeStrength]);
 
@@ -353,27 +392,44 @@ function useVisualizerData({
     sim.nodes(nodes);
     const linkForce = sim.force('link') as ReturnType<typeof forceLink<GraphNode, GraphLink>>;
     linkForce?.links(links);
+
     sim.alpha(0.15).restart();
 
     setStats((prev) => ({ ...prev, nodes: nodes.length, links: links.length }));
   }, []);
 
-  const addNode = useCallback((id: string, name: string | null, type: NodeType, isAmbiguous: boolean, ambiguousNames?: string[], lastSeen?: number | null) => {
-    const existing = nodesRef.current.get(id);
-    if (existing) {
-      existing.lastActivity = Date.now();
-      if (name && !existing.name) existing.name = name;
-      if (ambiguousNames) existing.ambiguousNames = ambiguousNames;
-      if (lastSeen !== undefined) existing.lastSeen = lastSeen;
-    } else {
-      const selfNode = nodesRef.current.get('self');
-      nodesRef.current.set(id, {
-        id, name, type, isAmbiguous, lastActivity: Date.now(), lastSeen, ambiguousNames,
-        x: (selfNode?.x ?? 400) + (Math.random() - 0.5) * 100,
-        y: (selfNode?.y ?? 300) + (Math.random() - 0.5) * 100,
-      });
-    }
-  }, []);
+  const addNode = useCallback(
+    (
+      id: string,
+      name: string | null,
+      type: NodeType,
+      isAmbiguous: boolean,
+      ambiguousNames?: string[],
+      lastSeen?: number | null
+    ) => {
+      const existing = nodesRef.current.get(id);
+      if (existing) {
+        existing.lastActivity = Date.now();
+        if (name && !existing.name) existing.name = name;
+        if (ambiguousNames) existing.ambiguousNames = ambiguousNames;
+        if (lastSeen !== undefined) existing.lastSeen = lastSeen;
+      } else {
+        const selfNode = nodesRef.current.get('self');
+        nodesRef.current.set(id, {
+          id,
+          name,
+          type,
+          isAmbiguous,
+          lastActivity: Date.now(),
+          lastSeen,
+          ambiguousNames,
+          x: (selfNode?.x ?? 400) + (Math.random() - 0.5) * 100,
+          y: (selfNode?.y ?? 300) + (Math.random() - 0.5) * 100,
+        });
+      }
+    },
+    []
+  );
 
   const addLink = useCallback((sourceId: string, targetId: string) => {
     const key = [sourceId, targetId].sort().join('->');
@@ -411,103 +467,134 @@ function useVisualizerData({
   }, []);
 
   // Resolve a node from various sources and add to graph
-  const resolveNode = useCallback((
-    source: { type: 'prefix' | 'pubkey' | 'name'; value: string },
-    isRepeater: boolean,
-    showAmbiguous: boolean
-  ): string | null => {
-    if (source.type === 'pubkey') {
-      if (source.value.length < 12) return null;
-      const nodeId = source.value.slice(0, 12).toLowerCase();
-      const contact = contacts.find((c) => c.public_key.toLowerCase().startsWith(nodeId));
-      addNode(nodeId, contact?.name || null, getNodeType(contact), false, undefined, contact?.last_seen);
-      return nodeId;
-    }
+  const resolveNode = useCallback(
+    (
+      source: { type: 'prefix' | 'pubkey' | 'name'; value: string },
+      isRepeater: boolean,
+      showAmbiguous: boolean
+    ): string | null => {
+      if (source.type === 'pubkey') {
+        if (source.value.length < 12) return null;
+        const nodeId = source.value.slice(0, 12).toLowerCase();
+        const contact = contacts.find((c) => c.public_key.toLowerCase().startsWith(nodeId));
+        addNode(
+          nodeId,
+          contact?.name || null,
+          getNodeType(contact),
+          false,
+          undefined,
+          contact?.last_seen
+        );
+        return nodeId;
+      }
 
-    if (source.type === 'name') {
-      const contact = findContactByName(source.value, contacts);
+      if (source.type === 'name') {
+        const contact = findContactByName(source.value, contacts);
+        if (contact) {
+          const nodeId = contact.public_key.slice(0, 12).toLowerCase();
+          addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
+          return nodeId;
+        }
+        const nodeId = `name:${source.value}`;
+        addNode(nodeId, source.value, 'client', false);
+        return nodeId;
+      }
+
+      // type === 'prefix'
+      const contact = findContactByPrefix(source.value, contacts);
       if (contact) {
         const nodeId = contact.public_key.slice(0, 12).toLowerCase();
         addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
         return nodeId;
       }
-      const nodeId = `name:${source.value}`;
-      addNode(nodeId, source.value, 'client', false);
-      return nodeId;
-    }
 
-    // type === 'prefix'
-    const contact = findContactByPrefix(source.value, contacts);
-    if (contact) {
-      const nodeId = contact.public_key.slice(0, 12).toLowerCase();
-      addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
-      return nodeId;
-    }
+      if (showAmbiguous) {
+        const matches = findContactsByPrefix(source.value, contacts);
+        const filtered = isRepeater
+          ? matches.filter((c) => c.type === CONTACT_TYPE_REPEATER)
+          : matches.filter((c) => c.type !== CONTACT_TYPE_REPEATER);
+        const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
+        const lastSeen = filtered.reduce(
+          (max, c) => (c.last_seen && (!max || c.last_seen > max) ? c.last_seen : max),
+          null as number | null
+        );
+        const nodeId = `?${source.value.toLowerCase()}`;
+        addNode(
+          nodeId,
+          source.value.toUpperCase(),
+          isRepeater ? 'repeater' : 'client',
+          true,
+          names,
+          lastSeen
+        );
+        return nodeId;
+      }
 
-    if (showAmbiguous) {
-      const matches = findContactsByPrefix(source.value, contacts);
-      const filtered = isRepeater
-        ? matches.filter((c) => c.type === CONTACT_TYPE_REPEATER)
-        : matches.filter((c) => c.type !== CONTACT_TYPE_REPEATER);
-      const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
-      const lastSeen = filtered.reduce((max, c) => (c.last_seen && (!max || c.last_seen > max) ? c.last_seen : max), null as number | null);
-      const nodeId = `?${source.value.toLowerCase()}`;
-      addNode(nodeId, source.value.toUpperCase(), isRepeater ? 'repeater' : 'client', true, names, lastSeen);
-      return nodeId;
-    }
-
-    return null;
-  }, [contacts, addNode]);
+      return null;
+    },
+    [contacts, addNode]
+  );
 
   // Build path from parsed packet
-  const buildPath = useCallback((parsed: ParsedPacket, packet: RawPacket, myPrefix: string | null): string[] => {
-    const path: string[] = [];
+  const buildPath = useCallback(
+    (parsed: ParsedPacket, packet: RawPacket, myPrefix: string | null): string[] => {
+      const path: string[] = [];
 
-    // Add source
-    if (parsed.payloadType === PayloadType.Advert && parsed.advertPubkey) {
-      const nodeId = resolveNode({ type: 'pubkey', value: parsed.advertPubkey }, false, false);
-      if (nodeId) path.push(nodeId);
-    } else if (parsed.payloadType === PayloadType.TextMessage && parsed.srcHash) {
-      if (myPrefix && parsed.srcHash.toLowerCase() === myPrefix) {
+      // Add source
+      if (parsed.payloadType === PayloadType.Advert && parsed.advertPubkey) {
+        const nodeId = resolveNode({ type: 'pubkey', value: parsed.advertPubkey }, false, false);
+        if (nodeId) path.push(nodeId);
+      } else if (parsed.payloadType === PayloadType.TextMessage && parsed.srcHash) {
+        if (myPrefix && parsed.srcHash.toLowerCase() === myPrefix) {
+          path.push('self');
+        } else {
+          const nodeId = resolveNode(
+            { type: 'prefix', value: parsed.srcHash },
+            false,
+            showAmbiguousNodes
+          );
+          if (nodeId) path.push(nodeId);
+        }
+      } else if (parsed.payloadType === PayloadType.GroupText) {
+        const senderName = parsed.groupTextSender || packet.decrypted_info?.sender;
+        if (senderName) {
+          const nodeId = resolveNode({ type: 'name', value: senderName }, false, false);
+          if (nodeId) path.push(nodeId);
+        }
+      }
+
+      // Add path bytes (repeaters)
+      for (const hexPrefix of parsed.pathBytes) {
+        const nodeId = resolveNode({ type: 'prefix', value: hexPrefix }, true, showAmbiguousPaths);
+        if (nodeId) path.push(nodeId);
+      }
+
+      // Add destination
+      if (parsed.payloadType === PayloadType.TextMessage && parsed.dstHash) {
+        if (myPrefix && parsed.dstHash.toLowerCase() === myPrefix) {
+          path.push('self');
+        } else {
+          const nodeId = resolveNode(
+            { type: 'prefix', value: parsed.dstHash },
+            false,
+            showAmbiguousNodes
+          );
+          if (nodeId) path.push(nodeId);
+          else path.push('self');
+        }
+      } else if (path.length > 0) {
         path.push('self');
-      } else {
-        const nodeId = resolveNode({ type: 'prefix', value: parsed.srcHash }, false, showAmbiguousNodes);
-        if (nodeId) path.push(nodeId);
       }
-    } else if (parsed.payloadType === PayloadType.GroupText) {
-      const senderName = parsed.groupTextSender || packet.decrypted_info?.sender;
-      if (senderName) {
-        const nodeId = resolveNode({ type: 'name', value: senderName }, false, false);
-        if (nodeId) path.push(nodeId);
-      }
-    }
 
-    // Add path bytes (repeaters)
-    for (const hexPrefix of parsed.pathBytes) {
-      const nodeId = resolveNode({ type: 'prefix', value: hexPrefix }, true, showAmbiguousPaths);
-      if (nodeId) path.push(nodeId);
-    }
-
-    // Add destination
-    if (parsed.payloadType === PayloadType.TextMessage && parsed.dstHash) {
-      if (myPrefix && parsed.dstHash.toLowerCase() === myPrefix) {
+      // Ensure ends with self
+      if (path.length > 0 && path[path.length - 1] !== 'self') {
         path.push('self');
-      } else {
-        const nodeId = resolveNode({ type: 'prefix', value: parsed.dstHash }, false, showAmbiguousNodes);
-        if (nodeId) path.push(nodeId);
-        else path.push('self');
       }
-    } else if (path.length > 0) {
-      path.push('self');
-    }
 
-    // Ensure ends with self
-    if (path.length > 0 && path[path.length - 1] !== 'self') {
-      path.push('self');
-    }
-
-    return dedupeConsecutive(path);
-  }, [resolveNode, showAmbiguousPaths, showAmbiguousNodes]);
+      return dedupeConsecutive(path);
+    },
+    [resolveNode, showAmbiguousPaths, showAmbiguousNodes]
+  );
 
   // Process packets
   useEffect(() => {
@@ -558,12 +645,17 @@ function useVisualizerData({
           firstSeen: now,
           expiresAt: now + OBSERVATION_WINDOW_MS,
         });
-        timersRef.current.set(packetKey, setTimeout(() => publishPacket(packetKey), OBSERVATION_WINDOW_MS));
+        timersRef.current.set(
+          packetKey,
+          setTimeout(() => publishPacket(packetKey), OBSERVATION_WINDOW_MS)
+        );
       }
 
       // Limit pending size
       if (pendingRef.current.size > 100) {
-        const entries = Array.from(pendingRef.current.entries()).sort((a, b) => a[1].firstSeen - b[1].firstSeen).slice(0, 50);
+        const entries = Array.from(pendingRef.current.entries())
+          .sort((a, b) => a[1].firstSeen - b[1].firstSeen)
+          .slice(0, 50);
         for (const [key] of entries) {
           clearTimeout(timersRef.current.get(key));
           timersRef.current.delete(key);
@@ -576,9 +668,43 @@ function useVisualizerData({
 
     if (needsUpdate) syncSimulation();
     if (newProcessed > 0) {
-      setStats((prev) => ({ ...prev, processed: prev.processed + newProcessed, animated: prev.animated + newAnimated }));
+      setStats((prev) => ({
+        ...prev,
+        processed: prev.processed + newProcessed,
+        animated: prev.animated + newAnimated,
+      }));
     }
   }, [packets, config, buildPath, addLink, syncSimulation, publishPacket]);
+
+  // Randomize all node positions (except self) and reheat simulation
+  const randomizePositions = useCallback(() => {
+    const sim = simulationRef.current;
+    if (!sim) return;
+
+    const centerX = dimensions.width / 2;
+    const centerY = dimensions.height / 2;
+    const radius = Math.min(dimensions.width, dimensions.height) * 0.4;
+
+    for (const node of nodesRef.current.values()) {
+      if (node.id === 'self') {
+        // Keep self at center
+        node.x = centerX;
+        node.y = centerY;
+      } else {
+        // Randomize position in a circle around center
+        const angle = Math.random() * 2 * Math.PI;
+        const r = Math.random() * radius;
+        node.x = centerX + r * Math.cos(angle);
+        node.y = centerY + r * Math.sin(angle);
+      }
+      // Clear velocities
+      node.vx = 0;
+      node.vy = 0;
+    }
+
+    // Reheat simulation strongly
+    sim.alpha(1).restart();
+  }, [dimensions]);
 
   return {
     nodes: nodesRef.current,
@@ -586,6 +712,7 @@ function useVisualizerData({
     particles: particlesRef.current,
     simulation: simulationRef.current,
     stats,
+    randomizePositions,
   };
 }
 
@@ -626,14 +753,16 @@ function renderParticles(
   for (const particle of particles) {
     const fromNode = nodes.get(particle.fromNodeId);
     const toNode = nodes.get(particle.toNodeId);
-    const isVisible = visibleNodeIds.has(particle.fromNodeId) && visibleNodeIds.has(particle.toNodeId);
+    const isVisible =
+      visibleNodeIds.has(particle.fromNodeId) && visibleNodeIds.has(particle.toNodeId);
 
     particle.progress += particle.speed;
 
     if (particle.progress > 1) continue;
     active.push(particle);
 
-    if (!isVisible || !fromNode?.x || !toNode?.x || fromNode.y == null || toNode.y == null) continue;
+    if (!isVisible || !fromNode?.x || !toNode?.x || fromNode.y == null || toNode.y == null)
+      continue;
     if (particle.progress < 0) continue;
 
     const t = particle.progress;
@@ -672,7 +801,14 @@ function renderNodes(
     if (node.x == null || node.y == null) continue;
 
     // Emoji
-    const emoji = node.type === 'self' ? '🟢' : node.type === 'repeater' ? '📡' : node.isAmbiguous ? '❓' : '👤';
+    const emoji =
+      node.type === 'self'
+        ? '🟢'
+        : node.type === 'repeater'
+          ? '📡'
+          : node.isAmbiguous
+            ? '❓'
+            : '👤';
     const size = node.type === 'self' ? 36 : 18;
 
     ctx.font = `${size}px sans-serif`;
@@ -681,7 +817,9 @@ function renderNodes(
     ctx.fillText(emoji, node.x, node.y);
 
     // Label
-    const label = node.isAmbiguous ? node.id : node.name || (node.type === 'self' ? 'Me' : node.id.slice(0, 8));
+    const label = node.isAmbiguous
+      ? node.id
+      : node.name || (node.type === 'self' ? 'Me' : node.id.slice(0, 8));
     ctx.font = '11px sans-serif';
     ctx.textBaseline = 'top';
     ctx.fillStyle = node.isAmbiguous ? COLORS.ambiguous : '#e5e7eb';
@@ -701,7 +839,11 @@ function renderNodes(
       } else if (node.ambiguousNames.length === 1) {
         ctx.fillText(node.ambiguousNames[0], node.x, yOffset);
       } else {
-        ctx.fillText(`${node.ambiguousNames[0]} +${node.ambiguousNames.length - 1} more`, node.x, yOffset);
+        ctx.fillText(
+          `${node.ambiguousNames[0]} +${node.ambiguousNames.length - 1} more`,
+          node.x,
+          yOffset
+        );
       }
     }
   }
@@ -739,7 +881,14 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
 
   // Data layer
   const data = useVisualizerData({
-    packets, contacts, config, showAmbiguousPaths, showAmbiguousNodes, chargeStrength, letEmDrift, dimensions,
+    packets,
+    contacts,
+    config,
+    showAmbiguousPaths,
+    showAmbiguousNodes,
+    chargeStrength,
+    letEmDrift,
+    dimensions,
   });
 
   // Track dimensions
@@ -805,7 +954,11 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
     });
 
     renderLinks(ctx, visibleLinks, data.nodes);
-    data.particles.splice(0, data.particles.length, ...renderParticles(ctx, data.particles, data.nodes, visibleNodeIds));
+    data.particles.splice(
+      0,
+      data.particles.length,
+      ...renderParticles(ctx, data.particles, data.nodes, visibleNodeIds)
+    );
     renderNodes(ctx, visibleNodes, hoveredNodeId);
 
     ctx.restore();
@@ -820,47 +973,63 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
       requestAnimationFrame(animate);
     };
     animate();
-    return () => { running = false; };
+    return () => {
+      running = false;
+    };
   }, [render]);
 
   // Mouse handlers
-  const screenToGraph = useCallback((screenX: number, screenY: number) => {
-    const { width, height } = dimensions;
-    const cx = (screenX - width / 2) / transform.scale - transform.x + width / 2;
-    const cy = (screenY - height / 2) / transform.scale - transform.y + height / 2;
-    return { x: cx, y: cy };
-  }, [dimensions, transform]);
+  const screenToGraph = useCallback(
+    (screenX: number, screenY: number) => {
+      const { width, height } = dimensions;
+      const cx = (screenX - width / 2) / transform.scale - transform.x + width / 2;
+      const cy = (screenY - height / 2) / transform.scale - transform.y + height / 2;
+      return { x: cx, y: cy };
+    },
+    [dimensions, transform]
+  );
 
-  const findNodeAt = useCallback((gx: number, gy: number) => {
-    for (const node of data.nodes.values()) {
-      if (node.x == null || node.y == null) continue;
-      if (Math.hypot(gx - node.x, gy - node.y) < 20) return node;
-    }
-    return null;
-  }, [data.nodes]);
+  const findNodeAt = useCallback(
+    (gx: number, gy: number) => {
+      for (const node of data.nodes.values()) {
+        if (node.x == null || node.y == null) continue;
+        if (Math.hypot(gx - node.x, gy - node.y) < 20) return node;
+      }
+      return null;
+    },
+    [data.nodes]
+  );
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDraggingRef.current = true;
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const pos = screenToGraph(e.clientX - rect.left, e.clientY - rect.top);
-    setHoveredNodeId(findNodeAt(pos.x, pos.y)?.id || null);
+      const rect = canvas.getBoundingClientRect();
+      const pos = screenToGraph(e.clientX - rect.left, e.clientY - rect.top);
+      setHoveredNodeId(findNodeAt(pos.x, pos.y)?.id || null);
 
-    if (!isDraggingRef.current) return;
-    const dx = e.clientX - lastMouseRef.current.x;
-    const dy = e.clientY - lastMouseRef.current.y;
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
-    setTransform((t) => ({ ...t, x: t.x + dx / t.scale, y: t.y + dy / t.scale }));
-  }, [screenToGraph, findNodeAt]);
+      if (!isDraggingRef.current) return;
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      setTransform((t) => ({ ...t, x: t.x + dx / t.scale, y: t.y + dy / t.scale }));
+    },
+    [screenToGraph, findNodeAt]
+  );
 
-  const handleMouseUp = useCallback(() => { isDraggingRef.current = false; }, []);
-  const handleMouseLeave = useCallback(() => { isDraggingRef.current = false; setHoveredNodeId(null); }, []);
+  const handleMouseUp = useCallback(() => {
+    isDraggingRef.current = false;
+  }, []);
+  const handleMouseLeave = useCallback(() => {
+    isDraggingRef.current = false;
+    setHoveredNodeId(null);
+  }, []);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -903,7 +1072,10 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
             <div className="text-muted-foreground font-medium mb-1">Packets</div>
             {PACKET_LEGEND_ITEMS.map((item) => (
               <div key={item.label} className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white" style={{ backgroundColor: item.color }}>
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                  style={{ backgroundColor: item.color }}
+                >
                   {item.label}
                 </div>
                 <span>{item.description}</span>
@@ -918,34 +1090,66 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
         <div className="flex flex-col gap-2">
           <div>Nodes: {data.stats.nodes}</div>
           <div>Links: {data.stats.links}</div>
-          <div className="text-muted-foreground">Processed: {data.stats.processed} | Animated: {data.stats.animated}</div>
+          <div className="text-muted-foreground">
+            Processed: {data.stats.processed} | Animated: {data.stats.animated}
+          </div>
           <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
             <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox checked={showAmbiguousPaths} onCheckedChange={(c) => setShowAmbiguousPaths(c === true)} />
-              <span title="Show placeholder nodes for repeaters when the 1-byte prefix matches multiple contacts">Ambiguous repeaters</span>
+              <Checkbox
+                checked={showAmbiguousPaths}
+                onCheckedChange={(c) => setShowAmbiguousPaths(c === true)}
+              />
+              <span title="Show placeholder nodes for repeaters when the 1-byte prefix matches multiple contacts">
+                Ambiguous repeaters
+              </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox checked={showAmbiguousNodes} onCheckedChange={(c) => setShowAmbiguousNodes(c === true)} />
-              <span title="Show placeholder nodes for senders/recipients when only a 1-byte prefix is known">Ambiguous sender/recipient</span>
+              <Checkbox
+                checked={showAmbiguousNodes}
+                onCheckedChange={(c) => setShowAmbiguousNodes(c === true)}
+              />
+              <span title="Show placeholder nodes for senders/recipients when only a 1-byte prefix is known">
+                Ambiguous sender/recipient
+              </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox checked={filterOldRepeaters} onCheckedChange={(c) => setFilterOldRepeaters(c === true)} />
-              <span title="Hide repeaters not heard within the last 48 hours">Hide repeaters &gt;48hrs heard</span>
+              <Checkbox
+                checked={filterOldRepeaters}
+                onCheckedChange={(c) => setFilterOldRepeaters(c === true)}
+              />
+              <span title="Hide repeaters not heard within the last 48 hours">
+                Hide repeaters &gt;48hrs heard
+              </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <Checkbox checked={letEmDrift} onCheckedChange={(c) => setLetEmDrift(c === true)} />
-              <span title="When enabled, the graph continuously reorganizes itself into a better layout">Let &apos;em drift</span>
+              <span title="When enabled, the graph continuously reorganizes itself into a better layout">
+                Let &apos;em drift
+              </span>
             </label>
             <div className="flex flex-col gap-1 mt-1">
-              <label className="text-muted-foreground" title="How strongly nodes repel each other. Higher values spread nodes out more.">
+              <label
+                className="text-muted-foreground"
+                title="How strongly nodes repel each other. Higher values spread nodes out more."
+              >
                 Repulsion: {Math.abs(chargeStrength)}
               </label>
               <input
-                type="range" min="50" max="2500" value={Math.abs(chargeStrength)}
+                type="range"
+                min="50"
+                max="2500"
+                value={Math.abs(chargeStrength)}
                 onChange={(e) => setChargeStrength(-parseInt(e.target.value))}
                 className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
               />
             </div>
+            <button
+              onClick={data.randomizePositions}
+              className="mt-2 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+              title="Randomize node positions and let the simulation settle into a new layout"
+            >
+              Shuffle layout
+            </button>
           </div>
         </div>
       </div>

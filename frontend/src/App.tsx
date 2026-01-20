@@ -721,11 +721,7 @@ export function App() {
                 </div>
               </>
             ) : activeConversation.type === 'visualizer' ? (
-              <VisualizerView
-                packets={rawPackets}
-                contacts={contacts}
-                config={config}
-              />
+              <VisualizerView packets={rawPackets} contacts={contacts} config={config} />
             ) : activeConversation.type === 'raw' ? (
               <>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
