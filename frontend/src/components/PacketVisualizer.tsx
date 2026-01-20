@@ -952,7 +952,7 @@ export function PacketVisualizer({
   const [chargeStrength, setChargeStrength] = useState(-200);
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
   const [letEmDrift, setLetEmDrift] = useState(true);
-  const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(1);
+  const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(3);
   const [hideUI, setHideUI] = useState(false);
 
   // Pan/zoom
@@ -1266,7 +1266,7 @@ export function PacketVisualizer({
                   className="mt-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
                   title="Expand nodes apart then contract back - can help untangle the graph"
                 >
-                  Expand &amp; Contract
+                  Oooh Big Stretch!
                 </button>
               </div>
             </>
