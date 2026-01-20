@@ -260,6 +260,7 @@ interface UseVisualizerDataOptions {
   config: RadioConfig | null;
   showAmbiguousPaths: boolean;
   showAmbiguousNodes: boolean;
+  splitAmbiguousByTraffic: boolean;
   chargeStrength: number;
   letEmDrift: boolean;
   particleSpeedMultiplier: number;
@@ -283,6 +284,7 @@ function useVisualizerData({
   config,
   showAmbiguousPaths,
   showAmbiguousNodes,
+  splitAmbiguousByTraffic,
   chargeStrength,
   letEmDrift,
   particleSpeedMultiplier,
@@ -403,7 +405,7 @@ function useVisualizerData({
     timersRef.current.forEach((t) => clearTimeout(t));
     timersRef.current.clear();
     setStats({ processed: 0, animated: 0, nodes: selfNode ? 1 : 0, links: 0 });
-  }, [showAmbiguousPaths, showAmbiguousNodes]);
+  }, [showAmbiguousPaths, showAmbiguousNodes, splitAmbiguousByTraffic]);
 
   const syncSimulation = useCallback(() => {
     const sim = simulationRef.current;
@@ -490,11 +492,14 @@ function useVisualizerData({
   }, []);
 
   // Resolve a node from various sources and add to graph
+  // trafficContext is used when splitAmbiguousByTraffic is enabled to create
+  // separate nodes for ambiguous repeaters based on their position in traffic flow
   const resolveNode = useCallback(
     (
       source: { type: 'prefix' | 'pubkey' | 'name'; value: string },
       isRepeater: boolean,
-      showAmbiguous: boolean
+      showAmbiguous: boolean,
+      trafficContext?: { prevNode: string | null; nextPrefix: string | null }
     ): string | null => {
       if (source.type === 'pubkey') {
         if (source.value.length < 12) return null;
@@ -545,20 +550,40 @@ function useVisualizerData({
           return nodeId;
         }
 
-        // Multiple matches - create ambiguous node
-        if (filtered.length > 1) {
+        // Multiple matches or no matches - create ambiguous node
+        // When splitAmbiguousByTraffic is enabled for repeaters, include traffic context in node ID
+        if (filtered.length > 1 || (filtered.length === 0 && isRepeater)) {
           const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
           const lastSeen = filtered.reduce(
             (max, c) => (c.last_seen && (!max || c.last_seen > max) ? c.last_seen : max),
             null as number | null
           );
-          const nodeId = `?${source.value.toLowerCase()}`;
+
+          // Build node ID - optionally include traffic context for repeaters
+          let nodeId = `?${source.value.toLowerCase()}`;
+          let displayName = source.value.toUpperCase();
+
+          if (splitAmbiguousByTraffic && isRepeater && trafficContext) {
+            // Only split based on NEXT hop, not previous.
+            // Key insight: if a node always routes to the same next hop, it's likely
+            // the same physical node regardless of where traffic originates.
+            // Don't add context for the last repeater (nextPrefix=null) since that's
+            // clearly a single node near the user connecting to self.
+            if (trafficContext.nextPrefix) {
+              const nextShort = trafficContext.nextPrefix.slice(0, 2).toLowerCase();
+              nodeId = `?${source.value.toLowerCase()}:>${nextShort}`;
+              displayName = `${source.value.toUpperCase()}:>${nextShort}`;
+            }
+            // When nextPrefix is null, keep the simple ?XX ID - all traffic
+            // through this repeater to the destination is the same physical node
+          }
+
           addNode(
             nodeId,
-            source.value.toUpperCase(),
+            displayName,
             isRepeater ? 'repeater' : 'client',
             true,
-            names,
+            names.length > 0 ? names : undefined,
             lastSeen
           );
           return nodeId;
@@ -567,7 +592,7 @@ function useVisualizerData({
 
       return null;
     },
-    [contacts, addNode]
+    [contacts, addNode, splitAmbiguousByTraffic]
   );
 
   // Build path from parsed packet
@@ -607,8 +632,16 @@ function useVisualizerData({
       }
 
       // Add path bytes (repeaters)
-      for (const hexPrefix of parsed.pathBytes) {
-        const nodeId = resolveNode({ type: 'prefix', value: hexPrefix }, true, showAmbiguousPaths);
+      for (let i = 0; i < parsed.pathBytes.length; i++) {
+        const hexPrefix = parsed.pathBytes[i];
+        // Pass traffic context for splitAmbiguousByTraffic mode
+        const prevNode = path[path.length - 1] || null;
+        const nextPrefix = parsed.pathBytes[i + 1] || null;
+
+        const nodeId = resolveNode({ type: 'prefix', value: hexPrefix }, true, showAmbiguousPaths, {
+          prevNode,
+          nextPrefix,
+        });
         if (nodeId) path.push(nodeId);
       }
 
@@ -996,6 +1029,7 @@ export function PacketVisualizer({
   // Options
   const [showAmbiguousPaths, setShowAmbiguousPaths] = useState(true);
   const [showAmbiguousNodes, setShowAmbiguousNodes] = useState(false);
+  const [splitAmbiguousByTraffic, setSplitAmbiguousByTraffic] = useState(false);
   const [chargeStrength, setChargeStrength] = useState(-200);
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
   const [observationWindowSec, setObservationWindowSec] = useState(DEFAULT_OBSERVATION_WINDOW_SEC);
@@ -1018,6 +1052,7 @@ export function PacketVisualizer({
     config,
     showAmbiguousPaths,
     showAmbiguousNodes,
+    splitAmbiguousByTraffic,
     chargeStrength,
     letEmDrift,
     particleSpeedMultiplier,
@@ -1245,6 +1280,19 @@ export function PacketVisualizer({
                   />
                   <span title="Show placeholder nodes for senders/recipients when only a 1-byte prefix is known">
                     Ambiguous sender/recipient
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={splitAmbiguousByTraffic}
+                    onCheckedChange={(c) => setSplitAmbiguousByTraffic(c === true)}
+                    disabled={!showAmbiguousPaths}
+                  />
+                  <span
+                    title="Split ambiguous repeaters into separate nodes based on traffic patterns (prev→next). Helps identify colliding prefixes representing different physical nodes."
+                    className={!showAmbiguousPaths ? 'text-muted-foreground' : ''}
+                  >
+                    Hueristically group repeaters by traffic pattern
                   </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
