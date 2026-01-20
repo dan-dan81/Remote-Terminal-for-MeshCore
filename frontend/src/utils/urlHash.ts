@@ -1,7 +1,7 @@
 import type { Conversation } from '../types';
 
 export interface ParsedHashConversation {
-  type: 'channel' | 'contact' | 'raw' | 'map';
+  type: 'channel' | 'contact' | 'raw' | 'map' | 'visualizer';
   name: string;
   /** For map view: public key prefix to focus on */
   mapFocusKey?: string;
@@ -18,6 +18,10 @@ export function parseHashConversation(): ParsedHashConversation | null {
 
   if (hash === 'map') {
     return { type: 'map', name: 'map' };
+  }
+
+  if (hash === 'visualizer') {
+    return { type: 'visualizer', name: 'visualizer' };
   }
 
   // Check for map with focus: #map/focus/{pubkey_prefix}
@@ -54,6 +58,7 @@ export function getConversationHash(conv: Conversation | null): string {
   if (!conv) return '';
   if (conv.type === 'raw') return '#raw';
   if (conv.type === 'map') return '#map';
+  if (conv.type === 'visualizer') return '#visualizer';
   // Strip leading # from channel names for cleaner URLs
   const name =
     conv.type === 'channel' && conv.name.startsWith('#') ? conv.name.slice(1) : conv.name;

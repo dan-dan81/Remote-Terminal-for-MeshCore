@@ -15,6 +15,7 @@ import { NewMessageModal } from './components/NewMessageModal';
 import { SettingsModal } from './components/SettingsModal';
 import { RawPacketList } from './components/RawPacketList';
 import { MapView } from './components/MapView';
+import { VisualizerView } from './components/VisualizerView';
 import { CrackerPanel } from './components/CrackerPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
@@ -370,6 +371,9 @@ export function App() {
         mapFocusKey: hashConv.mapFocusKey,
       };
     }
+    if (hashConv.type === 'visualizer') {
+      return { type: 'visualizer', id: 'visualizer', name: 'Mesh Visualizer' };
+    }
     if (hashConv.type === 'channel') {
       const channel = channels.find(
         (c) => c.name === hashConv.name || c.name === `#${hashConv.name}`
@@ -716,6 +720,13 @@ export function App() {
                   <MapView contacts={contacts} focusedKey={activeConversation.mapFocusKey} />
                 </div>
               </>
+            ) : activeConversation.type === 'visualizer' ? (
+              <VisualizerView
+                packets={rawPackets}
+                contacts={contacts}
+                channels={channels}
+                config={config}
+              />
             ) : activeConversation.type === 'raw' ? (
               <>
                 <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
