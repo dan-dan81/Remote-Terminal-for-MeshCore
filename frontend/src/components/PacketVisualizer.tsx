@@ -108,7 +108,7 @@ const PARTICLE_COLOR_MAP: Record<PacketLabel, string> = {
 };
 
 const PARTICLE_SPEED = 0.008;
-const OBSERVATION_WINDOW_MS = 2000;
+const DEFAULT_OBSERVATION_WINDOW_SEC = 15;
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 const LEGEND_ITEMS = [
@@ -254,6 +254,7 @@ interface UseVisualizerDataOptions {
   chargeStrength: number;
   letEmDrift: boolean;
   particleSpeedMultiplier: number;
+  observationWindowSec: number;
   dimensions: { width: number; height: number };
 }
 
@@ -276,6 +277,7 @@ function useVisualizerData({
   chargeStrength,
   letEmDrift,
   particleSpeedMultiplier,
+  observationWindowSec,
   dimensions,
 }: UseVisualizerDataOptions): VisualizerData {
   const nodesRef = useRef<Map<string, GraphNode>>(new Map());
@@ -286,12 +288,17 @@ function useVisualizerData({
   const pendingRef = useRef<Map<string, PendingPacket>>(new Map());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const speedMultiplierRef = useRef(particleSpeedMultiplier);
+  const observationWindowRef = useRef(observationWindowSec * 1000);
   const [stats, setStats] = useState({ processed: 0, animated: 0, nodes: 0, links: 0 });
 
-  // Keep speed multiplier ref in sync with prop
+  // Keep refs in sync with props
   useEffect(() => {
     speedMultiplierRef.current = particleSpeedMultiplier;
   }, [particleSpeedMultiplier]);
+
+  useEffect(() => {
+    observationWindowRef.current = observationWindowSec * 1000;
+  }, [observationWindowSec]);
 
   // Initialize simulation
   useEffect(() => {
@@ -657,16 +664,17 @@ function useVisualizerData({
         if (timersRef.current.has(packetKey)) {
           clearTimeout(timersRef.current.get(packetKey));
         }
+        const windowMs = observationWindowRef.current;
         pendingRef.current.set(packetKey, {
           key: packetKey,
           label: getPacketLabel(parsed.payloadType),
           paths: [{ nodes: path, snr: packet.snr ?? null, timestamp: now }],
           firstSeen: now,
-          expiresAt: now + OBSERVATION_WINDOW_MS,
+          expiresAt: now + windowMs,
         });
         timersRef.current.set(
           packetKey,
-          setTimeout(() => publishPacket(packetKey), OBSERVATION_WINDOW_MS)
+          setTimeout(() => publishPacket(packetKey), windowMs)
         );
       }
 
@@ -951,6 +959,7 @@ export function PacketVisualizer({
   const [showAmbiguousNodes, setShowAmbiguousNodes] = useState(false);
   const [chargeStrength, setChargeStrength] = useState(-200);
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
+  const [observationWindowSec, setObservationWindowSec] = useState(DEFAULT_OBSERVATION_WINDOW_SEC);
   const [letEmDrift, setLetEmDrift] = useState(true);
   const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(3);
   const [hideUI, setHideUI] = useState(false);
@@ -973,6 +982,7 @@ export function PacketVisualizer({
     chargeStrength,
     letEmDrift,
     particleSpeedMultiplier,
+    observationWindowSec,
     dimensions,
   });
 
@@ -1210,6 +1220,27 @@ export function PacketVisualizer({
                     Hide repeaters &gt;48hrs heard
                   </span>
                 </label>
+                <div className="flex items-center gap-2">
+                  <label
+                    className="text-muted-foreground"
+                    title="How long to wait for duplicate packets via different paths before animating"
+                  >
+                    Observation window:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={observationWindowSec}
+                    onChange={(e) =>
+                      setObservationWindowSec(
+                        Math.max(1, Math.min(60, parseInt(e.target.value) || 1))
+                      )
+                    }
+                    className="w-12 px-1 py-0.5 bg-background border border-border rounded text-xs text-center"
+                  />
+                  <span className="text-muted-foreground">sec</span>
+                </div>
                 <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
