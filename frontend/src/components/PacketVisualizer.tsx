@@ -76,6 +76,7 @@ interface ParsedPacket {
   dstHash: string | null;
   advertPubkey: string | null;
   groupTextSender: string | null;
+  anonRequestPubkey: string | null;
 }
 
 // =============================================================================
@@ -154,6 +155,7 @@ function parsePacket(hexData: string): ParsedPacket | null {
       dstHash: null,
       advertPubkey: null,
       groupTextSender: null,
+      anonRequestPubkey: null,
     };
 
     if (decoded.payloadType === PayloadType.TextMessage && decoded.payload.decoded) {
@@ -165,6 +167,9 @@ function parsePacket(hexData: string): ParsedPacket | null {
     } else if (decoded.payloadType === PayloadType.GroupText && decoded.payload.decoded) {
       const payload = decoded.payload.decoded as { decrypted?: { sender?: string } };
       result.groupTextSender = payload.decrypted?.sender || null;
+    } else if (decoded.payloadType === PayloadType.AnonRequest && decoded.payload.decoded) {
+      const payload = decoded.payload.decoded as { senderPublicKey?: string };
+      result.anonRequestPubkey = payload.senderPublicKey || null;
     }
 
     return result;
@@ -186,6 +191,7 @@ function getPacketLabel(payloadType: number): PacketLabel {
     case PayloadType.Trace:
       return 'TR';
     case PayloadType.Request:
+    case PayloadType.AnonRequest:
       return 'RQ';
     case PayloadType.Response:
       return 'RS';
@@ -207,6 +213,9 @@ function generatePacketKey(parsed: ParsedPacket, rawPacket: RawPacket): string {
   }
   if (parsed.payloadType === PayloadType.TextMessage) {
     return `dm:${parsed.srcHash || '?'}:${parsed.dstHash || '?'}:${contentHash}`;
+  }
+  if (parsed.payloadType === PayloadType.AnonRequest && parsed.anonRequestPubkey) {
+    return `rq:${parsed.anonRequestPubkey.slice(0, 12)}:${contentHash}`;
   }
   return `other:${contentHash}`;
 }
@@ -569,6 +578,14 @@ function useVisualizerData({
       // Add source
       if (parsed.payloadType === PayloadType.Advert && parsed.advertPubkey) {
         const nodeId = resolveNode({ type: 'pubkey', value: parsed.advertPubkey }, false, false);
+        if (nodeId) path.push(nodeId);
+      } else if (parsed.payloadType === PayloadType.AnonRequest && parsed.anonRequestPubkey) {
+        // AnonRequest packets contain the full sender public key
+        const nodeId = resolveNode(
+          { type: 'pubkey', value: parsed.anonRequestPubkey },
+          false,
+          false
+        );
         if (nodeId) path.push(nodeId);
       } else if (parsed.payloadType === PayloadType.TextMessage && parsed.srcHash) {
         if (myPrefix && parsed.srcHash.toLowerCase() === myPrefix) {
