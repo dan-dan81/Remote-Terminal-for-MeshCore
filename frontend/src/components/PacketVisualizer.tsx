@@ -734,50 +734,72 @@ function useVisualizerData({
   }, [dimensions]);
 
   // Expand to high repulsion, hold, then contract back
+  // Also weakens link force during expansion so nodes can actually separate
   const expandContract = useCallback(() => {
     const sim = simulationRef.current;
     if (!sim) return;
 
-    const startStrength = chargeStrength;
-    const peakStrength = -5000;
-    const expandDuration = 1000; // 1 second
-    const holdDuration = 2000; // 2 seconds
-    const contractDuration = 1000; // 1 second
+    const startChargeStrength = chargeStrength;
+    const peakChargeStrength = -5000;
+    const startLinkStrength = 0.3;
+    const minLinkStrength = 0.02; // Nearly disable links during expansion
+    const expandDuration = 1000;
+    const holdDuration = 2000;
+    const contractDuration = 1000;
     const startTime = performance.now();
 
     const animate = (now: number) => {
       const elapsed = now - startTime;
-      let currentStrength: number;
+      let currentChargeStrength: number;
+      let currentLinkStrength: number;
 
       if (elapsed < expandDuration) {
-        // Expanding phase: lerp from start to peak
+        // Expanding: ramp up repulsion, weaken links
         const t = elapsed / expandDuration;
-        currentStrength = startStrength + (peakStrength - startStrength) * t;
+        currentChargeStrength =
+          startChargeStrength + (peakChargeStrength - startChargeStrength) * t;
+        currentLinkStrength = startLinkStrength + (minLinkStrength - startLinkStrength) * t;
       } else if (elapsed < expandDuration + holdDuration) {
-        // Hold phase: stay at peak
-        currentStrength = peakStrength;
+        // Hold: stay at peak repulsion, links weak
+        currentChargeStrength = peakChargeStrength;
+        currentLinkStrength = minLinkStrength;
       } else if (elapsed < expandDuration + holdDuration + contractDuration) {
-        // Contracting phase: lerp from peak back to start
+        // Contracting: restore both forces
         const t = (elapsed - expandDuration - holdDuration) / contractDuration;
-        currentStrength = peakStrength + (startStrength - peakStrength) * t;
+        currentChargeStrength = peakChargeStrength + (startChargeStrength - peakChargeStrength) * t;
+        currentLinkStrength = minLinkStrength + (startLinkStrength - minLinkStrength) * t;
       } else {
-        // Done - restore original
+        // Done - restore originals
         sim.force(
           'charge',
           forceManyBody<GraphNode>()
-            .strength((d) => (d.id === 'self' ? startStrength * 6 : startStrength))
+            .strength((d) => (d.id === 'self' ? startChargeStrength * 6 : startChargeStrength))
             .distanceMax(500)
+        );
+        sim.force(
+          'link',
+          forceLink<GraphNode, GraphLink>(Array.from(linksRef.current.values()))
+            .id((d) => d.id)
+            .distance(80)
+            .strength(startLinkStrength)
         );
         sim.alpha(0.3).restart();
         return;
       }
 
-      // Apply current strength
+      // Apply current strengths
       sim.force(
         'charge',
         forceManyBody<GraphNode>()
-          .strength((d) => (d.id === 'self' ? currentStrength * 6 : currentStrength))
+          .strength((d) => (d.id === 'self' ? currentChargeStrength * 6 : currentChargeStrength))
           .distanceMax(500)
+      );
+      sim.force(
+        'link',
+        forceLink<GraphNode, GraphLink>(Array.from(linksRef.current.values()))
+          .id((d) => d.id)
+          .distance(80)
+          .strength(currentLinkStrength)
       );
       sim.alpha(0.5).restart();
 
@@ -961,7 +983,7 @@ export function PacketVisualizer({
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
   const [observationWindowSec, setObservationWindowSec] = useState(DEFAULT_OBSERVATION_WINDOW_SEC);
   const [letEmDrift, setLetEmDrift] = useState(true);
-  const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(3);
+  const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(2);
   const [hideUI, setHideUI] = useState(false);
 
   // Pan/zoom
@@ -1189,9 +1211,6 @@ export function PacketVisualizer({
             <>
               <div>Nodes: {data.stats.nodes}</div>
               <div>Links: {data.stats.links}</div>
-              <div className="text-muted-foreground">
-                Processed: {data.stats.processed} | Animated: {data.stats.animated}
-              </div>
               <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
