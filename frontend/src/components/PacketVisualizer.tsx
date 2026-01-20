@@ -513,21 +513,33 @@ function useVisualizerData({
         const filtered = isRepeater
           ? matches.filter((c) => c.type === CONTACT_TYPE_REPEATER)
           : matches.filter((c) => c.type !== CONTACT_TYPE_REPEATER);
-        const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
-        const lastSeen = filtered.reduce(
-          (max, c) => (c.last_seen && (!max || c.last_seen > max) ? c.last_seen : max),
-          null as number | null
-        );
-        const nodeId = `?${source.value.toLowerCase()}`;
-        addNode(
-          nodeId,
-          source.value.toUpperCase(),
-          isRepeater ? 'repeater' : 'client',
-          true,
-          names,
-          lastSeen
-        );
-        return nodeId;
+
+        // If exactly one match after filtering, use it directly (not ambiguous)
+        if (filtered.length === 1) {
+          const contact = filtered[0];
+          const nodeId = contact.public_key.slice(0, 12).toLowerCase();
+          addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
+          return nodeId;
+        }
+
+        // Multiple matches - create ambiguous node
+        if (filtered.length > 1) {
+          const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
+          const lastSeen = filtered.reduce(
+            (max, c) => (c.last_seen && (!max || c.last_seen > max) ? c.last_seen : max),
+            null as number | null
+          );
+          const nodeId = `?${source.value.toLowerCase()}`;
+          addNode(
+            nodeId,
+            source.value.toUpperCase(),
+            isRepeater ? 'repeater' : 'client',
+            true,
+            names,
+            lastSeen
+          );
+          return nodeId;
+        }
       }
 
       return null;
@@ -1093,18 +1105,12 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
       {/* Options */}
       <div className="absolute top-4 right-4 bg-background/80 backdrop-blur-sm rounded-lg p-3 text-xs border border-border">
         <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={hideUI} onCheckedChange={(c) => setHideUI(c === true)} />
-            <span title="Hide legends and controls for a cleaner view">Hide UI</span>
-          </label>
           {!hideUI && (
             <>
-              <div className="border-t border-border pt-2 mt-1">
-                <div>Nodes: {data.stats.nodes}</div>
-                <div>Links: {data.stats.links}</div>
-                <div className="text-muted-foreground">
-                  Processed: {data.stats.processed} | Animated: {data.stats.animated}
-                </div>
+              <div>Nodes: {data.stats.nodes}</div>
+              <div>Links: {data.stats.links}</div>
+              <div className="text-muted-foreground">
+                Processed: {data.stats.processed} | Animated: {data.stats.animated}
               </div>
               <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -1163,18 +1169,24 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
                 >
                   Shuffle layout
                 </button>
-                {onFullScreenChange && (
-                  <label className="flex items-center gap-2 cursor-pointer mt-2 pt-2 border-t border-border">
-                    <Checkbox
-                      checked={fullScreen}
-                      onCheckedChange={(c) => onFullScreenChange(c === true)}
-                    />
-                    <span title="Hide the packet feed panel">Full screen</span>
-                  </label>
-                )}
               </div>
             </>
           )}
+          <div className={hideUI ? '' : 'border-t border-border pt-2 mt-1 flex flex-col gap-2'}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={hideUI} onCheckedChange={(c) => setHideUI(c === true)} />
+              <span title="Hide legends and controls for a cleaner view">Hide UI</span>
+            </label>
+            {onFullScreenChange && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={fullScreen}
+                  onCheckedChange={(c) => onFullScreenChange(c === true)}
+                />
+                <span title="Hide the packet feed panel">Full screen</span>
+              </label>
+            )}
+          </div>
         </div>
       </div>
     </div>
