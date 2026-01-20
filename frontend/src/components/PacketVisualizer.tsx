@@ -109,7 +109,6 @@ const PARTICLE_COLOR_MAP: Record<PacketLabel, string> = {
 
 const PARTICLE_SPEED = 0.008;
 const OBSERVATION_WINDOW_MS = 2000;
-const MAX_LINKS = 100;
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 const LEGEND_ITEMS = [
@@ -254,6 +253,7 @@ interface UseVisualizerDataOptions {
   showAmbiguousNodes: boolean;
   chargeStrength: number;
   letEmDrift: boolean;
+  particleSpeedMultiplier: number;
   dimensions: { width: number; height: number };
 }
 
@@ -264,6 +264,7 @@ interface VisualizerData {
   simulation: Simulation<GraphNode, GraphLink> | null;
   stats: { processed: number; animated: number; nodes: number; links: number };
   randomizePositions: () => void;
+  expandContract: () => void;
 }
 
 function useVisualizerData({
@@ -274,6 +275,7 @@ function useVisualizerData({
   showAmbiguousNodes,
   chargeStrength,
   letEmDrift,
+  particleSpeedMultiplier,
   dimensions,
 }: UseVisualizerDataOptions): VisualizerData {
   const nodesRef = useRef<Map<string, GraphNode>>(new Map());
@@ -283,7 +285,13 @@ function useVisualizerData({
   const processedRef = useRef<Set<number>>(new Set());
   const pendingRef = useRef<Map<string, PendingPacket>>(new Map());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const speedMultiplierRef = useRef(particleSpeedMultiplier);
   const [stats, setStats] = useState({ processed: 0, animated: 0, nodes: 0, links: 0 });
+
+  // Keep speed multiplier ref in sync with prop
+  useEffect(() => {
+    speedMultiplierRef.current = particleSpeedMultiplier;
+  }, [particleSpeedMultiplier]);
 
   // Initialize simulation
   useEffect(() => {
@@ -386,8 +394,7 @@ function useVisualizerData({
     if (!sim) return;
 
     const nodes = Array.from(nodesRef.current.values());
-    const allLinks = Array.from(linksRef.current.values());
-    const links = allLinks.length > MAX_LINKS ? allLinks.slice(-MAX_LINKS) : allLinks;
+    const links = Array.from(linksRef.current.values());
 
     sim.nodes(nodes);
     const linkForce = sim.force('link') as ReturnType<typeof forceLink<GraphNode, GraphLink>>;
@@ -456,7 +463,7 @@ function useVisualizerData({
         particlesRef.current.push({
           linkKey: [dedupedPath[i], dedupedPath[i + 1]].sort().join('->'),
           progress: -i,
-          speed: PARTICLE_SPEED,
+          speed: PARTICLE_SPEED * speedMultiplierRef.current,
           color: PARTICLE_COLOR_MAP[pending.label],
           label: pending.label,
           fromNodeId: dedupedPath[i],
@@ -718,6 +725,60 @@ function useVisualizerData({
     sim.alpha(1).restart();
   }, [dimensions]);
 
+  // Expand to high repulsion, hold, then contract back
+  const expandContract = useCallback(() => {
+    const sim = simulationRef.current;
+    if (!sim) return;
+
+    const startStrength = chargeStrength;
+    const peakStrength = -5000;
+    const expandDuration = 1000; // 1 second
+    const holdDuration = 2000; // 2 seconds
+    const contractDuration = 1000; // 1 second
+    const startTime = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      let currentStrength: number;
+
+      if (elapsed < expandDuration) {
+        // Expanding phase: lerp from start to peak
+        const t = elapsed / expandDuration;
+        currentStrength = startStrength + (peakStrength - startStrength) * t;
+      } else if (elapsed < expandDuration + holdDuration) {
+        // Hold phase: stay at peak
+        currentStrength = peakStrength;
+      } else if (elapsed < expandDuration + holdDuration + contractDuration) {
+        // Contracting phase: lerp from peak back to start
+        const t = (elapsed - expandDuration - holdDuration) / contractDuration;
+        currentStrength = peakStrength + (startStrength - peakStrength) * t;
+      } else {
+        // Done - restore original
+        sim.force(
+          'charge',
+          forceManyBody<GraphNode>()
+            .strength((d) => (d.id === 'self' ? startStrength * 6 : startStrength))
+            .distanceMax(500)
+        );
+        sim.alpha(0.3).restart();
+        return;
+      }
+
+      // Apply current strength
+      sim.force(
+        'charge',
+        forceManyBody<GraphNode>()
+          .strength((d) => (d.id === 'self' ? currentStrength * 6 : currentStrength))
+          .distanceMax(500)
+      );
+      sim.alpha(0.5).restart();
+
+      requestAnimationFrame(animate);
+    };
+
+    requestAnimationFrame(animate);
+  }, [chargeStrength]);
+
   return {
     nodes: nodesRef.current,
     links: linksRef.current,
@@ -725,6 +786,7 @@ function useVisualizerData({
     simulation: simulationRef.current,
     stats,
     randomizePositions,
+    expandContract,
   };
 }
 
@@ -873,7 +935,13 @@ interface PacketVisualizerProps {
   onFullScreenChange?: (fullScreen: boolean) => void;
 }
 
-export function PacketVisualizer({ packets, contacts, config, fullScreen, onFullScreenChange }: PacketVisualizerProps) {
+export function PacketVisualizer({
+  packets,
+  contacts,
+  config,
+  fullScreen,
+  onFullScreenChange,
+}: PacketVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -884,6 +952,7 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
   const [chargeStrength, setChargeStrength] = useState(-200);
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
   const [letEmDrift, setLetEmDrift] = useState(true);
+  const [particleSpeedMultiplier, setParticleSpeedMultiplier] = useState(1);
   const [hideUI, setHideUI] = useState(false);
 
   // Pan/zoom
@@ -903,6 +972,7 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
     showAmbiguousNodes,
     chargeStrength,
     letEmDrift,
+    particleSpeedMultiplier,
     dimensions,
   });
 
@@ -962,7 +1032,7 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
     });
 
     // Filter links
-    const allLinks = Array.from(data.links.values()).slice(-MAX_LINKS);
+    const allLinks = Array.from(data.links.values());
     const visibleLinks = allLinks.filter((link) => {
       const { sourceId, targetId } = getLinkId(link);
       return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
@@ -1140,27 +1210,49 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
                     Hide repeaters &gt;48hrs heard
                   </span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={letEmDrift} onCheckedChange={(c) => setLetEmDrift(c === true)} />
-                  <span title="When enabled, the graph continuously reorganizes itself into a better layout">
-                    Let &apos;em drift
-                  </span>
-                </label>
-                <div className="flex flex-col gap-1 mt-1">
-                  <label
-                    className="text-muted-foreground"
-                    title="How strongly nodes repel each other. Higher values spread nodes out more."
-                  >
-                    Repulsion: {Math.abs(chargeStrength)}
+                <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={letEmDrift}
+                      onCheckedChange={(c) => setLetEmDrift(c === true)}
+                    />
+                    <span title="When enabled, the graph continuously reorganizes itself into a better layout">
+                      Let &apos;em drift
+                    </span>
                   </label>
-                  <input
-                    type="range"
-                    min="50"
-                    max="2500"
-                    value={Math.abs(chargeStrength)}
-                    onChange={(e) => setChargeStrength(-parseInt(e.target.value))}
-                    className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
+                  <div className="flex flex-col gap-1 mt-1">
+                    <label
+                      className="text-muted-foreground"
+                      title="How strongly nodes repel each other. Higher values spread nodes out more."
+                    >
+                      Repulsion: {Math.abs(chargeStrength)}
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="2500"
+                      value={Math.abs(chargeStrength)}
+                      onChange={(e) => setChargeStrength(-parseInt(e.target.value))}
+                      className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 mt-1">
+                    <label
+                      className="text-muted-foreground"
+                      title="How fast particles travel along links. Higher values make packets move faster."
+                    >
+                      Packet speed: {particleSpeedMultiplier}x
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.5"
+                      value={particleSpeedMultiplier}
+                      onChange={(e) => setParticleSpeedMultiplier(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
                 </div>
                 <button
                   onClick={data.randomizePositions}
@@ -1168,6 +1260,13 @@ export function PacketVisualizer({ packets, contacts, config, fullScreen, onFull
                   title="Randomize node positions and let the simulation settle into a new layout"
                 >
                   Shuffle layout
+                </button>
+                <button
+                  onClick={data.expandContract}
+                  className="mt-1 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+                  title="Expand nodes apart then contract back - can help untangle the graph"
+                >
+                  Expand &amp; Contract
                 </button>
               </div>
             </>
