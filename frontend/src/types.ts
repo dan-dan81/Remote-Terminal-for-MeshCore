@@ -99,7 +99,7 @@ export interface Message {
   acked: number;
 }
 
-export type ConversationType = 'contact' | 'channel' | 'raw' | 'map';
+export type ConversationType = 'contact' | 'channel' | 'raw' | 'map' | 'visualizer';
 
 export interface Conversation {
   type: ConversationType;

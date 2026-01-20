@@ -68,7 +68,7 @@ export function Sidebar({
     onSelectConversation(conversation);
   };
 
-  const isActive = (type: 'contact' | 'channel' | 'raw' | 'map', id: string) =>
+  const isActive = (type: 'contact' | 'channel' | 'raw' | 'map' | 'visualizer', id: string) =>
     activeConversation?.type === type && activeConversation?.id === id;
 
   // Get unread count for a conversation
@@ -285,6 +285,26 @@ export function Sidebar({
           >
             <span className="text-muted-foreground text-xs">🗺️</span>
             <span className="flex-1 truncate">Node Map</span>
+          </div>
+        )}
+
+        {/* Mesh Visualizer */}
+        {!query && (
+          <div
+            className={cn(
+              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+              isActive('visualizer', 'visualizer') && 'bg-accent border-l-primary'
+            )}
+            onClick={() =>
+              handleSelectConversation({
+                type: 'visualizer',
+                id: 'visualizer',
+                name: 'Mesh Visualizer',
+              })
+            }
+          >
+            <span className="text-muted-foreground text-xs">✨</span>
+            <span className="flex-1 truncate">Mesh Visualizer</span>
           </div>
         )}
 
