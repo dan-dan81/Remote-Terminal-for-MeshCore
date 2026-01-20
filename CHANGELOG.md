@@ -1,3 +1,7 @@
+## [1.5.0] - 2026-01-19
+
+Feature: Network visualizer
+
 ## [1.4.1] - 2026-01-19
 
 Feature: Add option to attempt historical DM decrypt on new-contact advertisement (disabled by default)
