@@ -857,9 +857,11 @@ interface PacketVisualizerProps {
   packets: RawPacket[];
   contacts: Contact[];
   config: RadioConfig | null;
+  fullScreen?: boolean;
+  onFullScreenChange?: (fullScreen: boolean) => void;
 }
 
-export function PacketVisualizer({ packets, contacts, config }: PacketVisualizerProps) {
+export function PacketVisualizer({ packets, contacts, config, fullScreen, onFullScreenChange }: PacketVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -870,6 +872,7 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
   const [chargeStrength, setChargeStrength] = useState(-200);
   const [filterOldRepeaters, setFilterOldRepeaters] = useState(false);
   const [letEmDrift, setLetEmDrift] = useState(true);
+  const [hideUI, setHideUI] = useState(false);
 
   // Pan/zoom
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
@@ -1057,100 +1060,121 @@ export function PacketVisualizer({ packets, contacts, config }: PacketVisualizer
       />
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg p-3 text-xs border border-border">
-        <div className="flex gap-6">
-          <div className="flex flex-col gap-1.5">
-            <div className="text-muted-foreground font-medium mb-1">Nodes</div>
-            {LEGEND_ITEMS.map((item) => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className={item.size}>{item.emoji}</span>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="text-muted-foreground font-medium mb-1">Packets</div>
-            {PACKET_LEGEND_ITEMS.map((item) => (
-              <div key={item.label} className="flex items-center gap-2">
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                  style={{ backgroundColor: item.color }}
-                >
-                  {item.label}
+      {!hideUI && (
+        <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg p-3 text-xs border border-border">
+          <div className="flex gap-6">
+            <div className="flex flex-col gap-1.5">
+              <div className="text-muted-foreground font-medium mb-1">Nodes</div>
+              {LEGEND_ITEMS.map((item) => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <span className={item.size}>{item.emoji}</span>
+                  <span>{item.label}</span>
                 </div>
-                <span>{item.description}</span>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="text-muted-foreground font-medium mb-1">Packets</div>
+              {PACKET_LEGEND_ITEMS.map((item) => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                    style={{ backgroundColor: item.color }}
+                  >
+                    {item.label}
+                  </div>
+                  <span>{item.description}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Options */}
       <div className="absolute top-4 right-4 bg-background/80 backdrop-blur-sm rounded-lg p-3 text-xs border border-border">
         <div className="flex flex-col gap-2">
-          <div>Nodes: {data.stats.nodes}</div>
-          <div>Links: {data.stats.links}</div>
-          <div className="text-muted-foreground">
-            Processed: {data.stats.processed} | Animated: {data.stats.animated}
-          </div>
-          <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={showAmbiguousPaths}
-                onCheckedChange={(c) => setShowAmbiguousPaths(c === true)}
-              />
-              <span title="Show placeholder nodes for repeaters when the 1-byte prefix matches multiple contacts">
-                Ambiguous repeaters
-              </span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={showAmbiguousNodes}
-                onCheckedChange={(c) => setShowAmbiguousNodes(c === true)}
-              />
-              <span title="Show placeholder nodes for senders/recipients when only a 1-byte prefix is known">
-                Ambiguous sender/recipient
-              </span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={filterOldRepeaters}
-                onCheckedChange={(c) => setFilterOldRepeaters(c === true)}
-              />
-              <span title="Hide repeaters not heard within the last 48 hours">
-                Hide repeaters &gt;48hrs heard
-              </span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox checked={letEmDrift} onCheckedChange={(c) => setLetEmDrift(c === true)} />
-              <span title="When enabled, the graph continuously reorganizes itself into a better layout">
-                Let &apos;em drift
-              </span>
-            </label>
-            <div className="flex flex-col gap-1 mt-1">
-              <label
-                className="text-muted-foreground"
-                title="How strongly nodes repel each other. Higher values spread nodes out more."
-              >
-                Repulsion: {Math.abs(chargeStrength)}
-              </label>
-              <input
-                type="range"
-                min="50"
-                max="2500"
-                value={Math.abs(chargeStrength)}
-                onChange={(e) => setChargeStrength(-parseInt(e.target.value))}
-                className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
-              />
-            </div>
-            <button
-              onClick={data.randomizePositions}
-              className="mt-2 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
-              title="Randomize node positions and let the simulation settle into a new layout"
-            >
-              Shuffle layout
-            </button>
-          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox checked={hideUI} onCheckedChange={(c) => setHideUI(c === true)} />
+            <span title="Hide legends and controls for a cleaner view">Hide UI</span>
+          </label>
+          {!hideUI && (
+            <>
+              <div className="border-t border-border pt-2 mt-1">
+                <div>Nodes: {data.stats.nodes}</div>
+                <div>Links: {data.stats.links}</div>
+                <div className="text-muted-foreground">
+                  Processed: {data.stats.processed} | Animated: {data.stats.animated}
+                </div>
+              </div>
+              <div className="border-t border-border pt-2 mt-1 flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={showAmbiguousPaths}
+                    onCheckedChange={(c) => setShowAmbiguousPaths(c === true)}
+                  />
+                  <span title="Show placeholder nodes for repeaters when the 1-byte prefix matches multiple contacts">
+                    Ambiguous repeaters
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={showAmbiguousNodes}
+                    onCheckedChange={(c) => setShowAmbiguousNodes(c === true)}
+                  />
+                  <span title="Show placeholder nodes for senders/recipients when only a 1-byte prefix is known">
+                    Ambiguous sender/recipient
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={filterOldRepeaters}
+                    onCheckedChange={(c) => setFilterOldRepeaters(c === true)}
+                  />
+                  <span title="Hide repeaters not heard within the last 48 hours">
+                    Hide repeaters &gt;48hrs heard
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox checked={letEmDrift} onCheckedChange={(c) => setLetEmDrift(c === true)} />
+                  <span title="When enabled, the graph continuously reorganizes itself into a better layout">
+                    Let &apos;em drift
+                  </span>
+                </label>
+                <div className="flex flex-col gap-1 mt-1">
+                  <label
+                    className="text-muted-foreground"
+                    title="How strongly nodes repel each other. Higher values spread nodes out more."
+                  >
+                    Repulsion: {Math.abs(chargeStrength)}
+                  </label>
+                  <input
+                    type="range"
+                    min="50"
+                    max="2500"
+                    value={Math.abs(chargeStrength)}
+                    onChange={(e) => setChargeStrength(-parseInt(e.target.value))}
+                    className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+                <button
+                  onClick={data.randomizePositions}
+                  className="mt-2 px-3 py-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs transition-colors"
+                  title="Randomize node positions and let the simulation settle into a new layout"
+                >
+                  Shuffle layout
+                </button>
+                {onFullScreenChange && (
+                  <label className="flex items-center gap-2 cursor-pointer mt-2 pt-2 border-t border-border">
+                    <Checkbox
+                      checked={fullScreen}
+                      onCheckedChange={(c) => onFullScreenChange(c === true)}
+                    />
+                    <span title="Hide the packet feed panel">Full screen</span>
+                  </label>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
