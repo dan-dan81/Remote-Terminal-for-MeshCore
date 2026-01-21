@@ -276,6 +276,7 @@ interface VisualizerData {
   stats: { processed: number; animated: number; nodes: number; links: number };
   randomizePositions: () => void;
   expandContract: () => void;
+  clearAndReset: () => void;
 }
 
 function useVisualizerData({
@@ -859,6 +860,56 @@ function useVisualizerData({
     requestAnimationFrame(animate);
   }, [chargeStrength]);
 
+  // Clear all state and reset to initial (keeps self node only)
+  const clearAndReset = useCallback(() => {
+    // Clear all pending timers
+    for (const timer of timersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    timersRef.current.clear();
+
+    // Clear pending packets
+    pendingRef.current.clear();
+
+    // Clear processed packet IDs so they can be re-processed if needed
+    processedRef.current.clear();
+
+    // Clear particles
+    particlesRef.current.length = 0;
+
+    // Clear links
+    linksRef.current.clear();
+
+    // Clear nodes except self, then reset self position
+    const selfNode = nodesRef.current.get('self');
+    nodesRef.current.clear();
+    if (selfNode) {
+      selfNode.x = dimensions.width / 2;
+      selfNode.y = dimensions.height / 2;
+      selfNode.vx = 0;
+      selfNode.vy = 0;
+      selfNode.lastActivity = Date.now();
+      nodesRef.current.set('self', selfNode);
+    }
+
+    // Reset simulation with just self node
+    const sim = simulationRef.current;
+    if (sim) {
+      sim.nodes(Array.from(nodesRef.current.values()));
+      sim.force(
+        'link',
+        forceLink<GraphNode, GraphLink>([])
+          .id((d) => d.id)
+          .distance(80)
+          .strength(0.3)
+      );
+      sim.alpha(0.3).restart();
+    }
+
+    // Reset stats
+    setStats({ processed: 0, animated: 0, nodes: 1, links: 0 });
+  }, [dimensions]);
+
   return {
     nodes: nodesRef.current,
     links: linksRef.current,
@@ -867,6 +918,7 @@ function useVisualizerData({
     stats,
     randomizePositions,
     expandContract,
+    clearAndReset,
   };
 }
 
@@ -1013,6 +1065,7 @@ interface PacketVisualizerProps {
   config: RadioConfig | null;
   fullScreen?: boolean;
   onFullScreenChange?: (fullScreen: boolean) => void;
+  onClearPackets?: () => void;
 }
 
 export function PacketVisualizer({
@@ -1021,6 +1074,7 @@ export function PacketVisualizer({
   config,
   fullScreen,
   onFullScreenChange,
+  onClearPackets,
 }: PacketVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1382,6 +1436,16 @@ export function PacketVisualizer({
                   title="Expand nodes apart then contract back - can help untangle the graph"
                 >
                   Oooh Big Stretch!
+                </button>
+                <button
+                  onClick={() => {
+                    data.clearAndReset();
+                    onClearPackets?.();
+                  }}
+                  className="mt-1 px-3 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 rounded text-xs transition-colors"
+                  title="Clear all nodes, links, and packets - reset to initial state"
+                >
+                  Clear &amp; Reset
                 </button>
               </div>
             </>

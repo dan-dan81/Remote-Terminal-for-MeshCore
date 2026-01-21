@@ -9,9 +9,10 @@ interface VisualizerViewProps {
   packets: RawPacket[];
   contacts: Contact[];
   config: RadioConfig | null;
+  onClearPackets?: () => void;
 }
 
-export function VisualizerView({ packets, contacts, config }: VisualizerViewProps) {
+export function VisualizerView({ packets, contacts, config, onClearPackets }: VisualizerViewProps) {
   const [fullScreen, setFullScreen] = useState(false);
 
   return (
@@ -29,7 +30,12 @@ export function VisualizerView({ packets, contacts, config }: VisualizerViewProp
             <TabsTrigger value="packets">Packet Feed</TabsTrigger>
           </TabsList>
           <TabsContent value="visualizer" className="flex-1 m-0 overflow-hidden">
-            <PacketVisualizer packets={packets} contacts={contacts} config={config} />
+            <PacketVisualizer
+              packets={packets}
+              contacts={contacts}
+              config={config}
+              onClearPackets={onClearPackets}
+            />
           </TabsContent>
           <TabsContent value="packets" className="flex-1 m-0 overflow-hidden">
             <RawPacketList packets={packets} />
@@ -52,6 +58,7 @@ export function VisualizerView({ packets, contacts, config }: VisualizerViewProp
             config={config}
             fullScreen={fullScreen}
             onFullScreenChange={setFullScreen}
+            onClearPackets={onClearPackets}
           />
         </div>
 
