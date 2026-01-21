@@ -16,7 +16,7 @@ Backend server + browser interface for MeshCore mesh radio networks. Attach your
 
 This is entirely vibecoded slop -- no warranty of fitness for any purpose. It's been lovingly guided by an engineer with a passion for clean code and good tests, but it's still mostly LLM output, so you may find some bugs.
 
-If extending, have your LLM read the three `CLAUDE.md` files: `./CLAUDE.md`, `./frontend/CLAUDE.md`, and `./app/CLAUDE.md`.
+If extending, have your LLM read the three `AGENTS.md` files: `./AGENTS.md`, `./frontend/AGENTS.md`, and `./app/AGENTS.md`.
 
 ## Requirements
 
