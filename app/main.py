@@ -14,8 +14,10 @@ from app.radio import radio_manager
 from app.radio_sync import (
     drain_pending_messages,
     start_message_polling,
+    start_periodic_advert,
     start_periodic_sync,
     stop_message_polling,
+    stop_periodic_advert,
     stop_periodic_sync,
     sync_and_offload_all,
     sync_radio_time,
@@ -69,6 +71,9 @@ async def lifespan(app: FastAPI):
             advert_result = await radio_manager.meshcore.commands.send_advert(flood=True)
             logger.info("Advertisement sent: %s", advert_result.type)
 
+            # Start periodic advertisement (every hour)
+            start_periodic_advert()
+
             await radio_manager.meshcore.start_auto_message_fetching()
             logger.info("Auto message fetching started")
 
@@ -90,6 +95,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down")
     await radio_manager.stop_connection_monitor()
     await stop_message_polling()
+    await stop_periodic_advert()
     await stop_periodic_sync()
     if radio_manager.meshcore:
         await radio_manager.meshcore.stop_auto_message_fetching()

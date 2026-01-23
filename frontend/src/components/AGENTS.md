@@ -274,6 +274,23 @@ ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (x + panX), dpr * (y + pa
 4. Draw nodes (circles with emojis)
 5. Draw hover tooltip if applicable
 
+## Mouse Interactions
+
+| Action                     | Behavior                                         |
+| -------------------------- | ------------------------------------------------ |
+| Click + drag on node       | Move node to new position (temporarily fixes it) |
+| Release dragged node       | Node returns to force-directed layout            |
+| Click + drag on empty area | Pan the canvas                                   |
+| Scroll wheel               | Zoom in/out                                      |
+| Hover over node            | Shows node details, cursor changes to pointer    |
+
+**Node Dragging Implementation:**
+
+- On mouse down over a node, sets `fx`/`fy` (D3 fixed position) to lock it
+- On mouse move, updates the fixed position to follow cursor
+- On mouse up, clears `fx`/`fy` so node rejoins the simulation
+- Simulation is slightly reheated during drag for responsive feedback
+
 ## Configuration Options
 
 | Option                     | Default | Description                                               |
@@ -303,12 +320,15 @@ PacketVisualizer.tsx
 │   ├── getPacketLabel()
 │   ├── generatePacketKey()
 │   ├── findContactBy*()
-│   └── dedupeConsecutive()
+│   ├── dedupeConsecutive()
+│   ├── analyzeRepeaterTraffic()
+│   └── recordTrafficObservation()
 ├── DATA LAYER HOOK (useVisualizerData)
-│   ├── Refs (nodes, links, particles, simulation, pending, timers)
+│   ├── Refs (nodes, links, particles, simulation, pending, timers, trafficPatterns)
 │   ├── Simulation initialization
 │   ├── Node/link management (addNode, addLink, syncSimulation)
 │   ├── Path building (resolveNode, buildPath)
+│   ├── Traffic pattern analysis (for repeater disambiguation)
 │   └── Packet processing & publishing
 ├── RENDERING FUNCTIONS
 │   ├── renderLinks()

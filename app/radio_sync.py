@@ -29,6 +29,12 @@ _message_poll_task: asyncio.Task | None = None
 # Message poll interval in seconds
 MESSAGE_POLL_INTERVAL = 5
 
+# Periodic advertisement task handle
+_advert_task: asyncio.Task | None = None
+
+# Advertisement interval in seconds (1 hour)
+ADVERT_INTERVAL = 3600
+
 # Counter to pause polling during repeater operations (supports nested pauses)
 _polling_pause_count: int = 0
 
@@ -327,6 +333,69 @@ async def stop_message_polling():
             pass
         _message_poll_task = None
         logger.info("Stopped periodic message polling")
+
+
+async def send_advertisement() -> bool:
+    """Send an advertisement to announce presence on the mesh.
+
+    Returns True if successful, False otherwise.
+    """
+    if not radio_manager.is_connected or radio_manager.meshcore is None:
+        logger.debug("Cannot send advertisement: radio not connected")
+        return False
+
+    try:
+        result = await radio_manager.meshcore.commands.send_advert(flood=True)
+        if result.type == EventType.OK:
+            logger.info("Periodic advertisement sent successfully")
+            return True
+        else:
+            logger.warning("Failed to send advertisement: %s", result.payload)
+            return False
+    except Exception as e:
+        logger.warning("Error sending advertisement: %s", e)
+        return False
+
+
+async def _periodic_advert_loop():
+    """Background task that periodically sends advertisements."""
+    while True:
+        try:
+            await asyncio.sleep(ADVERT_INTERVAL)
+
+            if radio_manager.is_connected:
+                await send_advertisement()
+
+        except asyncio.CancelledError:
+            logger.info("Periodic advertisement task cancelled")
+            break
+        except Exception as e:
+            logger.error("Error in periodic advertisement loop: %s", e)
+
+
+def start_periodic_advert():
+    """Start the periodic advertisement background task."""
+    global _advert_task
+    if _advert_task is None or _advert_task.done():
+        _advert_task = asyncio.create_task(_periodic_advert_loop())
+        logger.info(
+            "Started periodic advertisement (interval: %ds / %d min)",
+            ADVERT_INTERVAL,
+            ADVERT_INTERVAL // 60,
+        )
+
+
+async def stop_periodic_advert():
+    """Stop the periodic advertisement background task."""
+    global _advert_task
+    if _advert_task and not _advert_task.done():
+        _advert_task.cancel()
+        try:
+            await _advert_task
+        except asyncio.CancelledError:
+            pass
+        _advert_task = None
+        logger.info("Stopped periodic advertisement")
 
 
 async def sync_radio_time() -> bool:

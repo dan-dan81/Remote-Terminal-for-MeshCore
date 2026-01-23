@@ -161,6 +161,26 @@ if is_polling_paused():
     print("Polling is currently paused")
 ```
 
+### Periodic Advertisement
+
+The server automatically sends an advertisement every hour to announce presence on the mesh.
+This helps maintain visibility to other nodes and refreshes routing information.
+
+- Started automatically on radio connection
+- Interval: 1 hour (3600 seconds)
+- Uses flood mode for maximum reach
+
+```python
+from app.radio_sync import start_periodic_advert, stop_periodic_advert, send_advertisement
+
+# Start/stop periodic advertising
+start_periodic_advert()  # Started automatically in lifespan
+await stop_periodic_advert()
+
+# Manual advertisement
+await send_advertisement()  # Returns True on success
+```
+
 ## Database Schema
 
 ```sql
