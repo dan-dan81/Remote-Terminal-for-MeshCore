@@ -13,6 +13,12 @@ describe('getAvatarText', () => {
     expect(getAvatarText('Test 😀 More 🎯', 'abc123')).toBe('😀');
   });
 
+  it('returns full flag emoji (not just first regional indicator)', () => {
+    expect(getAvatarText('Jason 🇺🇸', 'abc123')).toBe('🇺🇸');
+    expect(getAvatarText('🇬🇧 London', 'abc123')).toBe('🇬🇧');
+    expect(getAvatarText('Test 🇯🇵 Japan', 'abc123')).toBe('🇯🇵');
+  });
+
   it('returns initials when name has space', () => {
     expect(getAvatarText('John Doe', 'abc123')).toBe('JD');
     expect(getAvatarText('Alice Bob Charlie', 'abc123')).toBe('AB');
