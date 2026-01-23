@@ -162,42 +162,55 @@ When only a 1-byte prefix is known (from packet path bytes), the node is marked 
 
 **Problem:** Multiple physical repeaters can share the same 1-byte prefix (collision). Since packet paths only contain 1-byte hashes, we can't directly distinguish them. However, traffic patterns provide a heuristic.
 
-**Key Insight:** If packets from different sources all route through prefix `32` to the same next hop, it's likely the same physical node. But if `32` routes to different next hops depending on the source, those are likely different physical nodes.
+**Key Insight:** A single physical repeater (even acting as a hub) will have the same sources routing through it regardless of next-hop. But if prefix `32` has completely disjoint sets of sources for different next-hops, those are likely different physical nodes sharing the same prefix.
 
 **Example:**
 
 ```
-ae -> 32 -> ba -> self
-c1 -> 32 -> ba -> self
-d1 -> 32 -> 60 -> self
-d1 -> 32 -> 60 -> self
+ae -> 32 -> ba -> self   (source: ae)
+c1 -> 32 -> ba -> self   (source: c1)
+d1 -> 32 -> 60 -> self   (source: d1)
+e2 -> 32 -> 60 -> self   (source: e2)
 ```
 
-Here we can deduce:
+Analysis:
 
-- The `32` that routes to `ba` is likely one physical repeater
-- The `32` that routes to `60` is likely a DIFFERENT physical repeater
+- Sources {ae, c1} always route through `32` to `ba`
+- Sources {d1, e2} always route through `32` to `60`
+- These source sets are **disjoint** (no overlap)
+- Conclusion: Likely two different physical repeaters sharing prefix `32`
 
-**Algorithm:** When "Split by traffic pattern" is enabled:
+Counter-example (same physical hub):
 
-1. **Intermediate repeaters** (has next hop in path): Node ID includes the next hop suffix
-   - `?32:>ba` - the `32` that routes to `ba`
-   - `?32:>60` - the `32` that routes to `60`
+```
+ae -> 32 -> ba -> self
+ae -> 32 -> 60 -> self   (same source 'ae' routes to different next-hops!)
+```
 
-2. **Final repeaters** (no next hop, connects directly to destination): No suffix added
-   - Stays as simple `?ba`, `?60` etc.
-   - Rationale: The last repeater before you is clearly a single physical node regardless of where traffic originates
+Here source `ae` routes through `32` to BOTH `ba` and `60`. This proves `32` is a single physical hub node with multiple downstream paths. No splitting should occur.
 
-**Why only NEXT hop matters:**
+**Algorithm:** When "Heuristically group repeaters by traffic pattern" is enabled:
 
-- We DON'T key on the previous node because multiple sources going through the same repeater to the same destination = same physical node
-- We DO key on next hop because a repeater routing to different destinations suggests prefix collision
+1. **Record observations** for each ambiguous repeater: `(packetSource, nextHop)` tuples
+2. **Analyze disjointness**: Group sources by their next-hop, check for overlap
+3. **Split conservatively**: Only split when:
+   - Multiple distinct next-hop groups exist
+   - Source sets are completely disjoint (no source appears in multiple groups)
+   - Each group has at least 20 unique sources (conservative threshold)
+4. **Final repeaters** (no next hop, connects directly to self): Never split
+   - Rationale: The last repeater before you is clearly a single physical node
 
 **Node ID format:**
 
-- Without splitting: `?XX` (e.g., `?32`)
-- With splitting (intermediate): `?XX:>YY` (e.g., `?32:>ba`)
-- With splitting (final): `?XX` (unchanged, no suffix)
+- Without splitting (default): `?XX` (e.g., `?32`)
+- With splitting (after evidence threshold met): `?XX:>YY` (e.g., `?32:>ba`)
+- Final repeater: `?XX` (unchanged, no suffix)
+
+**Implementation Notes:**
+
+- Observations are stored with timestamps and pruned after 30 minutes
+- Maximum 200 observations per prefix to limit memory
+- Once split, nodes cannot be un-split (be conservative before splitting)
 
 ## Path Building
 

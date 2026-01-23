@@ -79,6 +79,25 @@ interface ParsedPacket {
   anonRequestPubkey: string | null;
 }
 
+// Traffic pattern tracking for smarter repeater disambiguation
+interface TrafficObservation {
+  source: string; // Node that originated traffic (could be resolved node ID or ambiguous)
+  nextHop: string | null; // Next hop after this repeater (null if final hop before self)
+  timestamp: number;
+}
+
+interface RepeaterTrafficData {
+  prefix: string; // The 1-byte hex prefix (e.g., "32")
+  observations: TrafficObservation[];
+}
+
+// Analysis result for whether to split an ambiguous repeater
+interface RepeaterSplitAnalysis {
+  shouldSplit: boolean;
+  // If shouldSplit, maps nextHop -> the sources that exclusively route through it
+  disjointGroups: Map<string, Set<string>> | null;
+}
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -111,6 +130,12 @@ const PARTICLE_COLOR_MAP: Record<PacketLabel, string> = {
 const PARTICLE_SPEED = 0.008;
 const DEFAULT_OBSERVATION_WINDOW_SEC = 15;
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+
+// Traffic pattern analysis thresholds
+// Be conservative - once split, we can't unsplit, so require strong evidence
+const MIN_OBSERVATIONS_TO_SPLIT = 20; // Need at least this many unique sources per next-hop group
+const MAX_TRAFFIC_OBSERVATIONS = 200; // Per ambiguous prefix, to limit memory
+const TRAFFIC_OBSERVATION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes - old observations are pruned
 
 const LEGEND_ITEMS = [
   { emoji: '🟢', label: 'You', size: 'text-xl' },
@@ -250,6 +275,104 @@ function dedupeConsecutive<T>(arr: T[]): T[] {
   return arr.filter((item, i) => i === 0 || item !== arr[i - 1]);
 }
 
+/**
+ * Analyze traffic patterns for an ambiguous repeater prefix to determine if it
+ * should be split into multiple nodes.
+ *
+ * Logic:
+ * - Group observations by nextHop
+ * - For each nextHop group, collect the set of sources
+ * - If any source appears in multiple nextHop groups → same physical node (hub), don't split
+ * - If source sets are completely disjoint → likely different physical nodes, split
+ *
+ * Returns shouldSplit=true only when we have enough evidence of disjoint routing.
+ */
+function analyzeRepeaterTraffic(data: RepeaterTrafficData): RepeaterSplitAnalysis {
+  const now = Date.now();
+
+  // Filter out old observations
+  const recentObservations = data.observations.filter(
+    (obs) => now - obs.timestamp < TRAFFIC_OBSERVATION_MAX_AGE_MS
+  );
+
+  // Group by nextHop (use "self" for null nextHop - final repeater)
+  const byNextHop = new Map<string, Set<string>>();
+  for (const obs of recentObservations) {
+    const hopKey = obs.nextHop ?? 'self';
+    if (!byNextHop.has(hopKey)) {
+      byNextHop.set(hopKey, new Set());
+    }
+    byNextHop.get(hopKey)!.add(obs.source);
+  }
+
+  // If only one nextHop group, no need to split
+  if (byNextHop.size <= 1) {
+    return { shouldSplit: false, disjointGroups: null };
+  }
+
+  // Check if any source appears in multiple groups (evidence of hub behavior)
+  const allSources = new Map<string, string[]>(); // source -> list of nextHops it uses
+  for (const [nextHop, sources] of byNextHop) {
+    for (const source of sources) {
+      if (!allSources.has(source)) {
+        allSources.set(source, []);
+      }
+      allSources.get(source)!.push(nextHop);
+    }
+  }
+
+  // If any source routes to multiple nextHops, this is a hub - don't split
+  for (const [, nextHops] of allSources) {
+    if (nextHops.length > 1) {
+      return { shouldSplit: false, disjointGroups: null };
+    }
+  }
+
+  // Check if we have enough observations in each group to be confident
+  for (const [, sources] of byNextHop) {
+    if (sources.size < MIN_OBSERVATIONS_TO_SPLIT) {
+      // Not enough evidence yet - be conservative, don't split
+      return { shouldSplit: false, disjointGroups: null };
+    }
+  }
+
+  // Source sets are disjoint and we have enough data - split!
+  return { shouldSplit: true, disjointGroups: byNextHop };
+}
+
+/**
+ * Record a traffic observation for an ambiguous repeater prefix.
+ * Prunes old observations and limits total count.
+ */
+function recordTrafficObservation(
+  trafficData: Map<string, RepeaterTrafficData>,
+  prefix: string,
+  source: string,
+  nextHop: string | null
+): void {
+  const normalizedPrefix = prefix.toLowerCase();
+  const now = Date.now();
+
+  if (!trafficData.has(normalizedPrefix)) {
+    trafficData.set(normalizedPrefix, { prefix: normalizedPrefix, observations: [] });
+  }
+
+  const data = trafficData.get(normalizedPrefix)!;
+
+  // Add new observation
+  data.observations.push({ source, nextHop, timestamp: now });
+
+  // Prune old observations
+  data.observations = data.observations.filter(
+    (obs) => now - obs.timestamp < TRAFFIC_OBSERVATION_MAX_AGE_MS
+  );
+
+  // Limit total count
+  if (data.observations.length > MAX_TRAFFIC_OBSERVATIONS) {
+    data.observations = data.observations.slice(-MAX_TRAFFIC_OBSERVATIONS);
+  }
+}
+
 // =============================================================================
 // DATA LAYER HOOK
 // =============================================================================
@@ -299,6 +422,7 @@ function useVisualizerData({
   const processedRef = useRef<Set<number>>(new Set());
   const pendingRef = useRef<Map<string, PendingPacket>>(new Map());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const trafficPatternsRef = useRef<Map<string, RepeaterTrafficData>>(new Map());
   const speedMultiplierRef = useRef(particleSpeedMultiplier);
   const observationWindowRef = useRef(observationWindowSec * 1000);
   const [stats, setStats] = useState({ processed: 0, animated: 0, nodes: 0, links: 0 });
@@ -405,6 +529,7 @@ function useVisualizerData({
     pendingRef.current.clear();
     timersRef.current.forEach((t) => clearTimeout(t));
     timersRef.current.clear();
+    trafficPatternsRef.current.clear();
     setStats({ processed: 0, animated: 0, nodes: selfNode ? 1 : 0, links: 0 });
   }, [showAmbiguousPaths, showAmbiguousNodes, splitAmbiguousByTraffic]);
 
@@ -495,16 +620,24 @@ function useVisualizerData({
   // Resolve a node from various sources and add to graph
   // trafficContext is used when splitAmbiguousByTraffic is enabled to create
   // separate nodes for ambiguous repeaters based on their position in traffic flow
+  // myPrefix is the user's own 12-char pubkey prefix - if a node matches, return 'self'
+  // trafficContext.packetSource is the original source of the packet (for traffic analysis)
+  // trafficContext.nextPrefix is the next hop after this repeater
   const resolveNode = useCallback(
     (
       source: { type: 'prefix' | 'pubkey' | 'name'; value: string },
       isRepeater: boolean,
       showAmbiguous: boolean,
-      trafficContext?: { prevNode: string | null; nextPrefix: string | null }
+      myPrefix: string | null,
+      trafficContext?: { packetSource: string | null; nextPrefix: string | null }
     ): string | null => {
       if (source.type === 'pubkey') {
         if (source.value.length < 12) return null;
         const nodeId = source.value.slice(0, 12).toLowerCase();
+        // Check if this is our own identity - return 'self' instead of creating duplicate node
+        if (myPrefix && nodeId === myPrefix) {
+          return 'self';
+        }
         const contact = contacts.find((c) => c.public_key.toLowerCase().startsWith(nodeId));
         addNode(
           nodeId,
@@ -521,6 +654,10 @@ function useVisualizerData({
         const contact = findContactByName(source.value, contacts);
         if (contact) {
           const nodeId = contact.public_key.slice(0, 12).toLowerCase();
+          // Check if this is our own identity
+          if (myPrefix && nodeId === myPrefix) {
+            return 'self';
+          }
           addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
           return nodeId;
         }
@@ -533,6 +670,10 @@ function useVisualizerData({
       const contact = findContactByPrefix(source.value, contacts);
       if (contact) {
         const nodeId = contact.public_key.slice(0, 12).toLowerCase();
+        // Check if this is our own identity
+        if (myPrefix && nodeId === myPrefix) {
+          return 'self';
+        }
         addNode(nodeId, contact.name, getNodeType(contact), false, undefined, contact.last_seen);
         return nodeId;
       }
@@ -552,7 +693,7 @@ function useVisualizerData({
         }
 
         // Multiple matches or no matches - create ambiguous node
-        // When splitAmbiguousByTraffic is enabled for repeaters, include traffic context in node ID
+        // When splitAmbiguousByTraffic is enabled for repeaters, use traffic pattern analysis
         if (filtered.length > 1 || (filtered.length === 0 && isRepeater)) {
           const names = filtered.map((c) => c.name || c.public_key.slice(0, 8));
           const lastSeen = filtered.reduce(
@@ -560,23 +701,38 @@ function useVisualizerData({
             null as number | null
           );
 
-          // Build node ID - optionally include traffic context for repeaters
+          // Default: simple ambiguous node ID
           let nodeId = `?${source.value.toLowerCase()}`;
           let displayName = source.value.toUpperCase();
 
+          // When splitAmbiguousByTraffic is enabled, use traffic pattern analysis
           if (splitAmbiguousByTraffic && isRepeater && trafficContext) {
-            // Only split based on NEXT hop, not previous.
-            // Key insight: if a node always routes to the same next hop, it's likely
-            // the same physical node regardless of where traffic originates.
-            // Don't add context for the last repeater (nextPrefix=null) since that's
-            // clearly a single node near the user connecting to self.
-            if (trafficContext.nextPrefix) {
-              const nextShort = trafficContext.nextPrefix.slice(0, 2).toLowerCase();
-              nodeId = `?${source.value.toLowerCase()}:>${nextShort}`;
-              displayName = `${source.value.toUpperCase()}:>${nextShort}`;
+            const prefix = source.value.toLowerCase();
+
+            // Record observation for traffic analysis (only if we have a packet source)
+            if (trafficContext.packetSource) {
+              recordTrafficObservation(
+                trafficPatternsRef.current,
+                prefix,
+                trafficContext.packetSource,
+                trafficContext.nextPrefix
+              );
             }
-            // When nextPrefix is null, keep the simple ?XX ID - all traffic
-            // through this repeater to the destination is the same physical node
+
+            // Analyze traffic patterns to decide if we should split
+            const trafficData = trafficPatternsRef.current.get(prefix);
+            if (trafficData) {
+              const analysis = analyzeRepeaterTraffic(trafficData);
+
+              if (analysis.shouldSplit && trafficContext.nextPrefix) {
+                // Strong evidence of disjoint routing - split by next hop
+                const nextShort = trafficContext.nextPrefix.slice(0, 2).toLowerCase();
+                nodeId = `?${prefix}:>${nextShort}`;
+                displayName = `${source.value.toUpperCase()}:>${nextShort}`;
+              }
+              // If analysis says don't split, or this is the final repeater (nextPrefix=null),
+              // keep the simple ?XX ID
+            }
           }
 
           addNode(
@@ -600,49 +756,75 @@ function useVisualizerData({
   const buildPath = useCallback(
     (parsed: ParsedPacket, packet: RawPacket, myPrefix: string | null): string[] => {
       const path: string[] = [];
+      let packetSource: string | null = null;
 
-      // Add source
+      // Add source - and track it for traffic pattern analysis
       if (parsed.payloadType === PayloadType.Advert && parsed.advertPubkey) {
-        const nodeId = resolveNode({ type: 'pubkey', value: parsed.advertPubkey }, false, false);
-        if (nodeId) path.push(nodeId);
+        const nodeId = resolveNode(
+          { type: 'pubkey', value: parsed.advertPubkey },
+          false,
+          false,
+          myPrefix
+        );
+        if (nodeId) {
+          path.push(nodeId);
+          packetSource = nodeId;
+        }
       } else if (parsed.payloadType === PayloadType.AnonRequest && parsed.anonRequestPubkey) {
         // AnonRequest packets contain the full sender public key
         const nodeId = resolveNode(
           { type: 'pubkey', value: parsed.anonRequestPubkey },
           false,
-          false
+          false,
+          myPrefix
         );
-        if (nodeId) path.push(nodeId);
+        if (nodeId) {
+          path.push(nodeId);
+          packetSource = nodeId;
+        }
       } else if (parsed.payloadType === PayloadType.TextMessage && parsed.srcHash) {
         if (myPrefix && parsed.srcHash.toLowerCase() === myPrefix) {
           path.push('self');
+          packetSource = 'self';
         } else {
           const nodeId = resolveNode(
             { type: 'prefix', value: parsed.srcHash },
             false,
-            showAmbiguousNodes
+            showAmbiguousNodes,
+            myPrefix
           );
-          if (nodeId) path.push(nodeId);
+          if (nodeId) {
+            path.push(nodeId);
+            packetSource = nodeId;
+          }
         }
       } else if (parsed.payloadType === PayloadType.GroupText) {
         const senderName = parsed.groupTextSender || packet.decrypted_info?.sender;
         if (senderName) {
-          const nodeId = resolveNode({ type: 'name', value: senderName }, false, false);
-          if (nodeId) path.push(nodeId);
+          const nodeId = resolveNode({ type: 'name', value: senderName }, false, false, myPrefix);
+          if (nodeId) {
+            path.push(nodeId);
+            packetSource = nodeId;
+          }
         }
       }
 
       // Add path bytes (repeaters)
+      // Pass packetSource for traffic pattern analysis (used to track which sources route through which repeaters)
       for (let i = 0; i < parsed.pathBytes.length; i++) {
         const hexPrefix = parsed.pathBytes[i];
-        // Pass traffic context for splitAmbiguousByTraffic mode
-        const prevNode = path[path.length - 1] || null;
         const nextPrefix = parsed.pathBytes[i + 1] || null;
 
-        const nodeId = resolveNode({ type: 'prefix', value: hexPrefix }, true, showAmbiguousPaths, {
-          prevNode,
-          nextPrefix,
-        });
+        const nodeId = resolveNode(
+          { type: 'prefix', value: hexPrefix },
+          true,
+          showAmbiguousPaths,
+          myPrefix,
+          {
+            packetSource,
+            nextPrefix,
+          }
+        );
         if (nodeId) path.push(nodeId);
       }
 
@@ -654,7 +836,8 @@ function useVisualizerData({
           const nodeId = resolveNode(
             { type: 'prefix', value: parsed.dstHash },
             false,
-            showAmbiguousNodes
+            showAmbiguousNodes,
+            myPrefix
           );
           if (nodeId) path.push(nodeId);
           else path.push('self');
@@ -873,6 +1056,9 @@ function useVisualizerData({
 
     // Clear processed packet IDs so they can be re-processed if needed
     processedRef.current.clear();
+
+    // Clear traffic patterns
+    trafficPatternsRef.current.clear();
 
     // Clear particles
     particlesRef.current.length = 0;
@@ -1095,6 +1281,7 @@ export function PacketVisualizer({
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const isDraggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
+  const draggedNodeRef = useRef<GraphNode | null>(null);
 
   // Hover
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -1223,10 +1410,31 @@ export function PacketVisualizer({
     [data.nodes]
   );
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDraggingRef.current = true;
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
-  }, []);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const pos = screenToGraph(e.clientX - rect.left, e.clientY - rect.top);
+      const node = findNodeAt(pos.x, pos.y);
+
+      if (node) {
+        // Start dragging this node
+        draggedNodeRef.current = node;
+        // Fix the node's position while dragging
+        node.fx = node.x;
+        node.fy = node.y;
+        // Reheat simulation slightly for responsive feedback
+        data.simulation?.alpha(0.3).restart();
+      } else {
+        // Start panning
+        isDraggingRef.current = true;
+      }
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    },
+    [screenToGraph, findNodeAt, data.simulation]
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -1235,8 +1443,18 @@ export function PacketVisualizer({
 
       const rect = canvas.getBoundingClientRect();
       const pos = screenToGraph(e.clientX - rect.left, e.clientY - rect.top);
+
+      // Update hover state
       setHoveredNodeId(findNodeAt(pos.x, pos.y)?.id || null);
 
+      // Handle node dragging
+      if (draggedNodeRef.current) {
+        draggedNodeRef.current.fx = pos.x;
+        draggedNodeRef.current.fy = pos.y;
+        return;
+      }
+
+      // Handle canvas panning
       if (!isDraggingRef.current) return;
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
@@ -1247,9 +1465,21 @@ export function PacketVisualizer({
   );
 
   const handleMouseUp = useCallback(() => {
+    if (draggedNodeRef.current) {
+      // Release the node - clear fixed position so it can move freely again
+      draggedNodeRef.current.fx = null;
+      draggedNodeRef.current.fy = null;
+      draggedNodeRef.current = null;
+    }
     isDraggingRef.current = false;
   }, []);
+
   const handleMouseLeave = useCallback(() => {
+    if (draggedNodeRef.current) {
+      draggedNodeRef.current.fx = null;
+      draggedNodeRef.current.fy = null;
+      draggedNodeRef.current = null;
+    }
     isDraggingRef.current = false;
     setHoveredNodeId(null);
   }, []);
@@ -1267,12 +1497,19 @@ export function PacketVisualizer({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  // Determine cursor based on state
+  const getCursor = () => {
+    if (draggedNodeRef.current) return 'grabbing';
+    if (hoveredNodeId) return 'pointer';
+    return 'grab';
+  };
+
   return (
     <div ref={containerRef} className="w-full h-full bg-background relative overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
-        style={{ display: 'block' }}
+        className="w-full h-full"
+        style={{ display: 'block', cursor: getCursor() }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
