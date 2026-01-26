@@ -554,7 +554,7 @@ export function SettingsModal({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   How often to automatically advertise presence. Set to 0 to disable. Recommended:
-                  3600 (1 hour) or higher.
+                  86400 (24 hours) or higher.
                 </p>
               </div>
 
