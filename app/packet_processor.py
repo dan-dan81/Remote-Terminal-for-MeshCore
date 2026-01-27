@@ -212,6 +212,16 @@ async def create_dm_message_from_decrypted(
 
     Returns the message ID if created, None if duplicate.
     """
+    # Extract txt_type from flags (lower 4 bits)
+    # txt_type=1 is CLI response - don't store these in chat history
+    txt_type = decrypted.flags & 0x0F
+    if txt_type == 1:
+        logger.debug(
+            "Skipping CLI response from %s (txt_type=1)",
+            their_public_key[:12],
+        )
+        return None
+
     received = received_at or int(time.time())
 
     # conversation_key is always the other party's public key

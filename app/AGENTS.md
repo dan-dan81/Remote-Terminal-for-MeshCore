@@ -81,11 +81,15 @@ Radio events flow through `event_handlers.py`:
 
 | Event | Handler | Actions |
 |-------|---------|---------|
-| `CONTACT_MSG_RECV` | `on_contact_message` | Store message, update contact last_seen, broadcast via WS |
-| `CHANNEL_MSG_RECV` | `on_channel_message` | Store message, broadcast via WS |
-| `RAW_DATA` | `on_raw_data` | Store packet, try decrypt with all channel keys, detect repeats |
-| `ADVERTISEMENT` | `on_advertisement` | Upsert contact with location |
+| `CONTACT_MSG_RECV` | `on_contact_message` | **Fallback only** - stores DM if packet processor didn't handle it |
+| `RX_LOG_DATA` | `on_rx_log_data` | Store packet, decrypt channels/DMs, broadcast via WS |
+| `PATH_UPDATE` | `on_path_update` | Update contact path info |
+| `NEW_CONTACT` | `on_new_contact` | Sync contact from radio's internal database |
 | `ACK` | `on_ack` | Match pending ACKs, mark message acked, broadcast |
+
+**Note on DM handling**: Direct messages are primarily handled by the packet processor via
+`RX_LOG_DATA`, which decrypts using the exported private key. The `CONTACT_MSG_RECV` handler
+exists as a fallback for radios without `ENABLE_PRIVATE_KEY_EXPORT=1` in firmware.
 
 ### WebSocket Broadcasting
 
@@ -333,9 +337,18 @@ Direct messages use ECDH key exchange (Ed25519 → X25519) for shared secret der
 via `keystore.py`. This enables server-side DM decryption even when contacts aren't loaded
 on the radio.
 
-**Real-time decryption**: When a `RAW_DATA` event contains a `TEXT_MESSAGE` packet, the
-`packet_processor.py` attempts to decrypt it using known contact public keys and the
-stored private key.
+**Primary path (packet processor)**: When an `RX_LOG_DATA` event contains a `TEXT_MESSAGE`
+packet, `packet_processor.py` handles the complete flow:
+1. Decrypts using known contact public keys and stored private key
+2. Filters CLI responses (txt_type=1 in flags)
+3. Stores message in database
+4. Broadcasts via WebSocket
+5. Updates contact's last_contacted timestamp
+6. Triggers bot if enabled
+
+**Fallback path (event handler)**: If the packet processor can't decrypt (no private key
+export, unknown contact), `on_contact_message` handles DMs from the MeshCore library's
+`CONTACT_MSG_RECV` event. DB deduplication prevents double-storage when both paths fire.
 
 **Historical decryption**: When creating a contact with `try_historical=True`, the server
 attempts to decrypt all stored `TEXT_MESSAGE` packets for that contact.
@@ -635,10 +648,18 @@ reboot                          # Restart repeater
 
 ### CLI Response Filtering
 
-CLI responses have `txt_type=1` (vs `txt_type=0` for normal messages). The event handler
-in `event_handlers.py` skips these to prevent duplicates—the command endpoint returns
-the response directly, so we don't also store/broadcast via WebSocket.
+CLI responses have `txt_type=1` (vs `txt_type=0` for normal messages). Both DM handling
+paths filter these to prevent storage—the command endpoint returns the response directly.
 
+**Packet processor path** (primary):
+```python
+# In create_dm_message_from_decrypted()
+txt_type = decrypted.flags & 0x0F
+if txt_type == 1:
+    return None  # Skip CLI responses
+```
+
+**Event handler path** (fallback):
 ```python
 # In on_contact_message()
 txt_type = payload.get("txt_type", 0)

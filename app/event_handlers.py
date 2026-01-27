@@ -47,21 +47,25 @@ def _cleanup_expired_acks() -> None:
 
 
 async def on_contact_message(event: "Event") -> None:
-    """Handle incoming direct messages.
+    """Handle incoming direct messages from MeshCore library.
 
-    Direct messages are decrypted by MeshCore library using ECDH key exchange.
-    The packet processor cannot decrypt these without the node's private key.
+    NOTE: DMs are primarily handled by the packet processor via RX_LOG_DATA,
+    which decrypts using our exported private key. This handler exists as a
+    fallback for cases where:
+    1. The private key couldn't be exported (firmware without ENABLE_PRIVATE_KEY_EXPORT)
+    2. The packet processor couldn't match the sender to a known contact
+
+    The packet processor handles: decryption, storage, broadcast, bot trigger.
+    This handler only stores if the packet processor didn't already handle it
+    (detected via INSERT OR IGNORE returning None for duplicates).
     """
     payload = event.payload
 
     # Skip CLI command responses (txt_type=1) - these are handled by the command endpoint
-    # and should not be stored in the database or broadcast via WebSocket
     txt_type = payload.get("txt_type", 0)
     if txt_type == 1:
         logger.debug("Skipping CLI response from %s (txt_type=1)", payload.get("pubkey_prefix"))
         return
-
-    logger.debug("Received direct message from %s", payload.get("pubkey_prefix"))
 
     # Get full public key if available, otherwise use prefix
     sender_pubkey = payload.get("public_key") or payload.get("pubkey_prefix", "")
@@ -74,6 +78,7 @@ async def on_contact_message(event: "Event") -> None:
             sender_pubkey = contact.public_key
 
     # Try to create message - INSERT OR IGNORE handles duplicates atomically
+    # If the packet processor already stored this message, this returns None
     msg_id = await MessageRepository.create(
         msg_type="PRIV",
         text=payload.get("text", ""),
@@ -81,21 +86,24 @@ async def on_contact_message(event: "Event") -> None:
         sender_timestamp=payload.get("sender_timestamp"),
         received_at=received_at,
         path=payload.get("path"),
-        txt_type=payload.get("txt_type", 0),
+        txt_type=txt_type,
         signature=payload.get("signature"),
     )
 
     if msg_id is None:
-        # Duplicate message (same content from same sender) - skip broadcast
-        logger.debug("Duplicate direct message from %s ignored", sender_pubkey[:12])
+        # Already handled by packet processor (or exact duplicate) - nothing more to do
+        logger.debug("DM from %s already processed by packet processor", sender_pubkey[:12])
         return
 
+    # If we get here, the packet processor didn't handle this message
+    # (likely because private key export is not available)
+    logger.debug("DM from %s handled by event handler (fallback path)", sender_pubkey[:12])
+
     # Build paths array for broadcast
-    # Use "is not None" to include empty string (direct/0-hop messages)
     path = payload.get("path")
     paths = [{"path": path or "", "received_at": received_at}] if path is not None else None
 
-    # Broadcast only genuinely new messages
+    # Broadcast the new message
     broadcast_event(
         "message",
         {
@@ -106,19 +114,19 @@ async def on_contact_message(event: "Event") -> None:
             "sender_timestamp": payload.get("sender_timestamp"),
             "received_at": received_at,
             "paths": paths,
-            "txt_type": payload.get("txt_type", 0),
+            "txt_type": txt_type,
             "signature": payload.get("signature"),
             "outgoing": False,
             "acked": 0,
         },
     )
 
-    # Update contact last_seen and last_contacted
+    # Update contact last_contacted
     contact = await ContactRepository.get_by_key_prefix(sender_pubkey)
     if contact:
         await ContactRepository.update_last_contacted(contact.public_key, received_at)
 
-    # Run bot if enabled (for non-CLI messages)
+    # Run bot if enabled
     from app.bot import run_bot_for_message
 
     await run_bot_for_message(

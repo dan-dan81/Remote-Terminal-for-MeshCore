@@ -941,3 +941,95 @@ class TestDMDecryptionFunction:
         # Verify raw packet is linked
         undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
         assert packet_id not in [p.id for p in undecrypted]
+
+
+class TestCLIResponseFiltering:
+    """Test that CLI responses (txt_type=1) are not stored in chat history."""
+
+    A1B2C3_PUB = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+    FACE12_PUB = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
+
+    @pytest.mark.asyncio
+    async def test_cli_response_not_stored(self, test_db, captured_broadcasts):
+        """CLI responses (flags & 0x0F == 1) should not be stored in database."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+        from app.repository import MessageRepository, RawPacketRepository
+
+        # Store a raw packet first
+        packet_id, _ = await RawPacketRepository.create(b"\x09\x00test", 1700000000)
+
+        # Create a DecryptedDirectMessage with flags=1 (CLI response)
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=1,  # txt_type=1 (CLI response)
+            message="cli response: version 1.0",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+            )
+
+        # Should return None (not stored)
+        assert msg_id is None
+
+        # Should not broadcast
+        assert len(broadcasts) == 0
+
+        # Should not be in database
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+        )
+        assert len(messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_normal_message_still_stored(self, test_db, captured_broadcasts):
+        """Normal messages (flags & 0x0F == 0) should still be stored."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+        from app.repository import MessageRepository, RawPacketRepository
+
+        packet_id, _ = await RawPacketRepository.create(b"\x09\x00test2", 1700000000)
+
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,  # txt_type=0 (normal message)
+            message="Hello, world!",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+            )
+
+        # Should return message ID
+        assert msg_id is not None
+
+        # Should broadcast
+        message_broadcasts = [b for b in broadcasts if b["type"] == "message"]
+        assert len(message_broadcasts) == 1
+
+        # Should be in database
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+        )
+        assert len(messages) == 1
