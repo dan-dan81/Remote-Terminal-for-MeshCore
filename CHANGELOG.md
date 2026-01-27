@@ -1,3 +1,11 @@
+## [1.6.0] - 2026-01-26
+
+Feature: Visualizer: extract public key from AnonReq, add heuristic repeater disambiguation, add reset button, draggable nodes
+Feature: Customizable advertising interval
+Feature: In-app bot setup
+Bugfix: Force contact onto radio before DM send
+Misc: Remove unused code
+
 ## [1.5.0] - 2026-01-19
 
 Feature: Network visualizer
