@@ -160,24 +160,6 @@ class ContactRepository:
         await db.conn.commit()
 
     @staticmethod
-    async def clear_all_on_radio() -> None:
-        """Clear the on_radio flag for all contacts."""
-        await db.conn.execute("UPDATE contacts SET on_radio = 0")
-        await db.conn.commit()
-
-    @staticmethod
-    async def set_multiple_on_radio(public_keys: list[str], on_radio: bool = True) -> None:
-        """Set on_radio flag for multiple contacts."""
-        if not public_keys:
-            return
-        placeholders = ",".join("?" * len(public_keys))
-        await db.conn.execute(
-            f"UPDATE contacts SET on_radio = ? WHERE public_key IN ({placeholders})",
-            [on_radio] + public_keys,
-        )
-        await db.conn.commit()
-
-    @staticmethod
     async def update_last_read_at(public_key: str, timestamp: int | None = None) -> bool:
         """Update the last_read_at timestamp for a contact.
 
@@ -243,24 +225,6 @@ class ChannelRepository:
             )
             for row in rows
         ]
-
-    @staticmethod
-    async def get_by_name(name: str) -> Channel | None:
-        """Get a channel by name."""
-        cursor = await db.conn.execute(
-            "SELECT key, name, is_hashtag, on_radio, last_read_at FROM channels WHERE name = ?",
-            (name,),
-        )
-        row = await cursor.fetchone()
-        if row:
-            return Channel(
-                key=row["key"],
-                name=row["name"],
-                is_hashtag=bool(row["is_hashtag"]),
-                on_radio=bool(row["on_radio"]),
-                last_read_at=row["last_read_at"],
-            )
-        return None
 
     @staticmethod
     async def delete(key: str) -> None:

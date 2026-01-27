@@ -6,9 +6,6 @@
 /** 64-character hex string identifying a contact/node */
 export type PublicKey = string;
 
-/** 12-character hex prefix of a public key (used in message routing) */
-export type PubkeyPrefix = string;
-
 /** 32-character hex string identifying a channel */
 export type ChannelKey = string;
 

@@ -93,16 +93,6 @@ export const api = {
   // Contacts
   getContacts: (limit = 100, offset = 0) =>
     fetchJson<Contact[]>(`/contacts?limit=${limit}&offset=${offset}`),
-  getContact: (publicKey: string) => fetchJson<Contact>(`/contacts/${publicKey}`),
-  syncContacts: () => fetchJson<{ synced: number }>('/contacts/sync', { method: 'POST' }),
-  addContactToRadio: (publicKey: string) =>
-    fetchJson<{ status: string }>(`/contacts/${publicKey}/add-to-radio`, {
-      method: 'POST',
-    }),
-  removeContactFromRadio: (publicKey: string) =>
-    fetchJson<{ status: string }>(`/contacts/${publicKey}/remove-from-radio`, {
-      method: 'POST',
-    }),
   deleteContact: (publicKey: string) =>
     fetchJson<{ status: string }>(`/contacts/${publicKey}`, {
       method: 'DELETE',
@@ -129,13 +119,11 @@ export const api = {
 
   // Channels
   getChannels: () => fetchJson<Channel[]>('/channels'),
-  getChannel: (key: string) => fetchJson<Channel>(`/channels/${key}`),
   createChannel: (name: string, key?: string) =>
     fetchJson<Channel>('/channels', {
       method: 'POST',
       body: JSON.stringify({ name, key }),
     }),
-  syncChannels: () => fetchJson<{ synced: number }>('/channels/sync', { method: 'POST' }),
   deleteChannel: (key: string) =>
     fetchJson<{ status: string }>(`/channels/${key}`, { method: 'DELETE' }),
   markChannelRead: (key: string) =>
@@ -215,16 +203,6 @@ export const api = {
     }),
 
   // Favorites
-  addFavorite: (type: Favorite['type'], id: string) =>
-    fetchJson<AppSettings>('/settings/favorites', {
-      method: 'POST',
-      body: JSON.stringify({ type, id }),
-    }),
-  removeFavorite: (type: Favorite['type'], id: string) =>
-    fetchJson<AppSettings>('/settings/favorites', {
-      method: 'DELETE',
-      body: JSON.stringify({ type, id }),
-    }),
   toggleFavorite: (type: Favorite['type'], id: string) =>
     fetchJson<AppSettings>('/settings/favorites/toggle', {
       method: 'POST',

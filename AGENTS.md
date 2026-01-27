@@ -119,7 +119,6 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 ├── references/meshcore_py/ # MeshCore Python library
 ├── tests/                  # Backend tests (pytest)
 ├── data/                   # SQLite database (runtime)
-├── integration_test.html   # Browser-based API tests
 └── pyproject.toml          # Python dependencies
 ```
 
@@ -183,10 +182,6 @@ Key test files:
 cd frontend
 npm run test:run
 ```
-
-### Integration Tests
-
-Open `integration_test.html` in a browser with the backend running.
 
 ### Before Completing Changes
 
