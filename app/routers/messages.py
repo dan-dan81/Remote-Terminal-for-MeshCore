@@ -76,16 +76,20 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
 
     logger.info("Sending direct message to %s", db_contact.public_key[:12])
 
+    # Capture timestamp BEFORE sending so we can pass the same value to both the radio
+    # and the database. This ensures consistency for deduplication.
+    now = int(time.time())
+
     result = await mc.commands.send_msg(
         dst=contact,
         msg=request.text,
+        timestamp=now,
     )
 
     if result.type == EventType.ERROR:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
 
     # Store outgoing message
-    now = int(time.time())
     message_id = await MessageRepository.create(
         msg_type="PRIV",
         text=request.text,
@@ -183,7 +187,7 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
     result = await mc.commands.send_chan_msg(
         chan=TEMP_RADIO_SLOT,
         msg=request.text,
-        timestamp=now,
+        timestamp=now.to_bytes(4, "little"),  # Pass as bytes for compatibility
     )
 
     if result.type == EventType.ERROR:
