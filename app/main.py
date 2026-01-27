@@ -66,10 +66,13 @@ async def lifespan(app: FastAPI):
             # Start periodic sync
             start_periodic_sync()
 
-            # Send advertisement to announce our presence
-            logger.info("Sending startup advertisement...")
-            advert_result = await radio_manager.meshcore.commands.send_advert(flood=True)
-            logger.info("Advertisement sent: %s", advert_result.type)
+            # Send advertisement to announce our presence (if enabled and not throttled)
+            from app.radio_sync import send_advertisement
+
+            if await send_advertisement():
+                logger.info("Startup advertisement sent")
+            else:
+                logger.debug("Startup advertisement skipped (disabled or throttled)")
 
             # Start periodic advertisement (every hour)
             start_periodic_advert()
