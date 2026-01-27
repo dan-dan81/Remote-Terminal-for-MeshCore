@@ -3,7 +3,7 @@ Bot execution module for automatic message responses.
 
 This module provides functionality for executing user-defined Python code
 in response to incoming messages. The user's code can process message data
-and optionally return a response string.
+and optionally return a response string or a list of strings.
 
 SECURITY WARNING: This executes arbitrary Python code provided by the user.
 It should only be enabled on trusted systems where the user understands

@@ -175,9 +175,15 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
 
     logger.info("Sending channel message to %s: %s", db_channel.name, request.text[:50])
 
+    # Capture timestamp BEFORE sending so we can pass the same value to both the radio
+    # and the database. This ensures the echo's timestamp matches our stored message
+    # for proper deduplication.
+    now = int(time.time())
+
     result = await mc.commands.send_chan_msg(
         chan=TEMP_RADIO_SLOT,
         msg=request.text,
+        timestamp=now,
     )
 
     if result.type == EventType.ERROR:
@@ -186,7 +192,6 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
     # Store outgoing message with sender prefix (to match echo format)
     # The radio includes "SenderName: " prefix when broadcasting, so we store it the same way
     # to enable proper deduplication when the echo comes back
-    now = int(time.time())
     channel_key_upper = request.channel_key.upper()
     radio_name = mc.self_info.get("name", "") if mc.self_info else ""
     text_with_sender = f"{radio_name}: {request.text}" if radio_name else request.text
