@@ -204,6 +204,9 @@ class TelemetryResponse(BaseModel):
         default_factory=list, description="List of neighbors seen by repeater"
     )
     acl: list[AclEntry] = Field(default_factory=list, description="Access control list")
+    clock_output: str | None = Field(
+        default=None, description="Output from 'clock' command (or error message)"
+    )
 
 
 class CommandRequest(BaseModel):

@@ -78,6 +78,7 @@ describe('formatTelemetry', () => {
       full_events: 0,
       neighbors: [],
       acl: [],
+      clock_output: null,
     };
 
     const result = formatTelemetry(telemetry);
@@ -119,6 +120,7 @@ describe('formatTelemetry', () => {
       full_events: 0,
       neighbors: [],
       acl: [],
+      clock_output: null,
     };
 
     const result = formatTelemetry(telemetry);

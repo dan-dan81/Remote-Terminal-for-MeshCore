@@ -212,13 +212,14 @@ async def create_dm_message_from_decrypted(
 
     Returns the message ID if created, None if duplicate.
     """
-    # Extract txt_type from flags (lower 4 bits)
-    # txt_type=1 is CLI response - don't store these in chat history
-    txt_type = decrypted.flags & 0x0F
-    if txt_type == 1:
+    # Check if sender is a repeater - repeaters only send CLI responses, not chat messages.
+    # CLI responses are handled by the command endpoint, not stored in chat history.
+    contact = await ContactRepository.get_by_key_or_prefix(their_public_key)
+    if contact and contact.type == CONTACT_TYPE_REPEATER:
         logger.debug(
-            "Skipping CLI response from %s (txt_type=1)",
+            "Skipping message from repeater %s (CLI responses not stored): %s",
             their_public_key[:12],
+            (decrypted.message or "")[:50],
         )
         return None
 

@@ -361,8 +361,49 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
                 )
             )
 
+    # Fetch clock output (up to 2 attempts)
+    # Must pause polling and stop auto-fetch to prevent race condition where
+    # the CLI response is consumed before we can call get_msg()
+    logger.info("Fetching clock from repeater %s", contact.public_key[:12])
+    clock_output: str | None = None
+
+    async with pause_polling():
+        await mc.stop_auto_message_fetching()
+        try:
+            for attempt in range(1, 3):
+                logger.debug("Clock request attempt %d/2", attempt)
+                try:
+                    send_result = await mc.commands.send_cmd(contact.public_key, "clock")
+                    if send_result.type == EventType.ERROR:
+                        logger.debug("Clock command send error: %s", send_result.payload)
+                        continue
+
+                    # Wait for response
+                    wait_result = await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=5.0)
+                    if wait_result is None:
+                        logger.debug("Clock request timeout, retrying...")
+                        continue
+
+                    response_event = await mc.commands.get_msg()
+                    if response_event.type == EventType.ERROR:
+                        logger.debug("Clock get_msg error: %s", response_event.payload)
+                        continue
+
+                    clock_output = response_event.payload.get("text", "")
+                    logger.info("Received clock output: %s", clock_output)
+                    break
+                except Exception as e:
+                    logger.debug("Clock request exception: %s", e)
+                    continue
+        finally:
+            await mc.start_auto_message_fetching()
+
+    if clock_output is None:
+        clock_output = "Unable to fetch `clock` output (repeater did not respond)"
+
     # Convert raw telemetry to response format
     # bat is in mV, convert to V (e.g., 3775 -> 3.775)
+
     return TelemetryResponse(
         pubkey_prefix=status.get("pubkey_pre", contact.public_key[:12]),
         battery_volts=status.get("bat", 0) / 1000.0,
@@ -384,6 +425,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         full_events=status.get("full_evts", 0),
         neighbors=neighbors,
         acl=acl_entries,
+        clock_output=clock_output,
     )
 
 

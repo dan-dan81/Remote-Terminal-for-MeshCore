@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from meshcore import EventType
 
-from app.models import Contact
+from app.models import CONTACT_TYPE_REPEATER, Contact
 from app.packet_processor import process_raw_packet
 from app.repository import ContactRepository, MessageRepository
 from app.websocket import broadcast_event
@@ -71,11 +71,20 @@ async def on_contact_message(event: "Event") -> None:
     sender_pubkey = payload.get("public_key") or payload.get("pubkey_prefix", "")
     received_at = int(time.time())
 
-    # Look up full public key from contact database if we only have prefix
-    if len(sender_pubkey) < 64:
-        contact = await ContactRepository.get_by_key_prefix(sender_pubkey)
-        if contact:
-            sender_pubkey = contact.public_key
+    # Look up contact from database - use prefix lookup only if needed
+    # (get_by_key_or_prefix does exact match first, then prefix fallback)
+    contact = await ContactRepository.get_by_key_or_prefix(sender_pubkey)
+    if contact:
+        sender_pubkey = contact.public_key
+
+        # Skip messages from repeaters - they only send CLI responses, not chat messages.
+        # CLI responses are handled by the command endpoint and txt_type filter above.
+        if contact.type == CONTACT_TYPE_REPEATER:
+            logger.debug(
+                "Skipping message from repeater %s (not stored in chat history)",
+                sender_pubkey[:12],
+            )
+            return
 
     # Try to create message - INSERT OR IGNORE handles duplicates atomically
     # If the packet processor already stored this message, this returns None
@@ -121,8 +130,7 @@ async def on_contact_message(event: "Event") -> None:
         },
     )
 
-    # Update contact last_contacted
-    contact = await ContactRepository.get_by_key_prefix(sender_pubkey)
+    # Update contact last_contacted (contact was already fetched above)
     if contact:
         await ContactRepository.update_last_contacted(contact.public_key, received_at)
 

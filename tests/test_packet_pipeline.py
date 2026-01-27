@@ -943,26 +943,47 @@ class TestDMDecryptionFunction:
         assert packet_id not in [p.id for p in undecrypted]
 
 
-class TestCLIResponseFiltering:
-    """Test that CLI responses (txt_type=1) are not stored in chat history."""
+class TestRepeaterMessageFiltering:
+    """Test that messages from repeaters are not stored in chat history.
 
-    A1B2C3_PUB = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
-    FACE12_PUB = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
+    Repeaters only send CLI responses (not chat messages), and these are handled
+    by the command endpoint. The packet processor filters them out based on
+    contact type to prevent duplicate storage.
+    """
+
+    # A repeater contact
+    REPEATER_PUB = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+    # A normal client contact
+    CLIENT_PUB = "b2c3d4e4cb0a6fb9816ca956ff22dd7f12e2e5adbbf5e233bd8232774d6cffe8"
+    # Our public key
+    OUR_PUB = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
 
     @pytest.mark.asyncio
-    async def test_cli_response_not_stored(self, test_db, captured_broadcasts):
-        """CLI responses (flags & 0x0F == 1) should not be stored in database."""
+    async def test_repeater_message_not_stored(self, test_db, captured_broadcasts):
+        """Messages from repeaters should not be stored in database."""
         from app.decoder import DecryptedDirectMessage
+        from app.models import CONTACT_TYPE_REPEATER
         from app.packet_processor import create_dm_message_from_decrypted
-        from app.repository import MessageRepository, RawPacketRepository
+        from app.repository import ContactRepository, MessageRepository, RawPacketRepository
 
-        # Store a raw packet first
+        # Create a repeater contact first
+        await ContactRepository.upsert(
+            {
+                "public_key": self.REPEATER_PUB,
+                "name": "Test Repeater",
+                "type": CONTACT_TYPE_REPEATER,  # type=2 is repeater
+                "flags": 0,
+                "on_radio": False,
+            }
+        )
+
+        # Store a raw packet
         packet_id, _ = await RawPacketRepository.create(b"\x09\x00test", 1700000000)
 
-        # Create a DecryptedDirectMessage with flags=1 (CLI response)
+        # Create a DecryptedDirectMessage (simulating a CLI response from repeater)
         decrypted = DecryptedDirectMessage(
             timestamp=1700000000,
-            flags=1,  # txt_type=1 (CLI response)
+            flags=0,  # flags don't matter - we filter by contact type
             message="cli response: version 1.0",
             dest_hash="fa",
             src_hash="a1",
@@ -974,13 +995,13 @@ class TestCLIResponseFiltering:
             msg_id = await create_dm_message_from_decrypted(
                 packet_id=packet_id,
                 decrypted=decrypted,
-                their_public_key=self.A1B2C3_PUB,
-                our_public_key=self.FACE12_PUB,
+                their_public_key=self.REPEATER_PUB,
+                our_public_key=self.OUR_PUB,
                 received_at=1700000001,
                 outgoing=False,
             )
 
-        # Should return None (not stored)
+        # Should return None (not stored because sender is a repeater)
         assert msg_id is None
 
         # Should not broadcast
@@ -988,25 +1009,36 @@ class TestCLIResponseFiltering:
 
         # Should not be in database
         messages = await MessageRepository.get_all(
-            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+            msg_type="PRIV", conversation_key=self.REPEATER_PUB.lower(), limit=10
         )
         assert len(messages) == 0
 
     @pytest.mark.asyncio
-    async def test_normal_message_still_stored(self, test_db, captured_broadcasts):
-        """Normal messages (flags & 0x0F == 0) should still be stored."""
+    async def test_client_message_still_stored(self, test_db, captured_broadcasts):
+        """Messages from normal clients should still be stored."""
         from app.decoder import DecryptedDirectMessage
         from app.packet_processor import create_dm_message_from_decrypted
-        from app.repository import MessageRepository, RawPacketRepository
+        from app.repository import ContactRepository, MessageRepository, RawPacketRepository
+
+        # Create a normal client contact (type=1)
+        await ContactRepository.upsert(
+            {
+                "public_key": self.CLIENT_PUB,
+                "name": "Test Client",
+                "type": 1,  # type=1 is client
+                "flags": 0,
+                "on_radio": False,
+            }
+        )
 
         packet_id, _ = await RawPacketRepository.create(b"\x09\x00test2", 1700000000)
 
         decrypted = DecryptedDirectMessage(
             timestamp=1700000000,
-            flags=0,  # txt_type=0 (normal message)
+            flags=0,
             message="Hello, world!",
             dest_hash="fa",
-            src_hash="a1",
+            src_hash="b2",
         )
 
         broadcasts, mock_broadcast = captured_broadcasts
@@ -1015,13 +1047,13 @@ class TestCLIResponseFiltering:
             msg_id = await create_dm_message_from_decrypted(
                 packet_id=packet_id,
                 decrypted=decrypted,
-                their_public_key=self.A1B2C3_PUB,
-                our_public_key=self.FACE12_PUB,
+                their_public_key=self.CLIENT_PUB,
+                our_public_key=self.OUR_PUB,
                 received_at=1700000001,
                 outgoing=False,
             )
 
-        # Should return message ID
+        # Should return message ID (stored because sender is a client)
         assert msg_id is not None
 
         # Should broadcast
@@ -1030,6 +1062,6 @@ class TestCLIResponseFiltering:
 
         # Should be in database
         messages = await MessageRepository.get_all(
-            msg_type="PRIV", conversation_key=self.A1B2C3_PUB.lower(), limit=10
+            msg_type="PRIV", conversation_key=self.CLIENT_PUB.lower(), limit=10
         )
         assert len(messages) == 1

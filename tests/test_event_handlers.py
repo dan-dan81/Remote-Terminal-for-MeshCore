@@ -195,7 +195,7 @@ class TestContactMessageCLIFiltering:
             patch("app.bot.run_bot_for_message", new_callable=AsyncMock),
         ):
             mock_repo.create = AsyncMock(return_value=42)
-            mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(return_value=None)
 
             class MockEvent:
                 payload = {
@@ -224,7 +224,7 @@ class TestContactMessageCLIFiltering:
             patch("app.bot.run_bot_for_message", new_callable=AsyncMock),
         ):
             mock_repo.create = AsyncMock(return_value=42)
-            mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(return_value=None)
 
             class MockEvent:
                 payload = {
@@ -259,7 +259,7 @@ class TestContactMessageCLIFiltering:
             patch("app.bot.run_bot_for_message", new_callable=AsyncMock),
         ):
             mock_repo.create = AsyncMock(return_value=42)
-            mock_contact_repo.get_by_key_prefix = AsyncMock(return_value=None)
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(return_value=None)
 
             class MockEvent:
                 payload = {

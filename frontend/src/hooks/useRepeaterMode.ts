@@ -37,6 +37,7 @@ export function formatTelemetry(telemetry: TelemetryResponse): string {
     `Telemetry`,
     `Battery Voltage: ${telemetry.battery_volts.toFixed(3)}V`,
     `Uptime: ${formatDuration(telemetry.uptime_seconds)}`,
+    ...(telemetry.clock_output ? [`Clock: ${telemetry.clock_output}`] : []),
     `TX Airtime: ${formatDuration(telemetry.airtime_seconds)}`,
     `RX Airtime: ${formatDuration(telemetry.rx_airtime_seconds)}`,
     '',

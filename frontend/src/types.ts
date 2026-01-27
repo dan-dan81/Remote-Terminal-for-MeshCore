@@ -197,6 +197,7 @@ export interface TelemetryResponse {
   full_events: number;
   neighbors: NeighborInfo[];
   acl: AclEntry[];
+  clock_output: string | null;
 }
 
 export interface CommandResponse {
