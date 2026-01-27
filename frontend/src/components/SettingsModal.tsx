@@ -108,13 +108,22 @@ export function SettingsModal({
   const [advertInterval, setAdvertInterval] = useState('0');
 
   // Bot state
-  const DEFAULT_BOT_CODE = `def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+  const DEFAULT_BOT_CODE = `def bot(
+    sender_name: str | None,
+    sender_key: str | None,
+    message_text: str,
+    is_dm: bool,
+    channel_key: str | None,
+    channel_name: str | None,
+    sender_timestamp: int | None,
+    path: str | None,
+) -> str | list[str] | None:
     """
     Process incoming messages and optionally return a reply.
 
     Args:
         sender_name: Display name of sender (may be None)
-        sender_key: 64-char hex public key (empty for channel msgs)
+        sender_key: 64-char hex public key (None for channel msgs)
         message_text: The message content
         is_dm: True for direct messages, False for channel
         channel_key: 32-char hex key for channels, None for DMs
@@ -123,7 +132,8 @@ export function SettingsModal({
         path: Hex-encoded routing path (may be None)
 
     Returns:
-        None for no reply, or a string to send as reply
+        None for no reply, a string for a single reply,
+        or a list of strings to send multiple messages in order
     """
     # Example: Only respond in #bot channel to "!pling" command
     if channel_name == "#bot" and "!pling" in message_text.lower():

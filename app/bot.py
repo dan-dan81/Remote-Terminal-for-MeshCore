@@ -48,13 +48,14 @@ def execute_bot_code(
     channel_name: str | None,
     sender_timestamp: int | None,
     path: str | None,
-) -> str | None:
+) -> str | list[str] | None:
     """
     Execute user-provided bot code with message context.
 
     The code should define a function:
     `bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path)`
-    that returns either None (no response) or a string (response message).
+    that returns either None (no response), a string (single response message),
+    or a list of strings (multiple messages sent in order).
 
     Args:
         code: Python code defining the bot function
@@ -68,7 +69,7 @@ def execute_bot_code(
         path: Hex-encoded routing path (may be None)
 
     Returns:
-        Response string if the bot returns one, None otherwise.
+        Response string, list of strings, or None.
 
     Note: This executes arbitrary code. Only use with trusted input.
     """
@@ -112,8 +113,12 @@ def execute_bot_code(
             return None
         if isinstance(result, str):
             return result if result.strip() else None
+        if isinstance(result, list):
+            # Filter to non-empty strings only
+            valid_messages = [msg for msg in result if isinstance(msg, str) and msg.strip()]
+            return valid_messages if valid_messages else None
 
-        logger.debug("Bot function returned non-string: %s", type(result))
+        logger.debug("Bot function returned unsupported type: %s", type(result))
         return None
 
     except Exception as e:
@@ -122,13 +127,13 @@ def execute_bot_code(
 
 
 async def process_bot_response(
-    response: str,
+    response: str | list[str],
     is_dm: bool,
     sender_key: str,
     channel_key: str | None,
 ) -> None:
     """
-    Send the bot's response message using the existing message sending endpoints.
+    Send the bot's response message(s) using the existing message sending endpoints.
 
     For DMs, sends a direct message back to the sender.
     For channel messages, sends to the same channel.
@@ -137,7 +142,29 @@ async def process_bot_response(
     between sends, giving repeaters time to return to listening mode.
 
     Args:
-        response: The response text to send
+        response: The response text to send, or a list of messages to send in order
+        is_dm: Whether the original message was a DM
+        sender_key: Public key of the original sender (for DM replies)
+        channel_key: Channel key for channel message replies
+    """
+    # Normalize to list for uniform processing
+    messages = [response] if isinstance(response, str) else response
+
+    for message_text in messages:
+        await _send_single_bot_message(message_text, is_dm, sender_key, channel_key)
+
+
+async def _send_single_bot_message(
+    message_text: str,
+    is_dm: bool,
+    sender_key: str,
+    channel_key: str | None,
+) -> None:
+    """
+    Send a single bot message with rate limiting.
+
+    Args:
+        message_text: The message text to send
         is_dm: Whether the original message was a DM
         sender_key: Public key of the original sender (for DM replies)
         channel_key: Channel key for channel message replies
@@ -162,13 +189,13 @@ async def process_bot_response(
         try:
             if is_dm:
                 logger.info("Bot sending DM reply to %s", sender_key[:12])
-                request = SendDirectMessageRequest(destination=sender_key, text=response)
+                request = SendDirectMessageRequest(destination=sender_key, text=message_text)
                 message = await send_direct_message(request)
                 # Broadcast to WebSocket (endpoint returns to HTTP caller, bot needs explicit broadcast)
                 broadcast_event("message", message.model_dump())
             elif channel_key:
                 logger.info("Bot sending channel reply to %s", channel_key[:8])
-                request = SendChannelMessageRequest(channel_key=channel_key, text=response)
+                request = SendChannelMessageRequest(channel_key=channel_key, text=message_text)
                 message = await send_channel_message(request)
                 # Broadcast to WebSocket
                 broadcast_event("message", message.model_dump())

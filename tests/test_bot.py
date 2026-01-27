@@ -253,6 +253,83 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
         )
         assert result == "channel message detected"
 
+    def test_bot_returns_list_of_strings(self):
+        """Bot function returning list of strings works correctly."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+    return ["First message", "Second message", "Third message"]
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+        )
+        assert result == ["First message", "Second message", "Third message"]
+
+    def test_bot_returns_empty_list(self):
+        """Bot function returning empty list is treated as None."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+    return []
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+        )
+        assert result is None
+
+    def test_bot_returns_list_with_empty_strings_filtered(self):
+        """Bot function returning list filters out empty/whitespace strings."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+    return ["Valid", "", "  ", "Also valid", None, 42]
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+        )
+        # Only valid non-empty strings should remain
+        assert result == ["Valid", "Also valid"]
+
+    def test_bot_returns_list_all_empty_treated_as_none(self):
+        """Bot function returning list of all empty strings is treated as None."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+    return ["", "   ", ""]
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+        )
+        assert result is None
+
 
 class TestRunBotForMessage:
     """Test the main bot entry point."""
@@ -608,3 +685,103 @@ class TestBotMessageRateLimiting:
             wait_time = mock_sleep.call_args[0][0]
             assert abs(wait_time - 1.0) < 0.01
             mock_send.assert_called_once()
+
+
+class TestBotListResponses:
+    """Test bot functionality for list responses."""
+
+    @pytest.fixture(autouse=True)
+    def reset_rate_limit_state(self):
+        """Reset rate limiting state between tests."""
+        bot_module._last_bot_send_time = 0.0
+        yield
+        bot_module._last_bot_send_time = 0.0
+
+    @pytest.mark.asyncio
+    async def test_list_response_sends_multiple_messages(self):
+        """List response should send multiple messages in order."""
+        sent_messages = []
+
+        async def mock_send(request):
+            sent_messages.append(request.text)
+            mock_message = MagicMock()
+            mock_message.model_dump.return_value = {}
+            return mock_message
+
+        with (
+            patch("app.bot.time.monotonic", return_value=100.0),
+            patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.routers.messages.send_direct_message", side_effect=mock_send),
+            patch("app.websocket.broadcast_event"),
+        ):
+            await process_bot_response(
+                response=["First", "Second", "Third"],
+                is_dm=True,
+                sender_key="a" * 64,
+                channel_key=None,
+            )
+
+            assert sent_messages == ["First", "Second", "Third"]
+
+    @pytest.mark.asyncio
+    async def test_list_response_rate_limited_between_messages(self):
+        """Each message in a list should be rate limited."""
+        sleep_calls = []
+
+        time_counter = [100.0]
+
+        def mock_monotonic():
+            return time_counter[0]
+
+        async def mock_sleep(duration):
+            sleep_calls.append(duration)
+            time_counter[0] += duration
+
+        async def mock_send(request):
+            mock_message = MagicMock()
+            mock_message.model_dump.return_value = {}
+            return mock_message
+
+        with (
+            patch("app.bot.time.monotonic", side_effect=mock_monotonic),
+            patch("app.bot.asyncio.sleep", side_effect=mock_sleep),
+            patch("app.routers.messages.send_direct_message", side_effect=mock_send),
+            patch("app.websocket.broadcast_event"),
+        ):
+            await process_bot_response(
+                response=["First", "Second", "Third"],
+                is_dm=True,
+                sender_key="a" * 64,
+                channel_key=None,
+            )
+
+            # Should have waited between messages (after first send)
+            # First message: no wait, Second: wait 2s, Third: wait 2s
+            assert len(sleep_calls) == 2
+            assert all(abs(w - BOT_MESSAGE_SPACING) < 0.01 for w in sleep_calls)
+
+    @pytest.mark.asyncio
+    async def test_string_response_still_works(self):
+        """Single string response should still work after list support added."""
+        sent_messages = []
+
+        async def mock_send(request):
+            sent_messages.append(request.text)
+            mock_message = MagicMock()
+            mock_message.model_dump.return_value = {}
+            return mock_message
+
+        with (
+            patch("app.bot.time.monotonic", return_value=100.0),
+            patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+            patch("app.routers.messages.send_direct_message", side_effect=mock_send),
+            patch("app.websocket.broadcast_event"),
+        ):
+            await process_bot_response(
+                response="Just one message",
+                is_dm=True,
+                sender_key="a" * 64,
+                channel_key=None,
+            )
+
+            assert sent_messages == ["Just one message"]
