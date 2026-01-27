@@ -802,6 +802,14 @@ export function SettingsModal({
 
             {/* Bot Tab */}
             <TabsContent value="bot" className="space-y-4 mt-4">
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-md">
+                <p className="text-sm text-red-500">
+                  <strong>Experimental:</strong> This is an alpha feature and introduces automated
+                  message sending to your radio; unexpected behavior may occur. Use with caution,
+                  and please report any bugs!
+                </p>
+              </div>
+
               <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
                 <p className="text-sm text-yellow-500">
                   <strong>Security Warning:</strong> This feature executes arbitrary Python code on
