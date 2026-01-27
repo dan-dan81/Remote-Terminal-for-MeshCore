@@ -58,21 +58,21 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
             status_code=404, detail=f"Contact not found in database: {request.destination}"
         )
 
-    # Check if contact is on radio, if not add it
+    # Always add/update the contact on radio before sending.
+    # The library cache (get_contact_by_key_prefix) can be stale after radio reboot,
+    # so we can't rely on it to know if the firmware has the contact.
+    # add_contact is idempotent - updates if exists, adds if not.
+    contact_data = db_contact.to_radio_dict()
+    logger.debug("Ensuring contact %s is on radio before sending", db_contact.public_key[:12])
+    add_result = await mc.commands.add_contact(contact_data)
+    if add_result.type == EventType.ERROR:
+        logger.warning("Failed to add contact to radio: %s", add_result.payload)
+        # Continue anyway - might still work if contact exists
+
+    # Get the contact from the library cache (may have updated info like path)
     contact = mc.get_contact_by_key_prefix(db_contact.public_key[:12])
     if not contact:
-        logger.info("Adding contact %s to radio before sending", db_contact.public_key[:12])
-        contact_data = db_contact.to_radio_dict()
-        add_result = await mc.commands.add_contact(contact_data)
-        if add_result.type == EventType.ERROR:
-            logger.warning("Failed to add contact to radio: %s", add_result.payload)
-            # Continue anyway - might still work
-
-        # Get the contact from radio again
-        contact = mc.get_contact_by_key_prefix(db_contact.public_key[:12])
-        if not contact:
-            # Use the contact_data we built as fallback
-            contact = contact_data
+        contact = contact_data
 
     logger.info("Sending direct message to %s", db_contact.public_key[:12])
 

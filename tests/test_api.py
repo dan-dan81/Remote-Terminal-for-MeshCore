@@ -129,6 +129,11 @@ class TestMessagesEndpoint:
         mock_mc = MagicMock()
         mock_mc.get_contact_by_key_prefix.return_value = {"public_key": "a" * 64}
 
+        mock_add_result = MagicMock()
+        mock_add_result.type = MagicMock()
+        mock_add_result.type.name = "OK"
+        mock_mc.commands.add_contact = AsyncMock(return_value=mock_add_result)
+
         mock_send_result = MagicMock()
         mock_send_result.type = MagicMock()
         mock_send_result.type.name = "OK"
