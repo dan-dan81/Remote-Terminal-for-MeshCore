@@ -37,3 +37,12 @@
     font-size: 14px;
   }
 }
+
+/* Constrain CodeMirror editor width */
+.cm-editor {
+  max-width: 100% !important;
+  contain: inline-size;
+}
+.cm-editor .cm-scroller {
+  overflow-x: auto !important;
+}
