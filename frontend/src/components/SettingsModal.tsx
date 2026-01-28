@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
-import { python } from '@codemirror/lang-python';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+
+const BotCodeEditor = lazy(() =>
+  import('./BotCodeEditor').then((m) => ({ default: m.BotCodeEditor }))
+);
 import type {
   AppSettings,
   AppSettingsUpdate,
@@ -983,19 +984,19 @@ export function SettingsModal({
                               Reset to Example
                             </Button>
                           </div>
-                          <CodeMirror
-                            value={bot.code}
-                            onChange={(code) => handleBotCodeChange(bot.id, code)}
-                            extensions={[python()]}
-                            theme={oneDark}
-                            height="256px"
-                            basicSetup={{
-                              lineNumbers: true,
-                              foldGutter: false,
-                              highlightActiveLine: true,
-                            }}
-                            className="rounded-md border border-input overflow-hidden text-sm"
-                          />
+                          <Suspense
+                            fallback={
+                              <div className="h-64 rounded-md border border-input bg-[#282c34] flex items-center justify-center text-muted-foreground">
+                                Loading editor...
+                              </div>
+                            }
+                          >
+                            <BotCodeEditor
+                              value={bot.code}
+                              onChange={(code) => handleBotCodeChange(bot.id, code)}
+                              id={`bot-code-${bot.id}`}
+                            />
+                          </Suspense>
                         </div>
                       )}
                     </div>
