@@ -77,7 +77,7 @@ export function SettingsModal({
   onRefreshAppSettings,
 }: SettingsModalProps) {
   // Tab state
-  type SettingsTab = 'radio' | 'identity' | 'serial' | 'database' | 'advertise' | 'bot';
+  type SettingsTab = 'radio' | 'identity' | 'serial' | 'database' | 'bot';
   const [activeTab, setActiveTab] = useState<SettingsTab>('radio');
 
   // Radio config state
@@ -475,7 +475,6 @@ export function SettingsModal({
               'Manage radio name, public key, private key, and advertising settings'}
             {activeTab === 'serial' && 'View serial port connection and configure contact sync'}
             {activeTab === 'database' && 'View database statistics and clean up old packets'}
-            {activeTab === 'advertise' && 'Send a flood advertisement to announce your presence'}
             {activeTab === 'bot' && 'Configure automatic message bot with Python code'}
           </DialogDescription>
         </DialogHeader>
@@ -488,12 +487,11 @@ export function SettingsModal({
             onValueChange={(v) => setActiveTab(v as SettingsTab)}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="radio">Radio</TabsTrigger>
               <TabsTrigger value="identity">Identity</TabsTrigger>
               <TabsTrigger value="serial">Serial</TabsTrigger>
               <TabsTrigger value="database">Database</TabsTrigger>
-              <TabsTrigger value="advertise">Advertise</TabsTrigger>
               <TabsTrigger value="bot">Bot</TabsTrigger>
             </TabsList>
 
@@ -857,26 +855,6 @@ export function SettingsModal({
               <Button onClick={handleSaveDatabaseSettings} disabled={loading} className="w-full">
                 {loading ? 'Saving...' : 'Save Settings'}
               </Button>
-            </TabsContent>
-
-            {/* Advertise Tab */}
-            <TabsContent value="advertise" className="space-y-4 mt-4">
-              <div className="text-center py-8">
-                <p className="text-muted-foreground mb-6">
-                  Send a flood advertisement to announce your presence on the mesh network.
-                </p>
-                <Button
-                  size="lg"
-                  onClick={handleAdvertise}
-                  disabled={advertising || !health?.radio_connected}
-                  className="bg-green-600 hover:bg-green-700 text-white px-12 py-6 text-lg"
-                >
-                  {advertising ? 'Sending...' : 'Send Advertisement'}
-                </Button>
-                {!health?.radio_connected && (
-                  <p className="text-sm text-destructive mt-4">Radio not connected</p>
-                )}
-              </div>
             </TabsContent>
 
             {/* Bot Tab */}
