@@ -13,6 +13,7 @@ from app.bot import (
     process_bot_response,
     run_bot_for_message,
 )
+from app.models import BotConfig
 
 
 class TestExecuteBotCode:
@@ -359,12 +360,13 @@ class TestRunBotForMessage:
             mock_repo.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_bot_disabled(self):
-        """Bot is not triggered when disabled in settings."""
+    async def test_skips_when_no_enabled_bots(self):
+        """Bot is not triggered when no bots are enabled."""
         with patch("app.repository.AppSettingsRepository") as mock_repo:
             mock_settings = MagicMock()
-            mock_settings.bot_enabled = False
-            mock_settings.bot_code = "def bot(): pass"
+            mock_settings.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=False, code="def bot(): pass")
+            ]
             mock_repo.get = AsyncMock(return_value=mock_settings)
 
             with patch("app.bot.execute_bot_code") as mock_exec:
@@ -379,12 +381,33 @@ class TestRunBotForMessage:
                 mock_exec.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_bot_code_empty(self):
-        """Bot is not triggered when code is empty."""
+    async def test_skips_when_bots_array_empty(self):
+        """Bot is not triggered when bots array is empty."""
         with patch("app.repository.AppSettingsRepository") as mock_repo:
             mock_settings = MagicMock()
-            mock_settings.bot_enabled = True
-            mock_settings.bot_code = ""
+            mock_settings.bots = []
+            mock_repo.get = AsyncMock(return_value=mock_settings)
+
+            with patch("app.bot.execute_bot_code") as mock_exec:
+                await run_bot_for_message(
+                    sender_name="Alice",
+                    sender_key="abc123",
+                    message_text="Hello",
+                    is_dm=True,
+                    channel_key=None,
+                )
+
+                mock_exec.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_bot_with_empty_code(self):
+        """Bot with empty code is skipped even if enabled."""
+        with patch("app.repository.AppSettingsRepository") as mock_repo:
+            mock_settings = MagicMock()
+            mock_settings.bots = [
+                BotConfig(id="1", name="Empty Bot", enabled=True, code=""),
+                BotConfig(id="2", name="Whitespace Bot", enabled=True, code="   "),
+            ]
             mock_repo.get = AsyncMock(return_value=mock_settings)
 
             with patch("app.bot.execute_bot_code") as mock_exec:
@@ -405,12 +428,14 @@ class TestRunBotForMessage:
             # First call: bot enabled
             # Second call (after sleep): bot disabled
             mock_settings_enabled = MagicMock()
-            mock_settings_enabled.bot_enabled = True
-            mock_settings_enabled.bot_code = "def bot(): return 'hi'"
+            mock_settings_enabled.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=True, code="def bot(): return 'hi'")
+            ]
 
             mock_settings_disabled = MagicMock()
-            mock_settings_disabled.bot_enabled = False
-            mock_settings_disabled.bot_code = "def bot(): return 'hi'"
+            mock_settings_disabled.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=False, code="def bot(): return 'hi'")
+            ]
 
             mock_repo.get = AsyncMock(side_effect=[mock_settings_enabled, mock_settings_disabled])
 
@@ -431,6 +456,199 @@ class TestRunBotForMessage:
 
                 # Should NOT have executed bot (disabled after sleep)
                 mock_exec.assert_not_called()
+
+
+class TestMultipleBots:
+    """Test multiple bots functionality."""
+
+    @pytest.fixture(autouse=True)
+    def reset_semaphore(self):
+        """Reset semaphore state between tests."""
+        while _bot_semaphore.locked():
+            _bot_semaphore.release()
+        yield
+
+    @pytest.fixture(autouse=True)
+    def reset_rate_limit_state(self):
+        """Reset rate limiting state between tests."""
+        bot_module._last_bot_send_time = 0.0
+        yield
+        bot_module._last_bot_send_time = 0.0
+
+    @pytest.mark.asyncio
+    async def test_multiple_bots_execute_serially(self):
+        """Multiple enabled bots execute serially in order."""
+        executed_bots = []
+
+        def mock_execute(code, *args, **kwargs):
+            # Extract bot identifier from the code
+            if "Bot 1" in code:
+                executed_bots.append("Bot 1")
+                return "Response 1"
+            elif "Bot 2" in code:
+                executed_bots.append("Bot 2")
+                return "Response 2"
+            return None
+
+        with patch("app.repository.AppSettingsRepository") as mock_repo:
+            mock_settings = MagicMock()
+            mock_settings.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=True, code="# Bot 1\ndef bot(): pass"),
+                BotConfig(id="2", name="Bot 2", enabled=True, code="# Bot 2\ndef bot(): pass"),
+            ]
+            mock_repo.get = AsyncMock(return_value=mock_settings)
+
+            with (
+                patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+                patch("app.bot.execute_bot_code", side_effect=mock_execute),
+                patch("app.bot.process_bot_response", new_callable=AsyncMock),
+            ):
+                await run_bot_for_message(
+                    sender_name="Alice",
+                    sender_key="abc123" + "0" * 58,
+                    message_text="Hello",
+                    is_dm=True,
+                    channel_key=None,
+                )
+
+                # Both bots should have executed in order
+                assert executed_bots == ["Bot 1", "Bot 2"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_bots_are_skipped(self):
+        """Disabled bots in the array are skipped."""
+        executed_bots = []
+
+        def mock_execute(code, *args, **kwargs):
+            if "Bot 1" in code:
+                executed_bots.append("Bot 1")
+            elif "Bot 2" in code:
+                executed_bots.append("Bot 2")
+            elif "Bot 3" in code:
+                executed_bots.append("Bot 3")
+            return None
+
+        with patch("app.repository.AppSettingsRepository") as mock_repo:
+            mock_settings = MagicMock()
+            mock_settings.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=True, code="# Bot 1\ndef bot(): pass"),
+                BotConfig(id="2", name="Bot 2", enabled=False, code="# Bot 2\ndef bot(): pass"),
+                BotConfig(id="3", name="Bot 3", enabled=True, code="# Bot 3\ndef bot(): pass"),
+            ]
+            mock_repo.get = AsyncMock(return_value=mock_settings)
+
+            with (
+                patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+                patch("app.bot.execute_bot_code", side_effect=mock_execute),
+            ):
+                await run_bot_for_message(
+                    sender_name="Alice",
+                    sender_key="abc123" + "0" * 58,
+                    message_text="Hello",
+                    is_dm=True,
+                    channel_key=None,
+                )
+
+                # Only enabled bots should have executed
+                assert executed_bots == ["Bot 1", "Bot 3"]
+
+    @pytest.mark.asyncio
+    async def test_error_in_one_bot_doesnt_stop_others(self):
+        """Error in one bot doesn't prevent other bots from running."""
+        executed_bots = []
+
+        def mock_execute(code, *args, **kwargs):
+            if "Bot 1" in code:
+                executed_bots.append("Bot 1")
+                raise ValueError("Bot 1 crashed!")
+            elif "Bot 2" in code:
+                executed_bots.append("Bot 2")
+                return "Response 2"
+            elif "Bot 3" in code:
+                executed_bots.append("Bot 3")
+                return "Response 3"
+            return None
+
+        with patch("app.repository.AppSettingsRepository") as mock_repo:
+            mock_settings = MagicMock()
+            mock_settings.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=True, code="# Bot 1\ndef bot(): pass"),
+                BotConfig(id="2", name="Bot 2", enabled=True, code="# Bot 2\ndef bot(): pass"),
+                BotConfig(id="3", name="Bot 3", enabled=True, code="# Bot 3\ndef bot(): pass"),
+            ]
+            mock_repo.get = AsyncMock(return_value=mock_settings)
+
+            with (
+                patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+                patch("app.bot.execute_bot_code", side_effect=mock_execute),
+                patch("app.bot.process_bot_response", new_callable=AsyncMock) as mock_respond,
+            ):
+                await run_bot_for_message(
+                    sender_name="Alice",
+                    sender_key="abc123" + "0" * 58,
+                    message_text="Hello",
+                    is_dm=True,
+                    channel_key=None,
+                )
+
+                # All bots should have been attempted
+                assert executed_bots == ["Bot 1", "Bot 2", "Bot 3"]
+
+                # Responses from successful bots should have been sent
+                assert mock_respond.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_timeout_in_one_bot_doesnt_stop_others(self):
+        """Timeout in one bot doesn't prevent other bots from running."""
+        executed_bots = []
+
+        async def mock_wait_for(coro, timeout):
+            result = await coro
+            # Simulate timeout for Bot 2
+            if len(executed_bots) == 2 and executed_bots[-1] == "Bot 2":
+                raise asyncio.TimeoutError()
+            return result
+
+        def mock_execute(code, *args, **kwargs):
+            if "Bot 1" in code:
+                executed_bots.append("Bot 1")
+                return "Response 1"
+            elif "Bot 2" in code:
+                executed_bots.append("Bot 2")
+                return "Response 2"  # This will be "timed out"
+            elif "Bot 3" in code:
+                executed_bots.append("Bot 3")
+                return "Response 3"
+            return None
+
+        with patch("app.repository.AppSettingsRepository") as mock_repo:
+            mock_settings = MagicMock()
+            mock_settings.bots = [
+                BotConfig(id="1", name="Bot 1", enabled=True, code="# Bot 1\ndef bot(): pass"),
+                BotConfig(id="2", name="Bot 2", enabled=True, code="# Bot 2\ndef bot(): pass"),
+                BotConfig(id="3", name="Bot 3", enabled=True, code="# Bot 3\ndef bot(): pass"),
+            ]
+            mock_repo.get = AsyncMock(return_value=mock_settings)
+
+            with (
+                patch("app.bot.asyncio.sleep", new_callable=AsyncMock),
+                patch("app.bot.execute_bot_code", side_effect=mock_execute),
+                patch("app.bot.asyncio.wait_for", side_effect=mock_wait_for),
+                patch("app.bot.process_bot_response", new_callable=AsyncMock) as mock_respond,
+            ):
+                await run_bot_for_message(
+                    sender_name="Alice",
+                    sender_key="abc123" + "0" * 58,
+                    message_text="Hello",
+                    is_dm=True,
+                    channel_key=None,
+                )
+
+                # All bots should have been attempted
+                assert executed_bots == ["Bot 1", "Bot 2", "Bot 3"]
+
+                # Only responses from non-timed-out bots (Bot 1 and Bot 3)
+                assert mock_respond.call_count == 2
 
 
 class TestBotCodeValidation:
@@ -455,6 +673,18 @@ class TestBotCodeValidation:
         assert exc_info.value.status_code == 400
         assert "syntax error" in exc_info.value.detail.lower()
 
+    def test_syntax_error_includes_bot_name(self):
+        """Syntax error message includes bot name when provided."""
+        from fastapi import HTTPException
+
+        from app.routers.settings import validate_bot_code
+
+        with pytest.raises(HTTPException) as exc_info:
+            validate_bot_code("def bot(:\n    return 'broken'", bot_name="My Test Bot")
+
+        assert exc_info.value.status_code == 400
+        assert "My Test Bot" in exc_info.value.detail
+
     def test_empty_code_passes(self):
         """Empty code passes validation (disables bot)."""
         from app.routers.settings import validate_bot_code
@@ -462,6 +692,29 @@ class TestBotCodeValidation:
         # Should not raise
         validate_bot_code("")
         validate_bot_code("   ")
+
+    def test_validate_all_bots(self):
+        """validate_all_bots validates all bots' code."""
+        from fastapi import HTTPException
+
+        from app.routers.settings import validate_all_bots
+
+        # Valid bots should pass
+        valid_bots = [
+            BotConfig(id="1", name="Bot 1", enabled=True, code="def bot(): return 'hi'"),
+            BotConfig(id="2", name="Bot 2", enabled=False, code="def bot(): return 'hello'"),
+        ]
+        validate_all_bots(valid_bots)  # Should not raise
+
+        # Invalid code should raise with bot name
+        invalid_bots = [
+            BotConfig(id="1", name="Good Bot", enabled=True, code="def bot(): return 'hi'"),
+            BotConfig(id="2", name="Bad Bot", enabled=True, code="def bot(:"),
+        ]
+        with pytest.raises(HTTPException) as exc_info:
+            validate_all_bots(invalid_bots)
+
+        assert "Bad Bot" in exc_info.value.detail
 
 
 class TestBotMessageRateLimiting:

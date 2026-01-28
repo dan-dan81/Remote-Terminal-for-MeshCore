@@ -21,10 +21,10 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 # Limit concurrent bot executions to prevent resource exhaustion
-_bot_semaphore = asyncio.Semaphore(3)
+_bot_semaphore = asyncio.Semaphore(100)
 
 # Dedicated thread pool for bot execution (separate from default executor)
-_bot_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="bot_")
+_bot_executor = ThreadPoolExecutor(max_workers=100, thread_name_prefix="bot_")
 
 # Timeout for bot code execution (seconds)
 BOT_EXECUTION_TIMEOUT = 10
@@ -225,10 +225,11 @@ async def run_bot_for_message(
     is_outgoing: bool = False,
 ) -> None:
     """
-    Run the bot for an incoming message if enabled.
+    Run all enabled bots for an incoming message.
 
     This is the main entry point called by message handlers after
-    a message is successfully decrypted and stored.
+    a message is successfully decrypted and stored. Bots run serially,
+    and errors in one bot don't prevent others from running.
 
     Args:
         sender_name: Display name of the sender
@@ -245,23 +246,18 @@ async def run_bot_for_message(
     if is_outgoing:
         return
 
-    # Early check if bot is enabled (will re-check after sleep)
+    # Early check if any bots are enabled (will re-check after sleep)
     from app.repository import AppSettingsRepository
 
     settings = await AppSettingsRepository.get()
-    if not settings.bot_enabled or not settings.bot_code:
-        return
-
-    # Try to acquire semaphore (limit concurrent bot executions)
-    if not _bot_semaphore.locked():
-        pass  # Semaphore available
-    else:
-        logger.debug("Bot execution queue full, skipping message")
+    enabled_bots = [b for b in settings.bots if b.enabled and b.code.strip()]
+    if not enabled_bots:
         return
 
     async with _bot_semaphore:
         logger.debug(
-            "Running bot for message from %s (is_dm=%s)",
+            "Running %d bot(s) for message from %s (is_dm=%s)",
+            len(enabled_bots),
             sender_name or (sender_key[:12] if sender_key else "unknown"),
             is_dm,
         )
@@ -269,38 +265,43 @@ async def run_bot_for_message(
         # Wait for the initiating message's retransmissions to propagate through the mesh
         await asyncio.sleep(2)
 
-        # Re-check settings after sleep (user may have disabled bot)
+        # Re-check settings after sleep (user may have changed bot config)
         settings = await AppSettingsRepository.get()
-        if not settings.bot_enabled or not settings.bot_code:
-            logger.debug("Bot disabled during wait, skipping")
+        enabled_bots = [b for b in settings.bots if b.enabled and b.code.strip()]
+        if not enabled_bots:
+            logger.debug("All bots disabled during wait, skipping")
             return
 
-        # Execute bot code in a dedicated thread pool with timeout
+        # Run each enabled bot serially
         loop = asyncio.get_event_loop()
-        try:
-            response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    _bot_executor,
-                    execute_bot_code,
-                    settings.bot_code,
-                    sender_name,
-                    sender_key,
-                    message_text,
-                    is_dm,
-                    channel_key,
-                    channel_name,
-                    sender_timestamp,
-                    path,
-                ),
-                timeout=BOT_EXECUTION_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Bot execution timed out after %ds", BOT_EXECUTION_TIMEOUT)
-            return
-        except Exception as e:
-            logger.warning("Bot execution error: %s", e)
-            return
+        for bot in enabled_bots:
+            logger.debug("Executing bot '%s'", bot.name)
+            try:
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _bot_executor,
+                        execute_bot_code,
+                        bot.code,
+                        sender_name,
+                        sender_key,
+                        message_text,
+                        is_dm,
+                        channel_key,
+                        channel_name,
+                        sender_timestamp,
+                        path,
+                    ),
+                    timeout=BOT_EXECUTION_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Bot '%s' execution timed out after %ds", bot.name, BOT_EXECUTION_TIMEOUT
+                )
+                continue  # Continue to next bot
+            except Exception as e:
+                logger.warning("Bot '%s' execution error: %s", bot.name, e)
+                continue  # Continue to next bot
 
-        # Send response if any
-        if response:
-            await process_bot_response(response, is_dm, sender_key or "", channel_key)
+            # Send response if any
+            if response:
+                await process_bot_response(response, is_dm, sender_key or "", channel_key)

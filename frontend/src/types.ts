@@ -126,6 +126,13 @@ export interface Favorite {
   id: string; // channel key or contact public key
 }
 
+export interface BotConfig {
+  id: string; // UUID for stable identity across renames/reorders
+  name: string; // User-editable name
+  enabled: boolean; // Whether this bot is enabled
+  code: string; // Python code for this bot
+}
+
 export interface AppSettings {
   max_radio_contacts: number;
   favorites: Favorite[];
@@ -134,8 +141,7 @@ export interface AppSettings {
   last_message_times: Record<string, number>;
   preferences_migrated: boolean;
   advert_interval: number;
-  bot_enabled: boolean;
-  bot_code: string;
+  bots: BotConfig[];
 }
 
 export interface AppSettingsUpdate {
@@ -143,8 +149,7 @@ export interface AppSettingsUpdate {
   auto_decrypt_dm_on_advert?: boolean;
   sidebar_sort_order?: 'recent' | 'alpha';
   advert_interval?: number;
-  bot_enabled?: boolean;
-  bot_code?: string;
+  bots?: BotConfig[];
 }
 
 export interface MigratePreferencesRequest {

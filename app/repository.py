@@ -7,7 +7,16 @@ from typing import Any, Literal
 
 from app.database import db
 from app.decoder import PayloadType, extract_payload, get_packet_payload_type
-from app.models import AppSettings, Channel, Contact, Favorite, Message, MessagePath, RawPacket
+from app.models import (
+    AppSettings,
+    BotConfig,
+    Channel,
+    Contact,
+    Favorite,
+    Message,
+    MessagePath,
+    RawPacket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -682,7 +691,7 @@ class AppSettingsRepository:
             """
             SELECT max_radio_contacts, favorites, auto_decrypt_dm_on_advert,
                    sidebar_sort_order, last_message_times, preferences_migrated,
-                   advert_interval, last_advert_time, bot_enabled, bot_code
+                   advert_interval, last_advert_time, bots
             FROM app_settings WHERE id = 1
             """
         )
@@ -718,6 +727,20 @@ class AppSettingsRepository:
                 )
                 last_message_times = {}
 
+        # Parse bots JSON
+        bots: list[BotConfig] = []
+        if row["bots"]:
+            try:
+                bots_data = json.loads(row["bots"])
+                bots = [BotConfig(**b) for b in bots_data]
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                logger.warning(
+                    "Failed to parse bots JSON, using empty list: %s (data=%r)",
+                    e,
+                    row["bots"][:100] if row["bots"] else None,
+                )
+                bots = []
+
         # Validate sidebar_sort_order (fallback to "recent" if invalid)
         sort_order = row["sidebar_sort_order"]
         if sort_order not in ("recent", "alpha"):
@@ -732,8 +755,7 @@ class AppSettingsRepository:
             preferences_migrated=bool(row["preferences_migrated"]),
             advert_interval=row["advert_interval"] or 0,
             last_advert_time=row["last_advert_time"] or 0,
-            bot_enabled=bool(row["bot_enabled"]),
-            bot_code=row["bot_code"] or "",
+            bots=bots,
         )
 
     @staticmethod
@@ -746,8 +768,7 @@ class AppSettingsRepository:
         preferences_migrated: bool | None = None,
         advert_interval: int | None = None,
         last_advert_time: int | None = None,
-        bot_enabled: bool | None = None,
-        bot_code: str | None = None,
+        bots: list[BotConfig] | None = None,
     ) -> AppSettings:
         """Update app settings. Only provided fields are updated."""
         updates = []
@@ -786,13 +807,10 @@ class AppSettingsRepository:
             updates.append("last_advert_time = ?")
             params.append(last_advert_time)
 
-        if bot_enabled is not None:
-            updates.append("bot_enabled = ?")
-            params.append(1 if bot_enabled else 0)
-
-        if bot_code is not None:
-            updates.append("bot_code = ?")
-            params.append(bot_code)
+        if bots is not None:
+            updates.append("bots = ?")
+            bots_json = json.dumps([b.model_dump() for b in bots])
+            params.append(bots_json)
 
         if updates:
             query = f"UPDATE app_settings SET {', '.join(updates)} WHERE id = 1"

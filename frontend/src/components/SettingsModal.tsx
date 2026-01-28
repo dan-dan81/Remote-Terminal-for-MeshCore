@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import Editor from 'react-simple-code-editor';
-import { highlight, languages } from 'prismjs';
-import 'prismjs/components/prism-python';
-import 'prismjs/themes/prism-tomorrow.css';
+import CodeMirror from '@uiw/react-codemirror';
+import { python } from '@codemirror/lang-python';
+import { oneDark } from '@codemirror/theme-one-dark';
 import type {
   AppSettings,
   AppSettingsUpdate,
+  BotConfig,
   HealthStatus,
   RadioConfig,
   RadioConfigUpdate,
@@ -139,8 +139,10 @@ export function SettingsModal({
     if channel_name == "#bot" and "!pling" in message_text.lower():
         return "[BOT] Plong!"
     return None`;
-  const [botEnabled, setBotEnabled] = useState(false);
-  const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
+  const [bots, setBots] = useState<BotConfig[]>([]);
+  const [expandedBotId, setExpandedBotId] = useState<string | null>(null);
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState('');
 
   useEffect(() => {
     if (config) {
@@ -160,11 +162,7 @@ export function SettingsModal({
       setMaxRadioContacts(String(appSettings.max_radio_contacts));
       setAutoDecryptOnAdvert(appSettings.auto_decrypt_dm_on_advert);
       setAdvertInterval(String(appSettings.advert_interval));
-      setBotEnabled(appSettings.bot_enabled);
-      // Only overwrite bot code if user has saved custom code
-      if (appSettings.bot_code) {
-        setBotCode(appSettings.bot_code);
-      }
+      setBots(appSettings.bots || []);
     }
   }, [appSettings]);
 
@@ -403,15 +401,67 @@ export function SettingsModal({
     setError('');
 
     try {
-      await onSaveAppSettings({ bot_enabled: botEnabled, bot_code: botCode });
+      await onSaveAppSettings({ bots });
       toast.success('Bot settings saved');
     } catch (err) {
       console.error('Failed to save bot settings:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save');
-      toast.error('Failed to save settings');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddBot = () => {
+    const newBot: BotConfig = {
+      id: crypto.randomUUID(),
+      name: `Bot ${bots.length + 1}`,
+      enabled: false,
+      code: DEFAULT_BOT_CODE,
+    };
+    setBots([...bots, newBot]);
+    setExpandedBotId(newBot.id);
+  };
+
+  const handleDeleteBot = (botId: string) => {
+    const bot = bots.find((b) => b.id === botId);
+    if (bot && bot.code.trim() && bot.code !== DEFAULT_BOT_CODE) {
+      if (!confirm(`Delete "${bot.name}"? This will remove all its code.`)) {
+        return;
+      }
+    }
+    setBots(bots.filter((b) => b.id !== botId));
+    if (expandedBotId === botId) {
+      setExpandedBotId(null);
+    }
+  };
+
+  const handleToggleBotEnabled = (botId: string) => {
+    setBots(bots.map((b) => (b.id === botId ? { ...b, enabled: !b.enabled } : b)));
+  };
+
+  const handleBotCodeChange = (botId: string, code: string) => {
+    setBots(bots.map((b) => (b.id === botId ? { ...b, code } : b)));
+  };
+
+  const handleStartEditingName = (bot: BotConfig) => {
+    setEditingNameId(bot.id);
+    setEditingNameValue(bot.name);
+  };
+
+  const handleFinishEditingName = () => {
+    if (editingNameId && editingNameValue.trim()) {
+      setBots(
+        bots.map((b) => (b.id === editingNameId ? { ...b, name: editingNameValue.trim() } : b))
+      );
+    }
+    setEditingNameId(null);
+    setEditingNameValue('');
+  };
+
+  const handleResetBotCode = (botId: string) => {
+    setBots(bots.map((b) => (b.id === botId ? { ...b, code: DEFAULT_BOT_CODE } : b)));
   };
 
   return (
@@ -645,6 +695,25 @@ export function SettingsModal({
                 </Button>
               </div>
 
+              <Separator />
+
+              <div className="space-y-2">
+                <Label>Send Advertisement</Label>
+                <p className="text-xs text-muted-foreground">
+                  Send a flood advertisement to announce your presence on the mesh network.
+                </p>
+                <Button
+                  onClick={handleAdvertise}
+                  disabled={advertising || !health?.radio_connected}
+                  className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
+                >
+                  {advertising ? 'Sending...' : 'Send Advertisement'}
+                </Button>
+                {!health?.radio_connected && (
+                  <p className="text-sm text-destructive">Radio not connected</p>
+                )}
+              </div>
+
               {error && <div className="text-sm text-destructive">{error}</div>}
             </TabsContent>
 
@@ -827,56 +896,136 @@ export function SettingsModal({
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={botEnabled}
-                    onChange={(e) => setBotEnabled(e.target.checked)}
-                    className="w-4 h-4 rounded border-input accent-primary"
-                  />
-                  <span className="text-sm font-medium">Enable Message Bot</span>
-                </label>
+              <div className="flex justify-between items-center">
+                <Label>Bots</Label>
+                <Button type="button" variant="outline" size="sm" onClick={handleAddBot}>
+                  + New Bot
+                </Button>
               </div>
 
-              <Separator />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="bot-code">Bot Code (Python)</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBotCode(DEFAULT_BOT_CODE)}
-                    disabled={!botEnabled}
-                  >
-                    Reset to Example
+              {bots.length === 0 ? (
+                <div className="text-center py-8 border border-dashed border-input rounded-md">
+                  <p className="text-muted-foreground mb-4">No bots configured</p>
+                  <Button type="button" variant="outline" onClick={handleAddBot}>
+                    Create your first bot
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Define a <code className="bg-muted px-1 rounded">bot()</code> function that
-                  receives message data and optionally returns a reply string.
-                </p>
-                <div
-                  className={`rounded-md border border-input bg-[#2d2d2d] overflow-auto h-64 ${!botEnabled ? 'opacity-50 pointer-events-none' : ''}`}
-                >
-                  <Editor
-                    value={botCode}
-                    onValueChange={setBotCode}
-                    highlight={(code) => highlight(code, languages.python, 'python')}
-                    padding={12}
-                    style={{
-                      fontFamily:
-                        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                      fontSize: 13,
-                      minHeight: '100%',
-                    }}
-                    textareaId="bot-code"
-                    disabled={!botEnabled}
-                  />
+              ) : (
+                <div className="space-y-2">
+                  {bots.map((bot) => (
+                    <div key={bot.id} className="border border-input rounded-md overflow-hidden">
+                      {/* Bot header row */}
+                      <div
+                        className="flex items-center gap-2 px-3 py-2 bg-muted/50 cursor-pointer hover:bg-muted/80"
+                        onClick={(e) => {
+                          // Don't toggle if clicking on interactive elements
+                          if ((e.target as HTMLElement).closest('input, button')) return;
+                          setExpandedBotId(expandedBotId === bot.id ? null : bot.id);
+                        }}
+                      >
+                        <span className="text-muted-foreground">
+                          {expandedBotId === bot.id ? '▼' : '▶'}
+                        </span>
+
+                        {/* Bot name (click to edit) */}
+                        {editingNameId === bot.id ? (
+                          <input
+                            type="text"
+                            value={editingNameValue}
+                            onChange={(e) => setEditingNameValue(e.target.value)}
+                            onBlur={handleFinishEditingName}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleFinishEditingName();
+                              if (e.key === 'Escape') {
+                                setEditingNameId(null);
+                                setEditingNameValue('');
+                              }
+                            }}
+                            autoFocus
+                            className="px-2 py-0.5 text-sm bg-background border border-input rounded flex-1 max-w-[200px]"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span
+                            className="text-sm font-medium flex-1 hover:text-primary cursor-text"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEditingName(bot);
+                            }}
+                            title="Click to rename"
+                          >
+                            {bot.name}
+                          </span>
+                        )}
+
+                        {/* Enabled checkbox */}
+                        <label
+                          className="flex items-center gap-1.5 cursor-pointer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={bot.enabled}
+                            onChange={() => handleToggleBotEnabled(bot.id)}
+                            className="w-4 h-4 rounded border-input accent-primary"
+                          />
+                          <span className="text-xs text-muted-foreground">Enabled</span>
+                        </label>
+
+                        {/* Delete button */}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteBot(bot.id);
+                          }}
+                          title="Delete bot"
+                        >
+                          🗑
+                        </Button>
+                      </div>
+
+                      {/* Bot expanded content */}
+                      {expandedBotId === bot.id && (
+                        <div className="p-3 space-y-3 border-t border-input">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
+                              Define a <code className="bg-muted px-1 rounded">bot()</code> function
+                              that receives message data and optionally returns a reply.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResetBotCode(bot.id)}
+                            >
+                              Reset to Example
+                            </Button>
+                          </div>
+                          <CodeMirror
+                            value={bot.code}
+                            onChange={(code) => handleBotCodeChange(bot.id, code)}
+                            extensions={[python()]}
+                            theme={oneDark}
+                            height="256px"
+                            basicSetup={{
+                              lineNumbers: true,
+                              foldGutter: false,
+                              highlightActiveLine: true,
+                            }}
+                            className="rounded-md border border-input overflow-hidden text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
+
+              <Separator />
 
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>
@@ -884,11 +1033,12 @@ export function SettingsModal({
                   the server environment.
                 </p>
                 <p>
-                  <strong>Limits:</strong> 10 second timeout, max 3 concurrent executions.
+                  <strong>Limits:</strong> 10 second timeout per bot.
                 </p>
                 <p>
-                  <strong>Note:</strong> Bot only responds to incoming messages, not your own. For
-                  channel messages, <code>sender_key</code> is <code>None</code>.
+                  <strong>Note:</strong> Bots only respond to incoming messages, not your own. For
+                  channel messages, <code>sender_key</code> is <code>None</code>. Multiple enabled
+                  bots run serially.
                 </p>
               </div>
 

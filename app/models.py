@@ -232,6 +232,15 @@ class Favorite(BaseModel):
     id: str = Field(description="Channel key or contact public key")
 
 
+class BotConfig(BaseModel):
+    """Configuration for a single bot."""
+
+    id: str = Field(description="UUID for stable identity across renames/reorders")
+    name: str = Field(description="User-editable name")
+    enabled: bool = Field(default=False, description="Whether this bot is enabled")
+    code: str = Field(default="", description="Python code for this bot")
+
+
 class AppSettings(BaseModel):
     """Application settings stored in the database."""
 
@@ -266,11 +275,7 @@ class AppSettings(BaseModel):
         default=0,
         description="Unix timestamp of last advertisement sent (0 = never)",
     )
-    bot_enabled: bool = Field(
-        default=False,
-        description="Whether the message bot is enabled",
-    )
-    bot_code: str = Field(
-        default="",
-        description="Python code for the message bot function",
+    bots: list[BotConfig] = Field(
+        default_factory=list,
+        description="List of bot configurations",
     )

@@ -100,8 +100,8 @@ class TestMigration001:
             # Run migrations
             applied = await run_migrations(conn)
 
-            assert applied == 12  # All 11 migrations run
-            assert await get_version(conn) == 12
+            assert applied == 13  # All 13 migrations run
+            assert await get_version(conn) == 13
 
             # Verify columns exist by inserting and selecting
             await conn.execute(
@@ -183,9 +183,9 @@ class TestMigration001:
             applied1 = await run_migrations(conn)
             applied2 = await run_migrations(conn)
 
-            assert applied1 == 12  # All 11 migrations run
+            assert applied1 == 13  # All 13 migrations run
             assert applied2 == 0  # No migrations on second run
-            assert await get_version(conn) == 12
+            assert await get_version(conn) == 13
         finally:
             await conn.close()
 
@@ -245,9 +245,9 @@ class TestMigration001:
             # Run migrations - should not fail
             applied = await run_migrations(conn)
 
-            # All 11 migrations applied (version incremented) but no error
-            assert applied == 12
-            assert await get_version(conn) == 12
+            # All 13 migrations applied (version incremented) but no error
+            assert applied == 13
+            assert await get_version(conn) == 13
         finally:
             await conn.close()
 
@@ -335,5 +335,99 @@ class TestMigration001:
             assert row["name"] == "#existing"
             assert row["is_hashtag"] == 1
             assert row["last_read_at"] is None
+        finally:
+            await conn.close()
+
+
+class TestMigration013:
+    """Test migration 013: convert bot_enabled/bot_code to multi-bot format."""
+
+    @pytest.mark.asyncio
+    async def test_migration_converts_existing_bot_to_array(self):
+        """Migration converts existing bot_enabled/bot_code to bots array."""
+        import json
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+        try:
+            # Set version to 12 (just before migration 13)
+            await set_version(conn, 12)
+
+            # Create app_settings with old bot columns
+            await conn.execute("""
+                CREATE TABLE app_settings (
+                    id INTEGER PRIMARY KEY,
+                    max_radio_contacts INTEGER DEFAULT 50,
+                    favorites TEXT DEFAULT '[]',
+                    auto_decrypt_dm_on_advert INTEGER DEFAULT 0,
+                    sidebar_sort_order TEXT DEFAULT 'recent',
+                    last_message_times TEXT DEFAULT '{}',
+                    preferences_migrated INTEGER DEFAULT 0,
+                    advert_interval INTEGER DEFAULT 0,
+                    last_advert_time INTEGER DEFAULT 0,
+                    bot_enabled INTEGER DEFAULT 0,
+                    bot_code TEXT DEFAULT ''
+                )
+            """)
+            await conn.execute(
+                "INSERT INTO app_settings (id, bot_enabled, bot_code) VALUES (1, 1, 'def bot(): return \"hello\"')"
+            )
+            await conn.commit()
+
+            # Run migration 13
+            applied = await run_migrations(conn)
+            assert applied == 1
+            assert await get_version(conn) == 13
+
+            # Verify bots array was created with migrated data
+            cursor = await conn.execute("SELECT bots FROM app_settings WHERE id = 1")
+            row = await cursor.fetchone()
+            bots = json.loads(row["bots"])
+
+            assert len(bots) == 1
+            assert bots[0]["name"] == "Bot 1"
+            assert bots[0]["enabled"] is True
+            assert bots[0]["code"] == 'def bot(): return "hello"'
+            assert "id" in bots[0]  # Should have a UUID
+        finally:
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_migration_creates_empty_array_when_no_bot(self):
+        """Migration creates empty bots array when no existing bot data."""
+        import json
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+        try:
+            await set_version(conn, 12)
+
+            await conn.execute("""
+                CREATE TABLE app_settings (
+                    id INTEGER PRIMARY KEY,
+                    max_radio_contacts INTEGER DEFAULT 50,
+                    favorites TEXT DEFAULT '[]',
+                    auto_decrypt_dm_on_advert INTEGER DEFAULT 0,
+                    sidebar_sort_order TEXT DEFAULT 'recent',
+                    last_message_times TEXT DEFAULT '{}',
+                    preferences_migrated INTEGER DEFAULT 0,
+                    advert_interval INTEGER DEFAULT 0,
+                    last_advert_time INTEGER DEFAULT 0,
+                    bot_enabled INTEGER DEFAULT 0,
+                    bot_code TEXT DEFAULT ''
+                )
+            """)
+            await conn.execute(
+                "INSERT INTO app_settings (id, bot_enabled, bot_code) VALUES (1, 0, '')"
+            )
+            await conn.commit()
+
+            await run_migrations(conn)
+
+            cursor = await conn.execute("SELECT bots FROM app_settings WHERE id = 1")
+            row = await cursor.fetchone()
+            bots = json.loads(row["bots"])
+
+            assert bots == []
         finally:
             await conn.close()
