@@ -1,3 +1,13 @@
+## [1.7.0] - 2026-01-27
+
+Feature: Multi-bot functionality
+Bugfix: Adjust bot code editor display and add line numbers
+Bugfix: Fix clock filtering and contact lookup behavior bugs
+Bugfix: Fix repeater message duplication issue
+Bugfix: Correct outbound message timestamp assignment (affecting outgoing messages seen as incoming)
+UI: Move advertise button to identity tab
+Misc: Clarify fallback functionality for missing private key export in logs
+
 ## [1.6.0] - 2026-01-26
 
 Feature: Visualizer: extract public key from AnonReq, add heuristic repeater disambiguation, add reset button, draggable nodes
