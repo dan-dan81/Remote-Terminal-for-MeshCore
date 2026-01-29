@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 
@@ -115,7 +116,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
         track_pending_ack(ack_code, message_id, suggested_timeout)
         logger.debug("Tracking ACK %s for message %d", ack_code, message_id)
 
-    return Message(
+    message = Message(
         id=message_id,
         type="PRIV",
         conversation_key=db_contact.public_key,
@@ -125,6 +126,25 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
         outgoing=True,
         acked=0,
     )
+
+    # Trigger bots for outgoing DMs (runs in background, doesn't block response)
+    from app.bot import run_bot_for_message
+
+    asyncio.create_task(
+        run_bot_for_message(
+            sender_name=None,
+            sender_key=db_contact.public_key,
+            message_text=request.text,
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=now,
+            path=None,
+            is_outgoing=True,
+        )
+    )
+
+    return message
 
 
 # Temporary radio slot used for sending channel messages
@@ -213,7 +233,7 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
             detail="Failed to store outgoing message - unexpected duplicate",
         )
 
-    return Message(
+    message = Message(
         id=message_id,
         type="CHAN",
         conversation_key=channel_key_upper,
@@ -223,3 +243,22 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         outgoing=True,
         acked=0,
     )
+
+    # Trigger bots for outgoing channel messages (runs in background, doesn't block response)
+    from app.bot import run_bot_for_message
+
+    asyncio.create_task(
+        run_bot_for_message(
+            sender_name=radio_name or None,
+            sender_key=None,
+            message_text=request.text,
+            is_dm=False,
+            channel_key=channel_key_upper,
+            channel_name=db_channel.name,
+            sender_timestamp=now,
+            path=None,
+            is_outgoing=True,
+        )
+    )
+
+    return message
