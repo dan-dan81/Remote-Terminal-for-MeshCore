@@ -322,8 +322,8 @@ async def create_dm_message_from_decrypted(
     # Update contact's last_contacted timestamp (for sorting)
     await ContactRepository.update_last_contacted(conversation_key, received)
 
-    # Run bot if enabled (for incoming DMs only, not historical decryption or outgoing)
-    if trigger_bot and not outgoing:
+    # Run bot if enabled (for all real-time DMs, including our own outgoing messages)
+    if trigger_bot:
         from app.bot import run_bot_for_message
 
         # Get contact name for the bot
@@ -339,7 +339,7 @@ async def create_dm_message_from_decrypted(
             channel_name=None,
             sender_timestamp=decrypted.timestamp,
             path=path,
-            is_outgoing=False,
+            is_outgoing=outgoing,
         )
 
     return msg_id

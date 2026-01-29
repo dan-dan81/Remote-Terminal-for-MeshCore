@@ -871,7 +871,15 @@ export function SettingsModal({
               <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
                 <p className="text-sm text-yellow-500">
                   <strong>Security Warning:</strong> This feature executes arbitrary Python code on
-                  the server. Only enable if you understand the security implications.
+                  the server. Only run trusted code, and be cautious of arbitrary usage of message
+                  parameters.
+                </p>
+              </div>
+
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+                <p className="text-sm text-yellow-500">
+                  <strong>Don&apos;t wreck the mesh!</strong> Bots process ALL messages, including
+                  their own. Be careful of creating infinite loops!
                 </p>
               </div>
 

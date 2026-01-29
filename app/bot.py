@@ -225,7 +225,7 @@ async def run_bot_for_message(
     is_outgoing: bool = False,
 ) -> None:
     """
-    Run all enabled bots for an incoming message.
+    Run all enabled bots for a message (incoming or outgoing).
 
     This is the main entry point called by message handlers after
     a message is successfully decrypted and stored. Bots run serially,
@@ -240,12 +240,8 @@ async def run_bot_for_message(
         channel_name: Channel name (e.g. "#general"), None for DMs
         sender_timestamp: Sender's timestamp from the message
         path: Hex-encoded routing path
-        is_outgoing: Whether this is our own outgoing message (skip bot)
+        is_outgoing: Whether this is our own outgoing message
     """
-    # Don't respond to our own outgoing messages
-    if is_outgoing:
-        return
-
     # Early check if any bots are enabled (will re-check after sleep)
     from app.repository import AppSettingsRepository
 
