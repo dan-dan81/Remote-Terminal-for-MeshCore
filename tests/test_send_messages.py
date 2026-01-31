@@ -73,7 +73,10 @@ class TestOutgoingDMBotTrigger:
         db_contact = Contact(public_key="ab" * 32, name="Alice")
 
         # Bot that would take a long time
-        slow_bot = AsyncMock(side_effect=lambda **kw: asyncio.sleep(10))
+        async def _slow(**kw):
+            await asyncio.sleep(10)
+
+        slow_bot = AsyncMock(side_effect=_slow)
 
         with (
             patch("app.routers.messages.require_connected", return_value=mc),
@@ -179,7 +182,10 @@ class TestOutgoingChannelBotTrigger:
         mc = _make_mc(name="MyNode")
         db_channel = Channel(key="cc" * 16, name="#slow")
 
-        slow_bot = AsyncMock(side_effect=lambda **kw: asyncio.sleep(10))
+        async def _slow(**kw):
+            await asyncio.sleep(10)
+
+        slow_bot = AsyncMock(side_effect=_slow)
 
         with (
             patch("app.routers.messages.require_connected", return_value=mc),
