@@ -75,7 +75,7 @@ async def on_contact_message(event: "Event") -> None:
     # (get_by_key_or_prefix does exact match first, then prefix fallback)
     contact = await ContactRepository.get_by_key_or_prefix(sender_pubkey)
     if contact:
-        sender_pubkey = contact.public_key
+        sender_pubkey = contact.public_key.lower()
 
         # Skip messages from repeaters - they only send CLI responses, not chat messages.
         # CLI responses are handled by the command endpoint and txt_type filter above.
