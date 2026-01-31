@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseSenderFromText } from '../utils/messageParser';
-import { CONTACT_TYPE_REPEATER, CONTACT_TYPE_CLIENT } from '../types';
+import { CONTACT_TYPE_REPEATER } from '../types';
 
 describe('Repeater message sender parsing', () => {
   /**
@@ -52,7 +52,7 @@ describe('Repeater message sender parsing', () => {
 
   it('non-repeater messages still get sender parsed', () => {
     const channelMessage = 'Alice: Hello everyone!';
-    const contactType: number = CONTACT_TYPE_CLIENT;
+    const contactType: number = 1; // client
 
     const isRepeater = contactType === CONTACT_TYPE_REPEATER;
     const { sender, content } = isRepeater

@@ -148,7 +148,7 @@ export function sortContactsByDistance(
 /**
  * Get simple hop count from path string
  */
-export function getHopCount(path: string | null | undefined): number {
+function getHopCount(path: string | null | undefined): number {
   if (!path || path.length === 0) {
     return 0;
   }

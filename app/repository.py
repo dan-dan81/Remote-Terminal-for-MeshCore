@@ -15,7 +15,6 @@ from app.models import (
     Favorite,
     Message,
     MessagePath,
-    RawPacket,
 )
 
 logger = logging.getLogger(__name__)
@@ -270,13 +269,6 @@ class MessageRepository:
             return [MessagePath(**p) for p in paths_data]
         except (json.JSONDecodeError, TypeError, KeyError):
             return None
-
-    @staticmethod
-    def _serialize_paths(paths: list[dict] | None) -> str | None:
-        """Serialize paths list to JSON string."""
-        if not paths:
-            return None
-        return json.dumps(paths)
 
     @staticmethod
     async def create(
@@ -620,29 +612,6 @@ class RawPacketRepository:
             (message_id, packet_id),
         )
         await db.conn.commit()
-
-    @staticmethod
-    async def get_undecrypted(limit: int = 100) -> list[RawPacket]:
-        """Get undecrypted packets (those without a linked message)."""
-        cursor = await db.conn.execute(
-            """
-            SELECT id, timestamp, data, message_id FROM raw_packets
-            WHERE message_id IS NULL
-            ORDER BY timestamp DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        rows = await cursor.fetchall()
-        return [
-            RawPacket(
-                id=row["id"],
-                timestamp=row["timestamp"],
-                data=row["data"].hex(),
-                message_id=row["message_id"],
-            )
-            for row in rows
-        ]
 
     @staticmethod
     async def prune_old_undecrypted(max_age_days: int) -> int:

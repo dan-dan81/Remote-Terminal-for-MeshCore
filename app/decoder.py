@@ -393,21 +393,6 @@ def parse_advertisement(payload: bytes) -> ParsedAdvertisement | None:
     )
 
 
-def try_parse_advertisement(raw_packet: bytes) -> ParsedAdvertisement | None:
-    """
-    Try to parse a raw packet as an advertisement.
-    Returns parsed advertisement if successful, None otherwise.
-    """
-    packet_info = parse_packet(raw_packet)
-    if packet_info is None:
-        return None
-
-    if packet_info.payload_type != PayloadType.ADVERT:
-        return None
-
-    return parse_advertisement(packet_info.payload)
-
-
 # =============================================================================
 # Direct Message (TEXT_MESSAGE) Decryption
 # =============================================================================

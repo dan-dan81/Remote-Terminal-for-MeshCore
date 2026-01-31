@@ -16,10 +16,9 @@ from contextlib import asynccontextmanager
 
 from meshcore import EventType
 
-from app.config import settings
 from app.models import Contact
 from app.radio import radio_manager
-from app.repository import ChannelRepository, ContactRepository
+from app.repository import AppSettingsRepository, ChannelRepository, ContactRepository
 
 logger = logging.getLogger(__name__)
 
@@ -347,8 +346,6 @@ async def send_advertisement(force: bool = False) -> bool:
 
     Returns True if successful, False otherwise (including if throttled).
     """
-    from app.repository import AppSettingsRepository
-
     if not radio_manager.is_connected or radio_manager.meshcore is None:
         logger.debug("Cannot send advertisement: radio not connected")
         return False
@@ -530,7 +527,8 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
 
     try:
         # Get recent non-repeater contacts from database
-        max_contacts = settings.max_radio_contacts
+        app_settings = await AppSettingsRepository.get()
+        max_contacts = app_settings.max_radio_contacts
         contacts = await ContactRepository.get_recent_non_repeaters(limit=max_contacts)
         logger.debug("Found %d recent non-repeater contacts to sync", len(contacts))
 

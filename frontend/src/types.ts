@@ -164,7 +164,6 @@ export interface MigratePreferencesResponse {
 }
 
 /** Contact type constants */
-export const CONTACT_TYPE_CLIENT = 1;
 export const CONTACT_TYPE_REPEATER = 2;
 
 export interface NeighborInfo {

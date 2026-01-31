@@ -168,7 +168,7 @@ class TestChannelMessagePipeline:
         assert result is not None
 
         # Raw packet should be stored
-        raw_packets = await RawPacketRepository.get_undecrypted(limit=10)
+        raw_packets = await RawPacketRepository.get_all_undecrypted()
         assert len(raw_packets) >= 1
 
         # No message broadcast (only raw_packet broadcast)
@@ -576,8 +576,8 @@ class TestCreateMessageFromDecrypted:
             )
 
         # Verify packet is marked decrypted (has message_id set)
-        undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
-        packet_ids = [p.id for p in undecrypted]
+        undecrypted = await RawPacketRepository.get_all_undecrypted()
+        packet_ids = [p[0] for p in undecrypted]
         assert packet_id not in packet_ids  # Should be marked as decrypted
 
 
@@ -831,8 +831,8 @@ class TestCreateDMMessageFromDecrypted:
             )
 
         # Verify packet is marked decrypted
-        undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
-        packet_ids = [p.id for p in undecrypted]
+        undecrypted = await RawPacketRepository.get_all_undecrypted()
+        packet_ids = [p[0] for p in undecrypted]
         assert packet_id not in packet_ids
 
     @pytest.mark.asyncio
@@ -939,8 +939,8 @@ class TestDMDecryptionFunction:
         assert messages[0].outgoing is False
 
         # Verify raw packet is linked
-        undecrypted = await RawPacketRepository.get_undecrypted(limit=100)
-        assert packet_id not in [p.id for p in undecrypted]
+        undecrypted = await RawPacketRepository.get_all_undecrypted()
+        assert packet_id not in [p[0] for p in undecrypted]
 
 
 class TestRepeaterMessageFiltering:

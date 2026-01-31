@@ -64,14 +64,6 @@ def has_private_key() -> bool:
     return _private_key is not None
 
 
-def clear_private_key() -> None:
-    """Clear the stored private key from memory."""
-    global _private_key, _public_key
-    _private_key = None
-    _public_key = None
-    logger.info("Private key cleared from keystore")
-
-
 async def export_and_store_private_key(mc: "MeshCore") -> bool:
     """Export private key from the radio and store it in the keystore.
 

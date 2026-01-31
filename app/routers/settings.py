@@ -130,20 +130,6 @@ async def update_settings(update: AppSettingsUpdate) -> AppSettings:
     return await AppSettingsRepository.get()
 
 
-@router.post("/favorites", response_model=AppSettings)
-async def add_favorite(request: FavoriteRequest) -> AppSettings:
-    """Add a conversation to favorites."""
-    logger.info("Adding favorite: %s %s", request.type, request.id[:12])
-    return await AppSettingsRepository.add_favorite(request.type, request.id)
-
-
-@router.delete("/favorites", response_model=AppSettings)
-async def remove_favorite(request: FavoriteRequest) -> AppSettings:
-    """Remove a conversation from favorites."""
-    logger.info("Removing favorite: %s %s", request.type, request.id[:12])
-    return await AppSettingsRepository.remove_favorite(request.type, request.id)
-
-
 @router.post("/favorites/toggle", response_model=AppSettings)
 async def toggle_favorite(request: FavoriteRequest) -> AppSettings:
     """Toggle a conversation's favorite status."""

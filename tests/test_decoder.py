@@ -254,7 +254,7 @@ class TestAdvertisementParsing:
 
     def test_parse_repeater_advertisement_with_gps(self):
         """Parse a repeater advertisement with GPS coordinates."""
-        from app.decoder import try_parse_advertisement
+        from app.decoder import parse_advertisement, parse_packet
 
         # Repeater packet with lat/lon of 49.02056 / -123.82935
         # Flags 0x92: Role=Repeater (2), Location=Yes, Name=Yes
@@ -266,7 +266,9 @@ class TestAdvertisementParsing:
         )
         packet = bytes.fromhex(packet_hex)
 
-        result = try_parse_advertisement(packet)
+        info = parse_packet(packet)
+        assert info is not None
+        result = parse_advertisement(info.payload)
 
         assert result is not None
         assert (
@@ -282,7 +284,7 @@ class TestAdvertisementParsing:
 
     def test_parse_chat_node_advertisement_with_gps(self):
         """Parse a chat node advertisement with GPS coordinates."""
-        from app.decoder import try_parse_advertisement
+        from app.decoder import parse_advertisement, parse_packet
 
         # Chat node packet with lat/lon of 47.786038 / -122.344096
         # Flags 0x91: Role=Chat (1), Location=Yes, Name=Yes
@@ -294,7 +296,9 @@ class TestAdvertisementParsing:
         )
         packet = bytes.fromhex(packet_hex)
 
-        result = try_parse_advertisement(packet)
+        info = parse_packet(packet)
+        assert info is not None
+        result = parse_advertisement(info.payload)
 
         assert result is not None
         assert (
@@ -310,7 +314,7 @@ class TestAdvertisementParsing:
 
     def test_parse_advertisement_without_gps(self):
         """Parse an advertisement without GPS coordinates."""
-        from app.decoder import try_parse_advertisement
+        from app.decoder import parse_advertisement, parse_packet
 
         # Chat node packet without location
         # Flags 0x81: Role=Chat (1), Location=No, Name=Yes
@@ -322,7 +326,9 @@ class TestAdvertisementParsing:
         )
         packet = bytes.fromhex(packet_hex)
 
-        result = try_parse_advertisement(packet)
+        info = parse_packet(packet)
+        assert info is not None
+        result = parse_advertisement(info.payload)
 
         assert result is not None
         assert (
@@ -352,15 +358,15 @@ class TestAdvertisementParsing:
         assert info.payload_type == PayloadType.ADVERT
 
     def test_non_advertisement_returns_none(self):
-        """Non-advertisement packets return None from try_parse_advertisement."""
-        from app.decoder import try_parse_advertisement
+        """Non-advertisement packets return None when parsed as advertisement."""
+        from app.decoder import PayloadType, parse_packet
 
         # GROUP_TEXT packet, not an advertisement
         packet = bytes([0x15, 0x00]) + bytes(50)
 
-        result = try_parse_advertisement(packet)
-
-        assert result is None
+        info = parse_packet(packet)
+        assert info is not None
+        assert info.payload_type != PayloadType.ADVERT
 
 
 class TestScalarClamping:

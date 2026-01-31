@@ -189,13 +189,7 @@ async def reboot_radio() -> dict:
     success = await radio_manager.reconnect()
 
     if success:
-        # Re-register event handlers after successful reconnect
-        from app.event_handlers import register_event_handlers
-
-        if radio_manager.meshcore:
-            register_event_handlers(radio_manager.meshcore)
-            await radio_manager.meshcore.start_auto_message_fetching()
-            logger.info("Event handlers re-registered and auto message fetching started")
+        await radio_manager.post_connect_setup()
 
         return {"status": "ok", "message": "Reconnected successfully", "connected": True}
     else:
@@ -228,14 +222,7 @@ async def reconnect_radio() -> dict:
     success = await radio_manager.reconnect()
 
     if success:
-        # Re-register event handlers after successful reconnect
-        from app.event_handlers import register_event_handlers
-
-        if radio_manager.meshcore:
-            register_event_handlers(radio_manager.meshcore)
-            # Restart auto message fetching
-            await radio_manager.meshcore.start_auto_message_fetching()
-            logger.info("Event handlers re-registered and auto message fetching started")
+        await radio_manager.post_connect_setup()
 
         return {"status": "ok", "message": "Reconnected successfully", "connected": True}
     else:

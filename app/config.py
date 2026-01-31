@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     serial_baudrate: int = 115200
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     database_path: str = "data/meshcore.db"
-    max_radio_contacts: int = 200  # Max non-repeater contacts to keep on radio for DM ACKs
 
 
 settings = Settings()

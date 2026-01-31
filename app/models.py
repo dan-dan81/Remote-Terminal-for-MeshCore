@@ -103,20 +103,6 @@ class Message(BaseModel):
     acked: int = 0
 
 
-class RawPacket(BaseModel):
-    """Raw packet as stored in the database."""
-
-    id: int
-    timestamp: int
-    data: str = Field(description="Hex-encoded packet data")
-    message_id: int | None = None
-
-    @property
-    def decrypted(self) -> bool:
-        """A packet is decrypted iff it has a linked message_id."""
-        return self.message_id is not None
-
-
 class RawPacketDecryptedInfo(BaseModel):
     """Decryption info for a raw packet (when successfully decrypted)."""
 

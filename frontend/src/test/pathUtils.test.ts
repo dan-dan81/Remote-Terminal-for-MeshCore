@@ -4,13 +4,12 @@ import {
   findContactsByPrefix,
   calculateDistance,
   sortContactsByDistance,
-  getHopCount,
   resolvePath,
   formatDistance,
   formatHopCounts,
 } from '../utils/pathUtils';
 import type { Contact, RadioConfig } from '../types';
-import { CONTACT_TYPE_REPEATER, CONTACT_TYPE_CLIENT } from '../types';
+import { CONTACT_TYPE_REPEATER } from '../types';
 
 // Helper to create mock contacts
 function createContact(overrides: Partial<Contact> = {}): Contact {
@@ -90,7 +89,7 @@ describe('findContactsByPrefix', () => {
     createContact({
       public_key: '1ACCCC' + 'C'.repeat(52),
       name: 'Client1',
-      type: CONTACT_TYPE_CLIENT,
+      type: 1, // client
     }),
   ];
 
@@ -192,20 +191,6 @@ describe('sortContactsByDistance', () => {
     const contacts = [contactFar, contactClose];
     const sorted = sortContactsByDistance(contacts, null, -74.006);
     expect(sorted[0].name).toBe(contacts[0].name);
-  });
-});
-
-describe('getHopCount', () => {
-  it('returns 0 for null/empty', () => {
-    expect(getHopCount(null)).toBe(0);
-    expect(getHopCount(undefined)).toBe(0);
-    expect(getHopCount('')).toBe(0);
-  });
-
-  it('counts hops correctly', () => {
-    expect(getHopCount('1A')).toBe(1);
-    expect(getHopCount('1A2B')).toBe(2);
-    expect(getHopCount('1A2B3C')).toBe(3);
   });
 });
 
