@@ -209,3 +209,9 @@ export interface CommandResponse {
   response: string;
   sender_timestamp: number | null;
 }
+
+export interface UnreadCounts {
+  counts: Record<string, number>;
+  mentions: Record<string, boolean>;
+  last_message_times: Record<string, number>;
+}

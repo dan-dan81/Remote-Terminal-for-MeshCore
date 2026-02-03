@@ -282,12 +282,32 @@ export function App() {
     }
   }, []);
 
-  // Initial fetch for config and settings
+  // Fetch all contacts, paginating if >1000
+  const fetchAllContacts = useCallback(async (): Promise<Contact[]> => {
+    const pageSize = 1000;
+    const first = await api.getContacts(pageSize, 0);
+    if (first.length < pageSize) return first;
+    let all = [...first];
+    let offset = pageSize;
+    while (true) {
+      const page = await api.getContacts(pageSize, offset);
+      all = all.concat(page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    return all;
+  }, []);
+
+  // Initial fetch for config, settings, and data
   useEffect(() => {
     fetchConfig();
     fetchAppSettings();
     fetchUndecryptedCount();
-  }, [fetchConfig, fetchAppSettings, fetchUndecryptedCount]);
+
+    // Fetch contacts and channels via REST (parallel, faster than WS serial push)
+    api.getChannels().then(setChannels).catch(console.error);
+    fetchAllContacts().then(setContacts).catch(console.error);
+  }, [fetchConfig, fetchAppSettings, fetchUndecryptedCount, fetchAllContacts]);
 
   // One-time migration of localStorage preferences to server
   const hasMigratedRef = useRef(false);
@@ -355,61 +375,53 @@ export function App() {
     migratePreferences();
   }, [appSettings]);
 
-  // Resolve URL hash to a conversation
-  const resolveHashToConversation = useCallback((): Conversation | null => {
-    const hashConv = parseHashConversation();
-    if (!hashConv) return null;
+  // Phase 1: Set initial conversation from URL hash or default to Public channel
+  // Only needs channels (fast path) - doesn't wait for contacts
+  const hasSetDefaultConversation = useRef(false);
+  useEffect(() => {
+    if (hasSetDefaultConversation.current || activeConversation) return;
+    if (channels.length === 0) return;
 
-    if (hashConv.type === 'raw') {
-      return { type: 'raw', id: 'raw', name: 'Raw Packet Feed' };
+    const hashConv = parseHashConversation();
+
+    // Handle non-data views immediately
+    if (hashConv?.type === 'raw') {
+      setActiveConversation({ type: 'raw', id: 'raw', name: 'Raw Packet Feed' });
+      hasSetDefaultConversation.current = true;
+      return;
     }
-    if (hashConv.type === 'map') {
-      return {
+    if (hashConv?.type === 'map') {
+      setActiveConversation({
         type: 'map',
         id: 'map',
         name: 'Node Map',
         mapFocusKey: hashConv.mapFocusKey,
-      };
+      });
+      hasSetDefaultConversation.current = true;
+      return;
     }
-    if (hashConv.type === 'visualizer') {
-      return { type: 'visualizer', id: 'visualizer', name: 'Mesh Visualizer' };
-    }
-    if (hashConv.type === 'channel') {
-      const channel = channels.find(
-        (c) => c.name === hashConv.name || c.name === `#${hashConv.name}`
-      );
-      if (channel) {
-        return { type: 'channel', id: channel.key, name: channel.name };
-      }
-    }
-    if (hashConv.type === 'contact') {
-      const contact = contacts.find(
-        (c) => getContactDisplayName(c.name, c.public_key) === hashConv.name
-      );
-      if (contact) {
-        return {
-          type: 'contact',
-          id: contact.public_key,
-          name: getContactDisplayName(contact.name, contact.public_key),
-        };
-      }
-    }
-    return null;
-  }, [channels, contacts]);
-
-  // Set initial conversation from URL hash or default to Public channel
-  const hasSetDefaultConversation = useRef(false);
-  useEffect(() => {
-    if (hasSetDefaultConversation.current || activeConversation) return;
-    if (channels.length === 0 && contacts.length === 0) return;
-
-    const conv = resolveHashToConversation();
-    if (conv) {
-      setActiveConversation(conv);
+    if (hashConv?.type === 'visualizer') {
+      setActiveConversation({ type: 'visualizer', id: 'visualizer', name: 'Mesh Visualizer' });
       hasSetDefaultConversation.current = true;
       return;
     }
 
+    // Handle channel hash
+    if (hashConv?.type === 'channel') {
+      const channel = channels.find(
+        (c) => c.name === hashConv.name || c.name === `#${hashConv.name}`
+      );
+      if (channel) {
+        setActiveConversation({ type: 'channel', id: channel.key, name: channel.name });
+        hasSetDefaultConversation.current = true;
+        return;
+      }
+    }
+
+    // Contact hash — wait for phase 2
+    if (hashConv?.type === 'contact') return;
+
+    // No hash or unresolvable — default to Public
     const publicChannel = channels.find((c) => c.name === 'Public');
     if (publicChannel) {
       setActiveConversation({
@@ -419,7 +431,42 @@ export function App() {
       });
       hasSetDefaultConversation.current = true;
     }
-  }, [channels, contacts, activeConversation, resolveHashToConversation]);
+  }, [channels, activeConversation]);
+
+  // Phase 2: Resolve contact hash (only if phase 1 didn't set a conversation)
+  useEffect(() => {
+    if (hasSetDefaultConversation.current || activeConversation) return;
+    if (contacts.length === 0) return;
+
+    const hashConv = parseHashConversation();
+    if (hashConv?.type === 'contact') {
+      const contact = contacts.find(
+        (c) => getContactDisplayName(c.name, c.public_key) === hashConv.name
+      );
+      if (contact) {
+        setActiveConversation({
+          type: 'contact',
+          id: contact.public_key,
+          name: getContactDisplayName(contact.name, contact.public_key),
+        });
+        hasSetDefaultConversation.current = true;
+        return;
+      }
+    }
+
+    // Contact hash didn't match — fall back to Public if channels loaded
+    if (channels.length > 0) {
+      const publicChannel = channels.find((c) => c.name === 'Public');
+      if (publicChannel) {
+        setActiveConversation({
+          type: 'channel',
+          id: publicChannel.key,
+          name: publicChannel.name,
+        });
+        hasSetDefaultConversation.current = true;
+      }
+    }
+  }, [contacts, channels, activeConversation]);
 
   // Keep ref in sync and update URL hash
   useEffect(() => {

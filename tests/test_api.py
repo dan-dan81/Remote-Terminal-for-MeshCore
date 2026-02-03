@@ -481,6 +481,196 @@ class TestReadStateEndpoints:
             assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
+    async def test_get_unreads_returns_counts_and_mentions(self):
+        """GET /unreads returns unread counts, mentions, and last message times."""
+        import aiosqlite
+
+        from app.database import db
+        from app.repository import MessageRepository
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        # Create tables
+        await conn.execute("""
+            CREATE TABLE contacts (
+                public_key TEXT PRIMARY KEY,
+                name TEXT,
+                type INTEGER DEFAULT 0,
+                flags INTEGER DEFAULT 0,
+                last_path TEXT,
+                last_path_len INTEGER DEFAULT -1,
+                last_advert INTEGER,
+                lat REAL,
+                lon REAL,
+                last_seen INTEGER,
+                on_radio INTEGER DEFAULT 0,
+                last_contacted INTEGER,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE channels (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                is_hashtag INTEGER DEFAULT 0,
+                on_radio INTEGER DEFAULT 0,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY,
+                type TEXT NOT NULL,
+                conversation_key TEXT NOT NULL,
+                text TEXT NOT NULL,
+                sender_timestamp INTEGER,
+                received_at INTEGER NOT NULL,
+                paths TEXT,
+                txt_type INTEGER DEFAULT 0,
+                signature TEXT,
+                outgoing INTEGER DEFAULT 0,
+                acked INTEGER DEFAULT 0,
+                UNIQUE(type, conversation_key, text, sender_timestamp)
+            )
+        """)
+
+        # Insert channel and contact
+        await conn.execute(
+            "INSERT INTO channels (key, name, last_read_at) VALUES (?, ?, ?)",
+            ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Public", 1000),
+        )
+        await conn.execute(
+            "INSERT INTO contacts (public_key, name, last_read_at) VALUES (?, ?, ?)",
+            ("abcd" * 16, "Alice", 1000),
+        )
+
+        # Insert messages: 2 unread channel msgs (after last_read_at=1000),
+        # 1 read (before), 1 outgoing (should not count)
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Bob: hello", 1001, 0),
+        )
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Bob: @[TestUser] hey", 1002, 0),
+        )
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Bob: old msg", 999, 0),
+        )
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Me: outgoing", 1003, 1),
+        )
+
+        # Insert 1 unread DM
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("PRIV", "abcd" * 16, "hi there", 1005, 0),
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            result = await MessageRepository.get_unread_counts("TestUser")
+
+            # Channel: 2 unread (1001 and 1002), one has mention
+            assert result["counts"]["channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"] == 2
+            assert result["mentions"]["channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"] is True
+
+            # Contact: 1 unread
+            assert result["counts"][f"contact-{'abcd' * 16}"] == 1
+
+            # Last message times should include all conversations
+            assert "channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1" in result["last_message_times"]
+            assert result["last_message_times"]["channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"] == 1003
+            assert f"contact-{'abcd' * 16}" in result["last_message_times"]
+            assert result["last_message_times"][f"contact-{'abcd' * 16}"] == 1005
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_get_unreads_no_name_skips_mentions(self):
+        """GET /unreads without name param returns counts but no mention flags."""
+        import aiosqlite
+
+        from app.database import db
+        from app.repository import MessageRepository
+
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+
+        await conn.execute("""
+            CREATE TABLE channels (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                is_hashtag INTEGER DEFAULT 0,
+                on_radio INTEGER DEFAULT 0,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE contacts (
+                public_key TEXT PRIMARY KEY,
+                name TEXT,
+                type INTEGER DEFAULT 0,
+                flags INTEGER DEFAULT 0,
+                last_path TEXT,
+                last_path_len INTEGER DEFAULT -1,
+                last_advert INTEGER,
+                lat REAL,
+                lon REAL,
+                last_seen INTEGER,
+                on_radio INTEGER DEFAULT 0,
+                last_contacted INTEGER,
+                last_read_at INTEGER
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY,
+                type TEXT NOT NULL,
+                conversation_key TEXT NOT NULL,
+                text TEXT NOT NULL,
+                sender_timestamp INTEGER,
+                received_at INTEGER NOT NULL,
+                paths TEXT,
+                txt_type INTEGER DEFAULT 0,
+                signature TEXT,
+                outgoing INTEGER DEFAULT 0,
+                acked INTEGER DEFAULT 0,
+                UNIQUE(type, conversation_key, text, sender_timestamp)
+            )
+        """)
+
+        await conn.execute(
+            "INSERT INTO channels (key, name, last_read_at) VALUES (?, ?, ?)",
+            ("CHAN1KEY1CHAN1KEY1CHAN1KEY1CHAN1KEY1", "Public", 0),
+        )
+        await conn.execute(
+            "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
+            ("CHAN", "CHAN1KEY1CHAN1KEY1CHAN1KEY1CHAN1KEY1", "Bob: @[Alice] hey", 1001, 0),
+        )
+        await conn.commit()
+
+        original_conn = db._connection
+        db._connection = conn
+
+        try:
+            result = await MessageRepository.get_unread_counts(None)
+
+            assert result["counts"]["channel-CHAN1KEY1CHAN1KEY1CHAN1KEY1CHAN1KEY1"] == 1
+            # No mentions since name was None
+            assert len(result["mentions"]) == 0
+        finally:
+            db._connection = original_conn
+            await conn.close()
+
+    @pytest.mark.asyncio
     async def test_mark_all_read_updates_all_conversations(self):
         """Bulk mark-all-read updates all contacts and channels."""
         import time

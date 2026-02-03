@@ -5,7 +5,6 @@ import { getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
 import { isFavorite } from '../utils/favorites';
-import { UNREAD_FETCH_LIMIT } from '../api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
@@ -33,9 +32,9 @@ interface SidebarProps {
   onSortOrderChange?: (order: SortOrder) => void;
 }
 
-/** Format unread count, showing "X+" if at the fetch limit (indicating there may be more) */
+/** Format unread count for display */
 function formatUnreadCount(count: number): string {
-  return count >= UNREAD_FETCH_LIMIT ? `${count}+` : `${count}`;
+  return `${count}`;
 }
 
 export function Sidebar({

@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.radio import radio_manager
-from app.repository import ChannelRepository, ContactRepository, RawPacketRepository
+from app.repository import RawPacketRepository
 from app.websocket import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -16,12 +16,15 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time updates."""
+    """WebSocket endpoint for real-time updates.
+
+    Only sends health status on initial connect. Contacts and channels
+    are fetched via REST endpoints for faster parallel loading.
+    """
     await ws_manager.connect(websocket)
 
-    # Send initial state
+    # Send initial health status
     try:
-        # Health status
         db_size_mb = 0.0
         try:
             db_size_bytes = os.path.getsize(settings.database_path)
@@ -44,31 +47,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             "oldest_undecrypted_timestamp": oldest_ts,
         }
         await ws_manager.send_personal(websocket, "health", health_data)
-
-        # Contacts - fetch all by paginating until exhausted
-        all_contacts = []
-        chunk_size = 500
-        offset = 0
-        while True:
-            chunk = await ContactRepository.get_all(limit=chunk_size, offset=offset)
-            all_contacts.extend(chunk)
-            if len(chunk) < chunk_size:
-                break
-            offset += chunk_size
-
-        await ws_manager.send_personal(
-            websocket,
-            "contacts",
-            [c.model_dump() for c in all_contacts],
-        )
-
-        # Channels
-        channels = await ChannelRepository.get_all()
-        await ws_manager.send_personal(
-            websocket,
-            "channels",
-            [c.model_dump() for c in channels],
-        )
 
     except Exception as e:
         logger.error("Error sending initial state: %s", e)

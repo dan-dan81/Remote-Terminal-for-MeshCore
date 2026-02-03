@@ -550,6 +550,86 @@ class MessageRepository:
 
         return result
 
+    @staticmethod
+    async def get_unread_counts(name: str | None = None) -> dict:
+        """Get unread message counts, mention flags, and last message times for all conversations.
+
+        Args:
+            name: User's display name for @[name] mention detection. If None, mentions are skipped.
+
+        Returns:
+            Dict with 'counts', 'mentions', and 'last_message_times' keys.
+        """
+        counts: dict[str, int] = {}
+        mention_flags: dict[str, bool] = {}
+        last_message_times: dict[str, int] = {}
+
+        mention_pattern = f"%@[{name}]%" if name else None
+
+        # Channel unreads
+        cursor = await db.conn.execute(
+            """
+            SELECT m.conversation_key,
+                   COUNT(*) as unread_count,
+                   MAX(m.received_at) as last_message_time,
+                   SUM(CASE WHEN m.text LIKE ? THEN 1 ELSE 0 END) > 0 as has_mention
+            FROM messages m
+            JOIN channels c ON m.conversation_key = c.key
+            WHERE m.type = 'CHAN' AND m.outgoing = 0
+              AND m.received_at > COALESCE(c.last_read_at, 0)
+            GROUP BY m.conversation_key
+            """,
+            (mention_pattern or "",),
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            state_key = f"channel-{row['conversation_key']}"
+            counts[state_key] = row["unread_count"]
+            if mention_pattern and row["has_mention"]:
+                mention_flags[state_key] = True
+
+        # Contact unreads
+        cursor = await db.conn.execute(
+            """
+            SELECT m.conversation_key,
+                   COUNT(*) as unread_count,
+                   MAX(m.received_at) as last_message_time,
+                   SUM(CASE WHEN m.text LIKE ? THEN 1 ELSE 0 END) > 0 as has_mention
+            FROM messages m
+            JOIN contacts ct ON m.conversation_key = ct.public_key
+            WHERE m.type = 'PRIV' AND m.outgoing = 0
+              AND m.received_at > COALESCE(ct.last_read_at, 0)
+            GROUP BY m.conversation_key
+            """,
+            (mention_pattern or "",),
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            state_key = f"contact-{row['conversation_key']}"
+            counts[state_key] = row["unread_count"]
+            if mention_pattern and row["has_mention"]:
+                mention_flags[state_key] = True
+
+        # Last message times for all conversations (including read ones)
+        cursor = await db.conn.execute(
+            """
+            SELECT type, conversation_key, MAX(received_at) as last_message_time
+            FROM messages
+            GROUP BY type, conversation_key
+            """
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            prefix = "channel" if row["type"] == "CHAN" else "contact"
+            state_key = f"{prefix}-{row['conversation_key']}"
+            last_message_times[state_key] = row["last_message_time"]
+
+        return {
+            "counts": counts,
+            "mentions": mention_flags,
+            "last_message_times": last_message_times,
+        }
+
 
 class RawPacketRepository:
     @staticmethod

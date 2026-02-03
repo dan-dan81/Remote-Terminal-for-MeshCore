@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { api, UNREAD_FETCH_LIMIT } from '../api';
+import { api } from '../api';
 import {
   getLastMessageTimes,
   setLastMessageTime,
@@ -19,15 +19,6 @@ export interface UseUnreadCountsResult {
   trackNewMessage: (msg: Message) => void;
 }
 
-/** Check if a message text contains a mention of the given name in @[name] format */
-function messageContainsMention(text: string, name: string | null): boolean {
-  if (!name) return false;
-  // Escape special regex characters in the name
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const mentionPattern = new RegExp(`@\\[${escaped}\\]`, 'i');
-  return mentionPattern.test(text);
-}
-
 export function useUnreadCounts(
   channels: Channel[],
   contacts: Contact[],
@@ -44,106 +35,32 @@ export function useUnreadCounts(
     myNameRef.current = myName;
   }, [myName]);
 
-  // Track which channels/contacts we've already fetched unreads for
-  const fetchedChannels = useRef<Set<string>>(new Set());
-  const fetchedContacts = useRef<Set<string>>(new Set());
+  // Fetch unreads from the server-side endpoint
+  const fetchUnreads = useCallback(async () => {
+    try {
+      const data = await api.getUnreads(myNameRef.current ?? undefined);
 
-  // Fetch messages and count unreads for new channels/contacts
-  // Uses server-side last_read_at for consistent read state across devices
-  useEffect(() => {
-    const newChannels = channels.filter((c) => !fetchedChannels.current.has(c.key));
-    const newContacts = contacts.filter(
-      (c) => c.public_key && !fetchedContacts.current.has(c.public_key)
-    );
+      // Replace (not merge) — server counts are authoritative
+      setUnreadCounts(data.counts);
+      setMentions(data.mentions);
 
-    if (newChannels.length === 0 && newContacts.length === 0) return;
-
-    // Mark as fetched before starting (to avoid duplicate fetches if effect re-runs)
-    newChannels.forEach((c) => fetchedChannels.current.add(c.key));
-    newContacts.forEach((c) => fetchedContacts.current.add(c.public_key));
-
-    const fetchAndCountUnreads = async () => {
-      const conversations: Array<{ type: 'PRIV' | 'CHAN'; conversation_key: string }> = [
-        ...newChannels.map((c) => ({ type: 'CHAN' as const, conversation_key: c.key })),
-        ...newContacts.map((c) => ({ type: 'PRIV' as const, conversation_key: c.public_key })),
-      ];
-
-      if (conversations.length === 0) return;
-
-      try {
-        // Fetch messages in chunks to avoid huge single requests
-        const chunkSize = 200;
-        const bulkMessages: Record<string, Message[]> = {};
-
-        for (let i = 0; i < conversations.length; i += chunkSize) {
-          const chunk = conversations.slice(i, i + chunkSize);
-          const chunkResult = await api.getMessagesBulk(chunk, UNREAD_FETCH_LIMIT);
-          Object.assign(bulkMessages, chunkResult);
-        }
-        const newUnreadCounts: Record<string, number> = {};
-        const newMentions: Record<string, boolean> = {};
-        const newLastMessageTimes: Record<string, number> = {};
-
-        // Process channel messages - use server-side last_read_at
-        for (const channel of newChannels) {
-          const msgs = bulkMessages[`CHAN:${channel.key}`] || [];
-          if (msgs.length > 0) {
-            const key = getStateKey('channel', channel.key);
-            // Use server-side last_read_at, fallback to 0 if never read
-            const lastRead = channel.last_read_at || 0;
-
-            const unreadMsgs = msgs.filter((m) => !m.outgoing && m.received_at > lastRead);
-            if (unreadMsgs.length > 0) {
-              newUnreadCounts[key] = unreadMsgs.length;
-              // Check if any unread message mentions the user
-              if (unreadMsgs.some((m) => messageContainsMention(m.text, myNameRef.current))) {
-                newMentions[key] = true;
-              }
-            }
-
-            const latestTime = Math.max(...msgs.map((m) => m.received_at));
-            newLastMessageTimes[key] = latestTime;
-            setLastMessageTime(key, latestTime);
-          }
-        }
-
-        // Process contact messages - use server-side last_read_at
-        for (const contact of newContacts) {
-          const msgs = bulkMessages[`PRIV:${contact.public_key}`] || [];
-          if (msgs.length > 0) {
-            const key = getStateKey('contact', contact.public_key);
-            // Use server-side last_read_at, fallback to 0 if never read
-            const lastRead = contact.last_read_at || 0;
-
-            const unreadMsgs = msgs.filter((m) => !m.outgoing && m.received_at > lastRead);
-            if (unreadMsgs.length > 0) {
-              newUnreadCounts[key] = unreadMsgs.length;
-              // Check if any unread message mentions the user
-              if (unreadMsgs.some((m) => messageContainsMention(m.text, myNameRef.current))) {
-                newMentions[key] = true;
-              }
-            }
-
-            const latestTime = Math.max(...msgs.map((m) => m.received_at));
-            newLastMessageTimes[key] = latestTime;
-            setLastMessageTime(key, latestTime);
-          }
-        }
-
-        if (Object.keys(newUnreadCounts).length > 0) {
-          setUnreadCounts((prev) => ({ ...prev, ...newUnreadCounts }));
-        }
-        if (Object.keys(newMentions).length > 0) {
-          setMentions((prev) => ({ ...prev, ...newMentions }));
+      if (Object.keys(data.last_message_times).length > 0) {
+        // Update in-memory cache and state
+        for (const [key, ts] of Object.entries(data.last_message_times)) {
+          setLastMessageTime(key, ts);
         }
         setLastMessageTimes(getLastMessageTimes());
-      } catch (err) {
-        console.error('Failed to fetch messages bulk:', err);
       }
-    };
+    } catch (err) {
+      console.error('Failed to fetch unreads:', err);
+    }
+  }, []);
 
-    fetchAndCountUnreads();
-  }, [channels, contacts]);
+  // Fetch when channels or contacts arrive/change
+  useEffect(() => {
+    if (channels.length === 0 && contacts.length === 0) return;
+    fetchUnreads();
+  }, [channels, contacts, fetchUnreads]);
 
   // Mark conversation as read when user views it
   // Calls server API to persist read state across devices
@@ -151,7 +68,8 @@ export function useUnreadCounts(
     if (
       activeConversation &&
       activeConversation.type !== 'raw' &&
-      activeConversation.type !== 'map'
+      activeConversation.type !== 'map' &&
+      activeConversation.type !== 'visualizer'
     ) {
       const key = getStateKey(
         activeConversation.type as 'channel' | 'contact',
@@ -221,7 +139,7 @@ export function useUnreadCounts(
   // Mark a specific conversation as read
   // Calls server API to persist read state across devices
   const markConversationRead = useCallback((conv: Conversation) => {
-    if (conv.type === 'raw' || conv.type === 'map') return;
+    if (conv.type === 'raw' || conv.type === 'map' || conv.type === 'visualizer') return;
 
     const key = getStateKey(conv.type as 'channel' | 'contact', conv.id);
 

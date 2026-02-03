@@ -227,6 +227,20 @@ class BotConfig(BaseModel):
     code: str = Field(default="", description="Python code for this bot")
 
 
+class UnreadCounts(BaseModel):
+    """Aggregated unread counts, mention flags, and last message times for all conversations."""
+
+    counts: dict[str, int] = Field(
+        default_factory=dict, description="Map of stateKey -> unread count"
+    )
+    mentions: dict[str, bool] = Field(
+        default_factory=dict, description="Map of stateKey -> has mention"
+    )
+    last_message_times: dict[str, int] = Field(
+        default_factory=dict, description="Map of stateKey -> last message timestamp"
+    )
+
+
 class AppSettings(BaseModel):
     """Application settings stored in the database."""
 

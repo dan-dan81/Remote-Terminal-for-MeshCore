@@ -13,12 +13,10 @@ import type {
   RadioConfig,
   RadioConfigUpdate,
   TelemetryResponse,
+  UnreadCounts,
 } from './types';
 
 const API_BASE = '/api';
-
-/** Max messages fetched per conversation for unread counting. If count equals this, there may be more. */
-export const UNREAD_FETCH_LIMIT = 100;
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
@@ -153,17 +151,6 @@ export const api = {
     const query = searchParams.toString();
     return fetchJson<Message[]>(`/messages${query ? `?${query}` : ''}`, { signal });
   },
-  getMessagesBulk: (
-    conversations: Array<{ type: 'PRIV' | 'CHAN'; conversation_key: string }>,
-    limitPerConversation: number = UNREAD_FETCH_LIMIT
-  ) =>
-    fetchJson<Record<string, Message[]>>(
-      `/messages/bulk?limit_per_conversation=${limitPerConversation}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(conversations),
-      }
-    ),
   sendDirectMessage: (destination: string, text: string) =>
     fetchJson<Message>('/messages/direct', {
       method: 'POST',
@@ -193,6 +180,10 @@ export const api = {
     }),
 
   // Read State
+  getUnreads: (name?: string) => {
+    const params = name ? `?name=${encodeURIComponent(name)}` : '';
+    return fetchJson<UnreadCounts>(`/read-state/unreads${params}`);
+  },
   markAllRead: () =>
     fetchJson<{ status: string; timestamp: number }>('/read-state/mark-all-read', {
       method: 'POST',
