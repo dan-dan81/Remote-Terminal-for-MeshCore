@@ -1,3 +1,15 @@
+## [1.7.1] - 2026-02-03
+
+Feature: Clickable hyperlinks
+Bugfix: More consistent public key normalization
+Bugfix: Use more reliable cursor paging
+Bugfix: Fix null timestamp dedupe failure
+Bugfix: More concistent prefix-based message claiming on key reciept
+Misc: Bot can respond to its own messages
+Misc: Additional tests
+Misc: Remove unneeded message dedupe logic
+Misc: Resync settings after radio settings mutation
+
 ## [1.7.0] - 2026-01-27
 
 Feature: Multi-bot functionality
