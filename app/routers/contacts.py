@@ -19,7 +19,7 @@ from app.models import (
 from app.packet_processor import start_historical_dm_decryption
 from app.radio import radio_manager
 from app.radio_sync import pause_polling
-from app.repository import ContactRepository
+from app.repository import ContactRepository, MessageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,9 @@ async def create_contact(
         return existing
 
     # Create new contact
+    lower_key = request.public_key.lower()
     contact_data = {
-        "public_key": request.public_key,
+        "public_key": lower_key,
         "name": request.name,
         "type": 0,  # Unknown
         "flags": 0,
@@ -134,11 +135,16 @@ async def create_contact(
         "last_contacted": None,
     }
     await ContactRepository.upsert(contact_data)
-    logger.info("Created contact %s", request.public_key[:12])
+    logger.info("Created contact %s", lower_key[:12])
+
+    # Promote any prefix-stored messages to this full key
+    claimed = await MessageRepository.claim_prefix_messages(lower_key)
+    if claimed > 0:
+        logger.info("Claimed %d prefix messages for contact %s", claimed, lower_key[:12])
 
     # Trigger historical decryption if requested
     if request.try_historical:
-        await start_historical_dm_decryption(background_tasks, request.public_key, request.name)
+        await start_historical_dm_decryption(background_tasks, lower_key, request.name)
 
     return Contact(**contact_data)
 

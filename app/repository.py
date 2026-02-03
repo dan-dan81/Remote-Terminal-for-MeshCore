@@ -42,7 +42,7 @@ class ContactRepository:
                 last_contacted = COALESCE(excluded.last_contacted, contacts.last_contacted)
             """,
             (
-                contact.get("public_key"),
+                contact.get("public_key", "").lower(),
                 contact.get("name") or contact.get("adv_name"),
                 contact.get("type", 0),
                 contact.get("flags", 0),
@@ -81,7 +81,9 @@ class ContactRepository:
 
     @staticmethod
     async def get_by_key(public_key: str) -> Contact | None:
-        cursor = await db.conn.execute("SELECT * FROM contacts WHERE public_key = ?", (public_key,))
+        cursor = await db.conn.execute(
+            "SELECT * FROM contacts WHERE public_key = ?", (public_key.lower(),)
+        )
         row = await cursor.fetchone()
         return ContactRepository._row_to_contact(row) if row else None
 
@@ -89,7 +91,7 @@ class ContactRepository:
     async def get_by_key_prefix(prefix: str) -> Contact | None:
         cursor = await db.conn.execute(
             "SELECT * FROM contacts WHERE public_key LIKE ? LIMIT 1",
-            (f"{prefix}%",),
+            (f"{prefix.lower()}%",),
         )
         row = await cursor.fetchone()
         return ContactRepository._row_to_contact(row) if row else None
@@ -137,7 +139,7 @@ class ContactRepository:
     async def update_path(public_key: str, path: str, path_len: int) -> None:
         await db.conn.execute(
             "UPDATE contacts SET last_path = ?, last_path_len = ?, last_seen = ? WHERE public_key = ?",
-            (path, path_len, int(time.time()), public_key),
+            (path, path_len, int(time.time()), public_key.lower()),
         )
         await db.conn.commit()
 
@@ -145,7 +147,7 @@ class ContactRepository:
     async def set_on_radio(public_key: str, on_radio: bool) -> None:
         await db.conn.execute(
             "UPDATE contacts SET on_radio = ? WHERE public_key = ?",
-            (on_radio, public_key),
+            (on_radio, public_key.lower()),
         )
         await db.conn.commit()
 
@@ -153,7 +155,7 @@ class ContactRepository:
     async def delete(public_key: str) -> None:
         await db.conn.execute(
             "DELETE FROM contacts WHERE public_key = ?",
-            (public_key,),
+            (public_key.lower(),),
         )
         await db.conn.commit()
 
@@ -163,7 +165,7 @@ class ContactRepository:
         ts = timestamp or int(time.time())
         await db.conn.execute(
             "UPDATE contacts SET last_contacted = ?, last_seen = ? WHERE public_key = ?",
-            (ts, ts, public_key),
+            (ts, ts, public_key.lower()),
         )
         await db.conn.commit()
 
@@ -176,10 +178,20 @@ class ContactRepository:
         ts = timestamp or int(time.time())
         cursor = await db.conn.execute(
             "UPDATE contacts SET last_read_at = ? WHERE public_key = ?",
-            (ts, public_key),
+            (ts, public_key.lower()),
         )
         await db.conn.commit()
         return cursor.rowcount > 0
+
+    @staticmethod
+    async def get_by_pubkey_first_byte(hex_byte: str) -> list[Contact]:
+        """Get contacts whose public key starts with the given hex byte (2 chars)."""
+        cursor = await db.conn.execute(
+            "SELECT * FROM contacts WHERE substr(public_key, 1, 2) = ?",
+            (hex_byte.lower(),),
+        )
+        rows = await cursor.fetchall()
+        return [ContactRepository._row_to_contact(row) for row in rows]
 
 
 class ChannelRepository:
@@ -358,11 +370,30 @@ class MessageRepository:
         return [MessagePath(**p) for p in existing_paths]
 
     @staticmethod
+    async def claim_prefix_messages(full_key: str) -> int:
+        """Promote prefix-stored messages to the full conversation key.
+
+        When a full key becomes known for a contact, any messages stored with
+        only a prefix as conversation_key are updated to use the full key.
+        """
+        lower_key = full_key.lower()
+        cursor = await db.conn.execute(
+            """UPDATE messages SET conversation_key = ?
+               WHERE type = 'PRIV' AND length(conversation_key) < 64
+               AND ? LIKE conversation_key || '%'""",
+            (lower_key, lower_key),
+        )
+        await db.conn.commit()
+        return cursor.rowcount
+
+    @staticmethod
     async def get_all(
         limit: int = 100,
         offset: int = 0,
         msg_type: str | None = None,
         conversation_key: str | None = None,
+        before: int | None = None,
+        before_id: int | None = None,
     ) -> list[Message]:
         query = "SELECT * FROM messages WHERE 1=1"
         params: list[Any] = []
@@ -375,8 +406,15 @@ class MessageRepository:
             query += " AND conversation_key LIKE ?"
             params.append(f"{conversation_key}%")
 
-        query += " ORDER BY received_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+        if before is not None and before_id is not None:
+            query += " AND (received_at < ? OR (received_at = ? AND id < ?))"
+            params.extend([before, before, before_id])
+
+        query += " ORDER BY received_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        if before is None or before_id is None:
+            query += " OFFSET ?"
+            params.append(offset)
 
         cursor = await db.conn.execute(query, params)
         rows = await cursor.fetchall()

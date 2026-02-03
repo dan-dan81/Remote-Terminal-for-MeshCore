@@ -22,6 +22,10 @@ async def list_messages(
     conversation_key: str | None = Query(
         default=None, description="Filter by conversation key (channel key or contact pubkey)"
     ),
+    before: int | None = Query(
+        default=None, description="Cursor: received_at of last seen message"
+    ),
+    before_id: int | None = Query(default=None, description="Cursor: id of last seen message"),
 ) -> list[Message]:
     """List messages from the database."""
     return await MessageRepository.get_all(
@@ -29,6 +33,8 @@ async def list_messages(
         offset=offset,
         msg_type=type,
         conversation_key=conversation_key,
+        before=before,
+        before_id=before_id,
     )
 
 
@@ -94,7 +100,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
     message_id = await MessageRepository.create(
         msg_type="PRIV",
         text=request.text,
-        conversation_key=db_contact.public_key,
+        conversation_key=db_contact.public_key.lower(),
         sender_timestamp=now,
         received_at=now,
         outgoing=True,
@@ -106,7 +112,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
         )
 
     # Update last_contacted for the contact
-    await ContactRepository.update_last_contacted(db_contact.public_key, now)
+    await ContactRepository.update_last_contacted(db_contact.public_key.lower(), now)
 
     # Track the expected ACK for this message
     expected_ack = result.payload.get("expected_ack")
@@ -119,7 +125,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
     message = Message(
         id=message_id,
         type="PRIV",
-        conversation_key=db_contact.public_key,
+        conversation_key=db_contact.public_key.lower(),
         text=request.text,
         sender_timestamp=now,
         received_at=now,
@@ -133,7 +139,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
     asyncio.create_task(
         run_bot_for_message(
             sender_name=None,
-            sender_key=db_contact.public_key,
+            sender_key=db_contact.public_key.lower(),
             message_text=request.text,
             is_dm=True,
             channel_key=None,

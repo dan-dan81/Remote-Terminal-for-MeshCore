@@ -636,7 +636,7 @@ async def _process_advertisement(
     new_path_hex = packet_info.path.hex() if packet_info.path else ""
 
     # Try to find existing contact
-    existing = await ContactRepository.get_by_key(advert.public_key)
+    existing = await ContactRepository.get_by_key(advert.public_key.lower())
 
     # Determine which path to use: keep shorter path if heard recently (within 60s)
     # This handles advertisement echoes through different routes
@@ -683,7 +683,7 @@ async def _process_advertisement(
     )
 
     contact_data = {
-        "public_key": advert.public_key,
+        "public_key": advert.public_key.lower(),
         "name": advert.name,
         "type": contact_type,
         "lat": advert.lat,
@@ -700,7 +700,7 @@ async def _process_advertisement(
     broadcast_event(
         "contact",
         {
-            "public_key": advert.public_key,
+            "public_key": advert.public_key.lower(),
             "name": advert.name,
             "type": contact_type,
             "flags": existing.flags if existing else 0,
@@ -721,7 +721,7 @@ async def _process_advertisement(
 
         settings = await AppSettingsRepository.get()
         if settings.auto_decrypt_dm_on_advert:
-            await start_historical_dm_decryption(None, advert.public_key, advert.name)
+            await start_historical_dm_decryption(None, advert.public_key.lower(), advert.name)
 
     # If this is not a repeater, trigger recent contacts sync to radio
     # This ensures we can auto-ACK DMs from recent contacts
@@ -793,9 +793,8 @@ async def _process_direct_message(
     # For outgoing: match dest_hash (recipient's first byte)
     match_hash = dest_hash if is_outgoing else src_hash
 
-    # Get all contacts and filter by first byte of public key
-    contacts = await ContactRepository.get_all(limit=1000)
-    candidate_contacts = [c for c in contacts if c.public_key.lower().startswith(match_hash)]
+    # Get contacts matching the first byte of public key via targeted SQL query
+    candidate_contacts = await ContactRepository.get_by_pubkey_first_byte(match_hash)
 
     if not candidate_contacts:
         logger.debug(

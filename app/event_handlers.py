@@ -77,6 +77,9 @@ async def on_contact_message(event: "Event") -> None:
     if contact:
         sender_pubkey = contact.public_key.lower()
 
+        # Promote any prefix-stored messages to this full key
+        await MessageRepository.claim_prefix_messages(sender_pubkey)
+
         # Skip messages from repeaters - they only send CLI responses, not chat messages.
         # CLI responses are handled by the command endpoint and txt_type filter above.
         if contact.type == CONTACT_TYPE_REPEATER:
@@ -92,7 +95,7 @@ async def on_contact_message(event: "Event") -> None:
         msg_type="PRIV",
         text=payload.get("text", ""),
         conversation_key=sender_pubkey,
-        sender_timestamp=payload.get("sender_timestamp"),
+        sender_timestamp=payload.get("sender_timestamp") or received_at,
         received_at=received_at,
         path=payload.get("path"),
         txt_type=txt_type,
@@ -132,7 +135,7 @@ async def on_contact_message(event: "Event") -> None:
 
     # Update contact last_contacted (contact was already fetched above)
     if contact:
-        await ContactRepository.update_last_contacted(contact.public_key, received_at)
+        await ContactRepository.update_last_contacted(sender_pubkey, received_at)
 
     # Run bot if enabled
     from app.bot import run_bot_for_message

@@ -98,6 +98,11 @@ class TestCreateContact:
                 "app.routers.contacts.ContactRepository.upsert",
                 new_callable=AsyncMock,
             ) as mock_upsert,
+            patch(
+                "app.routers.contacts.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             from app.main import app
 

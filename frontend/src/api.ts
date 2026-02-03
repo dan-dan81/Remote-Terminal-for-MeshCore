@@ -138,6 +138,8 @@ export const api = {
       offset?: number;
       type?: 'PRIV' | 'CHAN';
       conversation_key?: string;
+      before?: number;
+      before_id?: number;
     },
     signal?: AbortSignal
   ) => {
@@ -146,6 +148,8 @@ export const api = {
     if (params?.offset) searchParams.set('offset', params.offset.toString());
     if (params?.type) searchParams.set('type', params.type);
     if (params?.conversation_key) searchParams.set('conversation_key', params.conversation_key);
+    if (params?.before !== undefined) searchParams.set('before', params.before.toString());
+    if (params?.before_id !== undefined) searchParams.set('before_id', params.before_id.toString());
     const query = searchParams.toString();
     return fetchJson<Message[]>(`/messages${query ? `?${query}` : ''}`, { signal });
   },

@@ -102,7 +102,7 @@ export function useConversationMessages(
     [activeConversation]
   );
 
-  // Fetch older messages (pagination)
+  // Fetch older messages (cursor-based pagination)
   const fetchOlderMessages = useCallback(async () => {
     if (
       !activeConversation ||
@@ -112,13 +112,18 @@ export function useConversationMessages(
     )
       return;
 
+    // Get the oldest message as cursor for the next page
+    const oldestMessage = messages[messages.length - 1];
+    if (!oldestMessage) return;
+
     setLoadingOlder(true);
     try {
       const data = await api.getMessages({
         type: activeConversation.type === 'channel' ? 'CHAN' : 'PRIV',
         conversation_key: activeConversation.id,
         limit: MESSAGE_PAGE_SIZE,
-        offset: messages.length,
+        before: oldestMessage.received_at,
+        before_id: oldestMessage.id,
       });
 
       if (data.length > 0) {
@@ -139,7 +144,7 @@ export function useConversationMessages(
     } finally {
       setLoadingOlder(false);
     }
-  }, [activeConversation, loadingOlder, hasOlderMessages, messages.length]);
+  }, [activeConversation, loadingOlder, hasOlderMessages, messages]);
 
   // Fetch messages when conversation changes, with proper cancellation
   useEffect(() => {
