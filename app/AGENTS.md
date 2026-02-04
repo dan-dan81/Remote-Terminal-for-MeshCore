@@ -126,7 +126,7 @@ broadcast_health(radio_connected=True, serial_port="/dev/ttyUSB0")
 - Checks connection every 5 seconds
 - Broadcasts `health` event on status change
 - Attempts automatic reconnection when connection lost
-- **Re-registers event handlers after successful auto-reconnect** (critical for message delivery)
+- **Runs full `post_connect_setup()` after successful reconnect** (event handlers, key export, time sync, contact/channel sync, advertisements, message polling)
 - Resilient to transient errors (logs and continues rather than crashing)
 - Supports manual reconnection via `POST /api/radio/reconnect`
 
