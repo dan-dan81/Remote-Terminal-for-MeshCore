@@ -875,33 +875,6 @@ class AppSettingsRepository:
         return await AppSettingsRepository.update(favorites=new_favorites)
 
     @staticmethod
-    async def update_last_message_time(state_key: str, timestamp: int) -> None:
-        """Update the last message time for a conversation atomically.
-
-        Only updates if the new timestamp is greater than the existing one.
-        Uses SQLite's json_set for atomic update to avoid race conditions.
-        """
-        # Use COALESCE to handle NULL or missing keys, json_set for atomic update
-        # Only update if new timestamp > existing (or key doesn't exist)
-        await db.conn.execute(
-            """
-            UPDATE app_settings
-            SET last_message_times = json_set(
-                COALESCE(last_message_times, '{}'),
-                '$.' || ?,
-                ?
-            )
-            WHERE id = 1
-            AND (
-                json_extract(last_message_times, '$.' || ?) IS NULL
-                OR json_extract(last_message_times, '$.' || ?) < ?
-            )
-            """,
-            (state_key, timestamp, state_key, state_key, timestamp),
-        )
-        await db.conn.commit()
-
-    @staticmethod
     async def migrate_preferences_from_frontend(
         favorites: list[dict],
         sort_order: str,

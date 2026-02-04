@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  getAvatarText,
-  getAvatarColor,
-  getContactAvatar,
-  CONTACT_TYPE_REPEATER,
-} from '../utils/contactAvatar';
+import { getAvatarText, getAvatarColor, getContactAvatar } from '../utils/contactAvatar';
+import { CONTACT_TYPE_REPEATER } from '../types';
 
 describe('getAvatarText', () => {
   it('returns first emoji when name contains emoji', () => {

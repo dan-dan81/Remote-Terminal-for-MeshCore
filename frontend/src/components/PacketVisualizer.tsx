@@ -12,8 +12,7 @@ import {
   type SimulationLinkDatum,
 } from 'd3-force';
 import { MeshCoreDecoder, PayloadType } from '@michaelhart/meshcore-decoder';
-import type { Contact, RawPacket, RadioConfig } from '../types';
-import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
+import { CONTACT_TYPE_REPEATER, type Contact, type RawPacket, type RadioConfig } from '../types';
 import { Checkbox } from './ui/checkbox';
 
 // =============================================================================

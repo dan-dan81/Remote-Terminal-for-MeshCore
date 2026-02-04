@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import type { Contact, Channel, Conversation, Favorite } from '../types';
+import {
+  CONTACT_TYPE_REPEATER,
+  type Contact,
+  type Channel,
+  type Conversation,
+  type Favorite,
+} from '../types';
 import { getStateKey, type ConversationTimes } from '../utils/conversationState';
 import { getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
-import { CONTACT_TYPE_REPEATER } from '../utils/contactAvatar';
 import { isFavorite } from '../utils/favorites';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -30,11 +35,6 @@ interface SidebarProps {
   sortOrder?: SortOrder;
   /** Callback when sort order changes */
   onSortOrderChange?: (order: SortOrder) => void;
-}
-
-/** Format unread count for display */
-function formatUnreadCount(count: number): string {
-  return `${count}`;
 }
 
 export function Sidebar({
@@ -379,7 +379,7 @@ export function Sidebar({
                             : 'bg-primary text-primary-foreground'
                         )}
                       >
-                        {formatUnreadCount(unreadCount)}
+                        {unreadCount}
                       </span>
                     )}
                   </div>
@@ -422,7 +422,7 @@ export function Sidebar({
                             : 'bg-primary text-primary-foreground'
                         )}
                       >
-                        {formatUnreadCount(unreadCount)}
+                        {unreadCount}
                       </span>
                     )}
                   </div>
@@ -474,7 +474,7 @@ export function Sidebar({
                           : 'bg-primary text-primary-foreground'
                       )}
                     >
-                      {formatUnreadCount(unreadCount)}
+                      {unreadCount}
                     </span>
                   )}
                 </div>
@@ -535,7 +535,7 @@ export function Sidebar({
                           : 'bg-primary text-primary-foreground'
                       )}
                     >
-                      {formatUnreadCount(unreadCount)}
+                      {unreadCount}
                     </span>
                   )}
                 </div>

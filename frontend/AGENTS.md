@@ -192,19 +192,11 @@ server: {
 
 ## Type Definitions (`types.ts`)
 
-### Key Type Aliases
-
-```typescript
-type PublicKey = string;     // 64-char hex identifying a contact/node
-type PubkeyPrefix = string;  // 12-char hex prefix (used in message routing)
-type ChannelKey = string;    // 32-char hex identifying a channel
-```
-
 ### Key Interfaces
 
 ```typescript
 interface Contact {
-  public_key: PublicKey;
+  public_key: string;      // 64-char hex public key
   name: string | null;
   type: number;            // 0=unknown, 1=client, 2=repeater, 3=room
   on_radio: boolean;
@@ -215,7 +207,7 @@ interface Contact {
 }
 
 interface Channel {
-  key: ChannelKey;
+  key: string;             // 32-char hex channel key
   name: string;
   is_hashtag: boolean;
   on_radio: boolean;
@@ -224,7 +216,7 @@ interface Channel {
 interface Message {
   id: number;
   type: 'PRIV' | 'CHAN';
-  conversation_key: string;  // PublicKey for PRIV, ChannelKey for CHAN
+  conversation_key: string;  // public key for PRIV, channel key for CHAN
   text: string;
   outgoing: boolean;
   acked: number;  // 0=not acked, 1+=ack count (flood echoes)
@@ -233,7 +225,7 @@ interface Message {
 
 interface Conversation {
   type: 'contact' | 'channel' | 'raw' | 'map' | 'visualizer';
-  id: string;              // PublicKey for contacts, ChannelKey for channels, 'raw'/'map'/'visualizer' for special views
+  id: string;              // public key for contacts, channel key for channels, 'raw'/'map'/'visualizer' for special views
   name: string;
 }
 

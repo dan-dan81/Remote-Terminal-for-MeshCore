@@ -15,7 +15,6 @@ export interface UseUnreadCountsResult {
   lastMessageTimes: ConversationTimes;
   incrementUnread: (stateKey: string, hasMention?: boolean) => void;
   markAllRead: () => void;
-  markConversationRead: (conv: Conversation) => void;
   trackNewMessage: (msg: Message) => void;
 }
 
@@ -136,45 +135,6 @@ export function useUnreadCounts(
     });
   }, []);
 
-  // Mark a specific conversation as read
-  // Calls server API to persist read state across devices
-  const markConversationRead = useCallback((conv: Conversation) => {
-    if (conv.type === 'raw' || conv.type === 'map' || conv.type === 'visualizer') return;
-
-    const key = getStateKey(conv.type as 'channel' | 'contact', conv.id);
-
-    // Update local state immediately
-    setUnreadCounts((prev) => {
-      if (prev[key]) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return prev;
-    });
-
-    // Also clear mentions for this conversation
-    setMentions((prev) => {
-      if (prev[key]) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return prev;
-    });
-
-    // Persist to server (fire-and-forget)
-    if (conv.type === 'channel') {
-      api.markChannelRead(conv.id).catch((err) => {
-        console.error('Failed to mark channel as read on server:', err);
-      });
-    } else if (conv.type === 'contact') {
-      api.markContactRead(conv.id).catch((err) => {
-        console.error('Failed to mark contact as read on server:', err);
-      });
-    }
-  }, []);
-
   // Track a new incoming message for unread counts
   const trackNewMessage = useCallback((msg: Message) => {
     let conversationKey: string | null = null;
@@ -197,7 +157,6 @@ export function useUnreadCounts(
     lastMessageTimes,
     incrementUnread,
     markAllRead,
-    markConversationRead,
     trackNewMessage,
   };
 }

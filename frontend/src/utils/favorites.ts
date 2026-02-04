@@ -43,6 +43,3 @@ export function clearLocalStorageFavorites(): void {
     // localStorage might be disabled
   }
 }
-
-// Re-export the Favorite type for convenience
-export type { Favorite };

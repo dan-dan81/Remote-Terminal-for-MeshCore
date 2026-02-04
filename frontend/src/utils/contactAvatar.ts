@@ -6,8 +6,7 @@
  * Repeaters (type=2) always show 🛜 with a gray background.
  */
 
-// Contact type constants (matches backend)
-export const CONTACT_TYPE_REPEATER = 2;
+import { CONTACT_TYPE_REPEATER } from '../types';
 
 // Repeater avatar styling
 const REPEATER_AVATAR = {

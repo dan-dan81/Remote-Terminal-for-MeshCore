@@ -204,13 +204,6 @@ export const api = {
       body: JSON.stringify({ type, id }),
     }),
 
-  // Last message time tracking
-  updateLastMessageTime: (stateKey: string, timestamp: number) =>
-    fetchJson<{ status: string }>('/settings/last-message-time', {
-      method: 'POST',
-      body: JSON.stringify({ state_key: stateKey, timestamp }),
-    }),
-
   // Preferences migration (one-time, from localStorage to database)
   migratePreferences: (request: MigratePreferencesRequest) =>
     fetchJson<MigratePreferencesResponse>('/settings/migrate', {

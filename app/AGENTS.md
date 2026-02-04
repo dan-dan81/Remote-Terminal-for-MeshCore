@@ -58,7 +58,6 @@ await RawPacketRepository.mark_decrypted(packet_id, message_id)
 settings = await AppSettingsRepository.get()
 await AppSettingsRepository.update(auto_decrypt_dm_on_advert=True)
 await AppSettingsRepository.add_favorite("contact", public_key)
-await AppSettingsRepository.update_last_message_time("channel-KEY", timestamp)
 ```
 
 ### Radio Connection
@@ -512,7 +511,6 @@ All endpoints are prefixed with `/api`.
 - `POST /api/settings/favorites` - Add a favorite
 - `DELETE /api/settings/favorites` - Remove a favorite
 - `POST /api/settings/favorites/toggle` - Toggle favorite status
-- `POST /api/settings/last-message-time` - Update last message time for a conversation
 - `POST /api/settings/migrate` - One-time migration from frontend localStorage
 
 ### WebSocket

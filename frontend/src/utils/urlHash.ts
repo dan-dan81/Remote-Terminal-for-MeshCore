@@ -1,6 +1,6 @@
 import type { Conversation } from '../types';
 
-export interface ParsedHashConversation {
+interface ParsedHashConversation {
   type: 'channel' | 'contact' | 'raw' | 'map' | 'visualizer';
   name: string;
   /** For map view: public key prefix to focus on */

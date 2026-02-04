@@ -1,14 +1,3 @@
-/**
- * Type aliases for key types used throughout the application.
- * These are all hex strings but serve different purposes.
- */
-
-/** 64-character hex string identifying a contact/node */
-export type PublicKey = string;
-
-/** 32-character hex string identifying a channel */
-export type ChannelKey = string;
-
 export interface RadioSettings {
   freq: number;
   bw: number;
@@ -48,7 +37,7 @@ export interface MaintenanceResult {
 }
 
 export interface Contact {
-  public_key: PublicKey;
+  public_key: string;
   name: string | null;
   type: number;
   flags: number;
@@ -64,7 +53,7 @@ export interface Contact {
 }
 
 export interface Channel {
-  key: ChannelKey;
+  key: string;
   name: string;
   is_hashtag: boolean;
   on_radio: boolean;

@@ -63,13 +63,6 @@ class FavoriteRequest(BaseModel):
     id: str = Field(description="Channel key or contact public key")
 
 
-class LastMessageTimeUpdate(BaseModel):
-    state_key: str = Field(
-        description="Conversation state key (e.g., 'channel-KEY' or 'contact-PREFIX')"
-    )
-    timestamp: int = Field(description="Unix timestamp of the last message")
-
-
 class MigratePreferencesRequest(BaseModel):
     favorites: list[FavoriteRequest] = Field(
         default_factory=list,
@@ -142,17 +135,6 @@ async def toggle_favorite(request: FavoriteRequest) -> AppSettings:
     else:
         logger.info("Adding favorite: %s %s", request.type, request.id[:12])
         return await AppSettingsRepository.add_favorite(request.type, request.id)
-
-
-@router.post("/last-message-time")
-async def update_last_message_time(request: LastMessageTimeUpdate) -> dict:
-    """Update the last message time for a conversation.
-
-    Used to track when conversations last received messages for sidebar sorting.
-    Only updates if the new timestamp is greater than the existing one.
-    """
-    await AppSettingsRepository.update_last_message_time(request.state_key, request.timestamp)
-    return {"status": "ok"}
 
 
 @router.post("/migrate", response_model=MigratePreferencesResponse)
