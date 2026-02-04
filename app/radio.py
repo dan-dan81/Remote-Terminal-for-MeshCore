@@ -102,7 +102,7 @@ class RadioManager:
 
     def __init__(self):
         self._meshcore: MeshCore | None = None
-        self._port: str | None = None
+        self._connection_info: str | None = None
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: bool = False
         self._reconnect_lock: asyncio.Lock | None = None
@@ -169,8 +169,8 @@ class RadioManager:
         return self._meshcore
 
     @property
-    def port(self) -> str | None:
-        return self._port
+    def connection_info(self) -> str | None:
+        return self._connection_info
 
     @property
     def is_connected(self) -> bool:
@@ -181,10 +181,20 @@ class RadioManager:
         return self._reconnect_lock is not None and self._reconnect_lock.locked()
 
     async def connect(self) -> None:
-        """Connect to the radio over serial."""
+        """Connect to the radio using the configured transport."""
         if self._meshcore is not None:
             await self.disconnect()
 
+        connection_type = settings.connection_type
+        if connection_type == "tcp":
+            await self._connect_tcp()
+        elif connection_type == "ble":
+            await self._connect_ble()
+        else:
+            await self._connect_serial()
+
+    async def _connect_serial(self) -> None:
+        """Connect to the radio over serial."""
         port = settings.serial_port
 
         # Auto-detect if no port specified
@@ -205,9 +215,41 @@ class RadioManager:
             auto_reconnect=True,
             max_reconnect_attempts=10,
         )
-        self._port = port
+        self._connection_info = f"Serial: {port}"
         self._last_connected = True
         logger.debug("Serial connection established")
+
+    async def _connect_tcp(self) -> None:
+        """Connect to the radio over TCP."""
+        host = settings.tcp_host
+        port = settings.tcp_port
+
+        logger.debug("Connecting to radio at %s:%d (TCP)", host, port)
+        self._meshcore = await MeshCore.create_tcp(
+            host=host,
+            port=port,
+            auto_reconnect=True,
+            max_reconnect_attempts=10,
+        )
+        self._connection_info = f"TCP: {host}:{port}"
+        self._last_connected = True
+        logger.debug("TCP connection established")
+
+    async def _connect_ble(self) -> None:
+        """Connect to the radio over BLE."""
+        address = settings.ble_address
+        pin = settings.ble_pin
+
+        logger.debug("Connecting to radio at %s (BLE)", address)
+        self._meshcore = await MeshCore.create_ble(
+            address=address,
+            pin=pin,
+            auto_reconnect=True,
+            max_reconnect_attempts=15,
+        )
+        self._connection_info = f"BLE: {address}"
+        self._last_connected = True
+        logger.debug("BLE connection established")
 
     async def disconnect(self) -> None:
         """Disconnect from the radio."""
@@ -250,8 +292,8 @@ class RadioManager:
                 await self.connect()
 
                 if self.is_connected:
-                    logger.info("Radio reconnected successfully at %s", self._port)
-                    broadcast_health(True, self._port)
+                    logger.info("Radio reconnected successfully at %s", self._connection_info)
+                    broadcast_health(True, self._connection_info)
                     return True
                 else:
                     logger.warning("Reconnection failed: not connected after connect()")
@@ -280,7 +322,7 @@ class RadioManager:
                     if self._last_connected and not current_connected:
                         # Connection lost
                         logger.warning("Radio connection lost, broadcasting status change")
-                        broadcast_health(False, self._port)
+                        broadcast_health(False, self._connection_info)
                         self._last_connected = False
 
                         # Attempt reconnection
@@ -291,7 +333,7 @@ class RadioManager:
                     elif not self._last_connected and current_connected:
                         # Connection restored (might have reconnected automatically)
                         logger.info("Radio connection restored")
-                        broadcast_health(True, self._port)
+                        broadcast_health(True, self._connection_info)
                         self._last_connected = True
 
                 except asyncio.CancelledError:

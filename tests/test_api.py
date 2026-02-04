@@ -18,7 +18,7 @@ class TestHealthEndpoint:
 
         with patch("app.routers.health.radio_manager") as mock_rm:
             mock_rm.is_connected = True
-            mock_rm.port = "/dev/ttyUSB0"
+            mock_rm.connection_info = "Serial: /dev/ttyUSB0"
 
             from app.main import app
 
@@ -29,7 +29,7 @@ class TestHealthEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert data["radio_connected"] is True
-            assert data["serial_port"] == "/dev/ttyUSB0"
+            assert data["connection_info"] == "Serial: /dev/ttyUSB0"
 
     def test_health_disconnected_state(self):
         """Health endpoint reflects disconnected radio."""
@@ -37,7 +37,7 @@ class TestHealthEndpoint:
 
         with patch("app.routers.health.radio_manager") as mock_rm:
             mock_rm.is_connected = False
-            mock_rm.port = None
+            mock_rm.connection_info = None
 
             from app.main import app
 
@@ -48,7 +48,7 @@ class TestHealthEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert data["radio_connected"] is False
-            assert data["serial_port"] is None
+            assert data["connection_info"] is None
 
 
 class TestMessagesEndpoint:
@@ -1252,7 +1252,7 @@ class TestHealthEndpointDatabaseSize:
             patch("app.routers.health.os.path.getsize") as mock_getsize,
         ):
             mock_rm.is_connected = True
-            mock_rm.port = "/dev/ttyUSB0"
+            mock_rm.connection_info = "Serial: /dev/ttyUSB0"
             mock_getsize.return_value = 10 * 1024 * 1024  # 10 MB
 
             from app.main import app
@@ -1282,7 +1282,7 @@ class TestHealthEndpointOldestUndecrypted:
             patch("app.routers.health.RawPacketRepository") as mock_repo,
         ):
             mock_rm.is_connected = True
-            mock_rm.port = "/dev/ttyUSB0"
+            mock_rm.connection_info = "Serial: /dev/ttyUSB0"
             mock_getsize.return_value = 5 * 1024 * 1024  # 5 MB
             mock_repo.get_oldest_undecrypted = AsyncMock(return_value=1700000000)
 
@@ -1309,7 +1309,7 @@ class TestHealthEndpointOldestUndecrypted:
             patch("app.routers.health.RawPacketRepository") as mock_repo,
         ):
             mock_rm.is_connected = True
-            mock_rm.port = "/dev/ttyUSB0"
+            mock_rm.connection_info = "Serial: /dev/ttyUSB0"
             mock_getsize.return_value = 1 * 1024 * 1024  # 1 MB
             mock_repo.get_oldest_undecrypted = AsyncMock(return_value=None)
 
@@ -1336,7 +1336,7 @@ class TestHealthEndpointOldestUndecrypted:
             patch("app.routers.health.RawPacketRepository") as mock_repo,
         ):
             mock_rm.is_connected = False
-            mock_rm.port = None
+            mock_rm.connection_info = None
             mock_getsize.side_effect = OSError("File not found")
             mock_repo.get_oldest_undecrypted = AsyncMock(side_effect=RuntimeError("No DB"))
 

@@ -62,7 +62,7 @@ await AppSettingsRepository.add_favorite("contact", public_key)
 
 ### Radio Connection
 
-`RadioManager` in `radio.py` handles serial connection:
+`RadioManager` in `radio.py` handles radio connection over Serial, TCP, or BLE:
 
 ```python
 from app.radio import radio_manager
@@ -70,9 +70,12 @@ from app.radio import radio_manager
 # Access meshcore instance
 if radio_manager.meshcore:
     await radio_manager.meshcore.commands.send_msg(dst, msg)
+
+# Check connection info (e.g. "Serial: /dev/ttyUSB0", "TCP: 192.168.1.1:4000", "BLE: AA:BB:CC:DD:EE:FF")
+print(radio_manager.connection_info)
 ```
 
-Auto-detection scans common serial ports when `MESHCORE_SERIAL_PORT` is not set.
+Transport is configured via env vars (see root AGENTS.md). When no transport env vars are set, serial auto-detection is used.
 
 ### Event-Driven Architecture
 
@@ -116,7 +119,7 @@ from app.websocket import broadcast_error, broadcast_health
 broadcast_error("Operation failed", "Additional details")
 
 # Notify clients of connection status change
-broadcast_health(radio_connected=True, serial_port="/dev/ttyUSB0")
+broadcast_health(radio_connected=True, connection_info="Serial: /dev/ttyUSB0")
 ```
 
 ### Connection Monitoring
@@ -464,7 +467,7 @@ result = await sync_recent_contacts_to_radio(force=True)
 All endpoints are prefixed with `/api`.
 
 ### Health
-- `GET /api/health` - Connection status, serial port
+- `GET /api/health` - Connection status, connection info
 
 ### Radio
 - `GET /api/radio/config` - Read config (public key, name, radio params)

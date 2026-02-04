@@ -14,7 +14,7 @@ export default async function globalSetup(_config: FullConfig) {
       if (!res.ok) {
         throw new Error(`Health check returned ${res.status}`);
       }
-      const health = (await res.json()) as { radio_connected: boolean; serial_port: string | null };
+      const health = (await res.json()) as { radio_connected: boolean; connection_info: string | null };
 
       if (!health.radio_connected) {
         throw new Error(
@@ -23,7 +23,7 @@ export default async function globalSetup(_config: FullConfig) {
         );
       }
 
-      console.log(`Radio connected on ${health.serial_port}`);
+      console.log(`Radio connected on ${health.connection_info}`);
       return;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));

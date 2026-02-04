@@ -13,12 +13,12 @@ router = APIRouter(tags=["health"])
 class HealthResponse(BaseModel):
     status: str
     radio_connected: bool
-    serial_port: str | None
+    connection_info: str | None
     database_size_mb: float
     oldest_undecrypted_timestamp: int | None
 
 
-async def build_health_data(radio_connected: bool, serial_port: str | None) -> dict:
+async def build_health_data(radio_connected: bool, connection_info: str | None) -> dict:
     """Build the health status payload used by REST endpoint and WebSocket broadcasts."""
     db_size_mb = 0.0
     try:
@@ -36,7 +36,7 @@ async def build_health_data(radio_connected: bool, serial_port: str | None) -> d
     return {
         "status": "ok" if radio_connected else "degraded",
         "radio_connected": radio_connected,
-        "serial_port": serial_port,
+        "connection_info": connection_info,
         "database_size_mb": db_size_mb,
         "oldest_undecrypted_timestamp": oldest_ts,
     }
@@ -45,5 +45,5 @@ async def build_health_data(radio_connected: bool, serial_port: str | None) -> d
 @router.get("/health", response_model=HealthResponse)
 async def healthcheck() -> HealthResponse:
     """Check if the API is running and if the radio is connected."""
-    data = await build_health_data(radio_manager.is_connected, radio_manager.port)
+    data = await build_health_data(radio_manager.is_connected, radio_manager.connection_info)
     return HealthResponse(**data)

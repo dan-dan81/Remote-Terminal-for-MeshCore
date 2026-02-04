@@ -21,7 +21,7 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface HealthStatus {
   radio_connected: boolean;
-  serial_port: string | null;
+  connection_info: string | null;
 }
 
 export function getHealth(): Promise<HealthStatus> {

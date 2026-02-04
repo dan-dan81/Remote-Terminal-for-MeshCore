@@ -1,6 +1,6 @@
 # RemoteTerm for MeshCore
 
-Backend server + browser interface for MeshCore mesh radio networks. Attach your radio over serial, and then you can:
+Backend server + browser interface for MeshCore mesh radio networks. Connect your radio over Serial, TCP, or BLE, and then you can:
 
 * Send and receive DMs and GroupTexts
 * Cache all received packets, decrypting as you gain keys
@@ -23,9 +23,11 @@ If extending, have your LLM read the three `AGENTS.md` files: `./AGENTS.md`, `./
 - Python 3.10+
 - Node.js 18+ (for frontend development only)
 - [UV](https://astral.sh/uv) package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- MeshCore radio connected via USB serial
+- MeshCore radio connected via USB serial, TCP, or BLE
 
-**Find your serial port:**
+<details>
+<summary>Finding your serial port</summary>
+
 ```bash
 #######
 # Linux
@@ -50,8 +52,8 @@ usbipd list
 
 # attach device to WSL
 usbipd bind --busid 3-8
-
 ```
+</details>
 
 ## Quick Start
 
@@ -67,9 +69,16 @@ uv sync
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-The server auto-detects the serial port. To specify manually:
+The server auto-detects the serial port. To specify a transport manually:
 ```bash
+# Serial (explicit port)
 MESHCORE_SERIAL_PORT=/dev/ttyUSB0 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# TCP (e.g. via wifi-enabled firmware)
+MESHCORE_TCP_HOST=192.168.1.100 MESHCORE_TCP_PORT=4000 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# BLE (address and PIN both required)
+MESHCORE_BLE_ADDRESS=AA:BB:CC:DD:EE:FF MESHCORE_BLE_PIN=123456 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Access at http://localhost:8000
@@ -80,9 +89,20 @@ Access at http://localhost:8000
 
 > **Warning:** Docker has intermittent issues with serial event subscriptions. The native method above is more reliable.
 
+> **Note:** BLE-in-docker is outside the scope of this README, but the env vars should all still work.
+
 ```bash
+# Serial
 docker run -d \
   --device=/dev/ttyUSB0 \
+  -v remoteterm-data:/app/data \
+  -p 8000:8000 \
+  jkingsman/remote-terminal-for-meshcore:latest
+
+# TCP
+docker run -d \
+  -e MESHCORE_TCP_HOST=192.168.1.100 \
+  -e MESHCORE_TCP_PORT=4000 \
   -v remoteterm-data:/app/data \
   -p 8000:8000 \
   jkingsman/remote-terminal-for-meshcore:latest
@@ -139,10 +159,16 @@ npm run build                        # build the frontend
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MESHCORE_SERIAL_PORT` | (auto-detect) | Serial port path |
-| `MESHCORE_SERIAL_BAUDRATE` | 115200 | Baud rate |
+| `MESHCORE_SERIAL_BAUDRATE` | 115200 | Serial baud rate |
+| `MESHCORE_TCP_HOST` | | TCP host (mutually exclusive with serial/BLE) |
+| `MESHCORE_TCP_PORT` | 4000 | TCP port |
+| `MESHCORE_BLE_ADDRESS` | | BLE device address (mutually exclusive with serial/TCP) |
+| `MESHCORE_BLE_PIN` | | BLE PIN (required when BLE address is set) |
 | `MESHCORE_LOG_LEVEL` | INFO | DEBUG, INFO, WARNING, ERROR |
 | `MESHCORE_DATABASE_PATH` | data/meshcore.db | SQLite database path |
 | `MESHCORE_MAX_RADIO_CONTACTS` | 200 | Max recent contacts to keep on radio for DM ACKs |
+
+Only one transport may be active at a time. If multiple are set, the server will refuse to start.
 
 ## Additional Setup
 

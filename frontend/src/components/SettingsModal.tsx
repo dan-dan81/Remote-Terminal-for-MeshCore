@@ -78,7 +78,7 @@ export function SettingsModal({
   onRefreshAppSettings,
 }: SettingsModalProps) {
   // Tab state
-  type SettingsTab = 'radio' | 'identity' | 'serial' | 'database' | 'bot';
+  type SettingsTab = 'radio' | 'identity' | 'connectivity' | 'database' | 'bot';
   const [activeTab, setActiveTab] = useState<SettingsTab>('radio');
 
   // Radio config state
@@ -285,7 +285,7 @@ export function SettingsModal({
     }
   };
 
-  const handleSaveSerial = async () => {
+  const handleSaveConnectivity = async () => {
     setError('');
     setLoading(true);
 
@@ -294,7 +294,7 @@ export function SettingsModal({
       if (!isNaN(newMaxRadioContacts) && newMaxRadioContacts !== appSettings?.max_radio_contacts) {
         await onSaveAppSettings({ max_radio_contacts: newMaxRadioContacts });
       }
-      toast.success('Serial settings saved');
+      toast.success('Connectivity settings saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -474,7 +474,7 @@ export function SettingsModal({
             {activeTab === 'radio' && 'Configure radio frequency, power, and location settings'}
             {activeTab === 'identity' &&
               'Manage radio name, public key, private key, and advertising settings'}
-            {activeTab === 'serial' && 'View serial port connection and configure contact sync'}
+            {activeTab === 'connectivity' && 'View connection status and configure contact sync'}
             {activeTab === 'database' && 'View database statistics and clean up old packets'}
             {activeTab === 'bot' && 'Configure automatic message bot with Python code'}
           </DialogDescription>
@@ -491,7 +491,7 @@ export function SettingsModal({
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="radio">Radio</TabsTrigger>
               <TabsTrigger value="identity">Identity</TabsTrigger>
-              <TabsTrigger value="serial">Serial</TabsTrigger>
+              <TabsTrigger value="connectivity">Connectivity</TabsTrigger>
               <TabsTrigger value="database">Database</TabsTrigger>
               <TabsTrigger value="bot">Bot</TabsTrigger>
             </TabsList>
@@ -716,15 +716,15 @@ export function SettingsModal({
               {error && <div className="text-sm text-destructive">{error}</div>}
             </TabsContent>
 
-            {/* Serial Tab */}
-            <TabsContent value="serial" className="space-y-4 mt-4">
+            {/* Connectivity Tab */}
+            <TabsContent value="connectivity" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Serial Port</Label>
-                {health?.serial_port ? (
+                <Label>Connection</Label>
+                {health?.connection_info ? (
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
                     <code className="px-2 py-1 bg-muted rounded text-foreground text-sm">
-                      {health.serial_port}
+                      {health.connection_info}
                     </code>
                   </div>
                 ) : (
@@ -752,7 +752,7 @@ export function SettingsModal({
                 </p>
               </div>
 
-              <Button onClick={handleSaveSerial} disabled={loading} className="w-full">
+              <Button onClick={handleSaveConnectivity} disabled={loading} className="w-full">
                 {loading ? 'Saving...' : 'Save Settings'}
               </Button>
 

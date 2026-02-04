@@ -70,7 +70,7 @@ describe('parseWebSocketMessage', () => {
     const onHealth = vi.fn();
     const data = JSON.stringify({
       type: 'health',
-      data: { radio_connected: true, serial_port: '/dev/ttyUSB0' },
+      data: { radio_connected: true, connection_info: 'Serial: /dev/ttyUSB0' },
     });
 
     const result = parseWebSocketMessage(data, { onHealth });
@@ -79,7 +79,7 @@ describe('parseWebSocketMessage', () => {
     expect(result.handled).toBe(true);
     expect(onHealth).toHaveBeenCalledWith({
       radio_connected: true,
-      serial_port: '/dev/ttyUSB0',
+      connection_info: 'Serial: /dev/ttyUSB0',
     });
   });
 
