@@ -498,59 +498,6 @@ class MessageRepository:
         )
 
     @staticmethod
-    async def get_bulk(
-        conversations: list[dict],
-        limit_per_conversation: int = 100,
-    ) -> dict[str, list["Message"]]:
-        """Fetch messages for multiple conversations in one query per conversation.
-
-        Args:
-            conversations: List of {type: 'PRIV'|'CHAN', conversation_key: string}
-            limit_per_conversation: Max messages to return per conversation
-
-        Returns:
-            Dict mapping 'type:conversation_key' to list of messages
-        """
-        result: dict[str, list[Message]] = {}
-
-        for conv in conversations:
-            msg_type = conv.get("type")
-            conv_key = conv.get("conversation_key")
-            if not msg_type or not conv_key:
-                continue
-
-            key = f"{msg_type}:{conv_key}"
-
-            cursor = await db.conn.execute(
-                """
-                SELECT * FROM messages
-                WHERE type = ? AND conversation_key LIKE ?
-                ORDER BY received_at DESC
-                LIMIT ?
-                """,
-                (msg_type, f"{conv_key}%", limit_per_conversation),
-            )
-            rows = await cursor.fetchall()
-            result[key] = [
-                Message(
-                    id=row["id"],
-                    type=row["type"],
-                    conversation_key=row["conversation_key"],
-                    text=row["text"],
-                    sender_timestamp=row["sender_timestamp"],
-                    received_at=row["received_at"],
-                    paths=MessageRepository._parse_paths(row["paths"]),
-                    txt_type=row["txt_type"],
-                    signature=row["signature"],
-                    outgoing=bool(row["outgoing"]),
-                    acked=row["acked"],
-                )
-                for row in rows
-            ]
-
-        return result
-
-    @staticmethod
     async def get_unread_counts(name: str | None = None) -> dict:
         """Get unread message counts, mention flags, and last message times for all conversations.
 

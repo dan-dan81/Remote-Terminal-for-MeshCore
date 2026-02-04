@@ -90,9 +90,12 @@ The `preferences_migrated` flag prevents duplicate migrations.
 
 ### State Flow
 
-1. **WebSocket** pushes real-time updates (health, contacts, channels, messages)
-2. **REST API** fetches initial data and handles user actions
+1. **REST API** fetches initial data on mount in parallel (config, settings, channels, contacts, unreads)
+2. **WebSocket** pushes real-time updates (health, messages, contact changes, raw packets)
 3. **Components** receive state as props, call handlers to trigger changes
+
+**Note:** Contacts and channels are loaded via REST on mount (not from WebSocket initial push).
+The WebSocket only sends health on initial connect, then broadcasts real-time updates.
 
 ### Conversation Header
 
@@ -229,8 +232,8 @@ interface Message {
 }
 
 interface Conversation {
-  type: 'contact' | 'channel' | 'raw' | 'map';
-  id: string;              // PublicKey for contacts, ChannelKey for channels, 'raw'/'map' for special views
+  type: 'contact' | 'channel' | 'raw' | 'map' | 'visualizer';
+  id: string;              // PublicKey for contacts, ChannelKey for channels, 'raw'/'map'/'visualizer' for special views
   name: string;
 }
 
@@ -397,11 +400,8 @@ for local state tracking, while `conversation_key` is the raw database field.
 Unread tracking uses server-side `last_read_at` timestamps for cross-device consistency:
 
 ```typescript
-// Contacts and channels include last_read_at from server
-interface Contact {
-  // ...
-  last_read_at: number | null;  // Unix timestamp when conversation was last read
-}
+// Fetch aggregated unread counts from server (replaces bulk message fetch + client-side counting)
+await api.getUnreads(myName);  // Returns { counts, mentions, last_message_times }
 
 // Mark as read via API (called automatically when viewing conversation)
 await api.markContactRead(publicKey);
@@ -409,7 +409,9 @@ await api.markChannelRead(channelKey);
 await api.markAllRead();  // Bulk mark all as read
 ```
 
-Unread count = messages where `received_at > last_read_at`.
+The `useUnreadCounts` hook fetches counts from `GET /api/read-state/unreads` on mount and
+when channels/contacts change. Real-time increments are still tracked client-side via WebSocket
+message events. The server computes unread counts using `last_read_at` vs `received_at`.
 
 ## Utility Functions
 

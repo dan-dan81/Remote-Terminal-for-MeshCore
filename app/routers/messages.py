@@ -38,19 +38,6 @@ async def list_messages(
     )
 
 
-@router.post("/bulk", response_model=dict[str, list[Message]])
-async def get_messages_bulk(
-    conversations: list[dict],
-    limit_per_conversation: int = Query(default=100, ge=1, le=1000),
-) -> dict[str, list[Message]]:
-    """Fetch messages for multiple conversations in one request.
-
-    Body should be a list of {type: 'PRIV'|'CHAN', conversation_key: string}.
-    Returns a dict mapping 'type:conversation_key' to list of messages.
-    """
-    return await MessageRepository.get_bulk(conversations, limit_per_conversation)
-
-
 @router.post("/direct", response_model=Message)
 async def send_direct_message(request: SendDirectMessageRequest) -> Message:
     """Send a direct message to a contact."""

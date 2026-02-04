@@ -35,7 +35,7 @@ app/
     ├── channels.py   # Channel CRUD, radio sync, mark-read
     ├── messages.py   # Message list and send (direct/channel)
     ├── packets.py    # Raw packet endpoints, historical decryption
-    ├── read_state.py # Bulk read state operations (mark-all-read)
+    ├── read_state.py # Read state: unread counts, mark-all-read
     ├── settings.py   # App settings (max_radio_contacts)
     └── ws.py         # WebSocket endpoint at /api/ws
 ```
@@ -103,6 +103,10 @@ await ws_manager.broadcast("message", {"id": 1, "text": "Hello"})
 ```
 
 Event types: `health`, `contacts`, `channels`, `message`, `contact`, `raw_packet`, `message_acked`, `error`
+
+**Note:** The WebSocket initial connect only sends `health`. Contacts and channels are fetched
+via REST (`GET /api/contacts`, `GET /api/channels`) for faster parallel loading. The WS still
+broadcasts real-time `contacts`/`channels` updates when data changes.
 
 Helper functions for common broadcasts:
 
@@ -490,6 +494,7 @@ All endpoints are prefixed with `/api`.
 - `DELETE /api/channels/{key}` - Delete channel
 
 ### Read State
+- `GET /api/read-state/unreads?name=X` - Server-computed unread counts, mention flags, and last message times
 - `POST /api/read-state/mark-all-read` - Mark all contacts and channels as read
 
 ### Messages
