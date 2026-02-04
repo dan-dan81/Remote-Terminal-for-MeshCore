@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from meshcore import EventType
@@ -15,6 +16,7 @@ from app.models import (
     NeighborInfo,
     TelemetryRequest,
     TelemetryResponse,
+    TraceResponse,
 )
 from app.packet_processor import start_historical_dm_decryption
 from app.radio import radio_manager
@@ -532,3 +534,61 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
         finally:
             # Always restart auto-fetch, even if an error occurred
             await mc.start_auto_message_fetching()
+
+
+@router.post("/{public_key}/trace", response_model=TraceResponse)
+async def request_trace(public_key: str) -> TraceResponse:
+    """Send a direct (zero-hop) trace to a contact and wait for the result.
+
+    This sends a trace with no path (direct only, no repeaters) and waits
+    up to 15 seconds for the TRACE_DATA response.
+    """
+    mc = require_connected()
+
+    contact = await ContactRepository.get_by_key_or_prefix(public_key)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    tag = random.randint(1, 0xFFFFFFFF)
+
+    # Note: unlike command/telemetry endpoints, trace does NOT need
+    # stop/start_auto_message_fetching because the response arrives as a
+    # TRACE_DATA event through the reader loop, not via get_msg().
+    async with pause_polling():
+        # Ensure contact is on radio so the trace can reach them
+        await mc.commands.add_contact(contact.to_radio_dict())
+
+        logger.info("Sending direct trace to %s (tag=%d)", contact.public_key[:12], tag)
+        result = await mc.commands.send_trace(path=None, tag=tag)
+
+        if result.type == EventType.ERROR:
+            raise HTTPException(status_code=500, detail=f"Failed to send trace: {result.payload}")
+
+        # Wait for the matching TRACE_DATA event
+        event = await mc.wait_for_event(
+            EventType.TRACE_DATA,
+            attribute_filters={"tag": tag},
+            timeout=15,
+        )
+
+    if event is None:
+        raise HTTPException(status_code=504, detail="No trace response heard")
+
+    trace = event.payload
+    path = trace.get("path", [])
+    path_len = trace.get("path_len", 0)
+
+    # remote_snr: first entry in path (what the target heard us at)
+    remote_snr = path[0]["snr"] if path else None
+    # local_snr: last entry in path (what we heard them at on the bounce-back)
+    local_snr = path[-1]["snr"] if path else None
+
+    logger.info(
+        "Trace result for %s: path_len=%d, remote_snr=%s, local_snr=%s",
+        contact.public_key[:12],
+        path_len,
+        remote_snr,
+        local_snr,
+    )
+
+    return TraceResponse(remote_snr=remote_snr, local_snr=local_snr, path_len=path_len)

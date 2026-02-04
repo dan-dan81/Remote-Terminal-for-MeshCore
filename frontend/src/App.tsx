@@ -693,6 +693,22 @@ export function App() {
     [fetchUndecryptedCount]
   );
 
+  // Handle direct trace request
+  const handleTrace = useCallback(async () => {
+    if (!activeConversation || activeConversation.type !== 'contact') return;
+    toast('Trace started...');
+    try {
+      const result = await api.requestTrace(activeConversation.id);
+      const parts: string[] = [];
+      if (result.remote_snr !== null) parts.push(`Remote SNR: ${result.remote_snr.toFixed(1)} dB`);
+      if (result.local_snr !== null) parts.push(`Local SNR: ${result.local_snr.toFixed(1)} dB`);
+      const detail = parts.join(', ');
+      toast.success(detail ? `Trace complete! ${detail}` : 'Trace complete!');
+    } catch {
+      toast.error('No trace response heard');
+    }
+  }, [activeConversation]);
+
   // Handle sort order change via API with optimistic update
   const handleSortOrderChange = useCallback(
     async (order: 'recent' | 'alpha') => {
@@ -879,6 +895,16 @@ export function App() {
                       })()}
                   </span>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Direct trace button (contacts only) */}
+                    {activeConversation.type === 'contact' && (
+                      <button
+                        className="p-1.5 rounded hover:bg-accent text-xl leading-none"
+                        onClick={handleTrace}
+                        title="Direct Trace"
+                      >
+                        &#x1F6CE;
+                      </button>
+                    )}
                     {/* Favorite button */}
                     {(activeConversation.type === 'channel' ||
                       activeConversation.type === 'contact') && (

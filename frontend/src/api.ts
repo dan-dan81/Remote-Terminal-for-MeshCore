@@ -13,6 +13,7 @@ import type {
   RadioConfig,
   RadioConfigUpdate,
   TelemetryResponse,
+  TraceResponse,
   UnreadCounts,
 } from './types';
 
@@ -113,6 +114,10 @@ export const api = {
     fetchJson<CommandResponse>(`/contacts/${publicKey}/command`, {
       method: 'POST',
       body: JSON.stringify({ command }),
+    }),
+  requestTrace: (publicKey: string) =>
+    fetchJson<TraceResponse>(`/contacts/${publicKey}/trace`, {
+      method: 'POST',
     }),
 
   // Channels

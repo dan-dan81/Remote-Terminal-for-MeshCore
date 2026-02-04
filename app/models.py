@@ -195,6 +195,18 @@ class TelemetryResponse(BaseModel):
     )
 
 
+class TraceResponse(BaseModel):
+    """Result of a direct (zero-hop) trace to a contact."""
+
+    remote_snr: float | None = Field(
+        default=None, description="SNR at which the target heard us (dB)"
+    )
+    local_snr: float | None = Field(
+        default=None, description="SNR at which we heard the target on the bounce-back (dB)"
+    )
+    path_len: int = Field(description="Number of hops in the trace path")
+
+
 class CommandRequest(BaseModel):
     """Request to send a CLI command to a repeater."""
 
