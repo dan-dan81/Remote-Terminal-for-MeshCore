@@ -386,6 +386,58 @@ class TestAdvertisementPipeline:
         contact = await ContactRepository.get_by_key(test_pubkey)
         assert contact.last_path_len == 1  # Still the shorter path
 
+    @pytest.mark.asyncio
+    async def test_advertisement_replaces_stale_path_outside_window(
+        self, test_db, captured_broadcasts
+    ):
+        """When existing path is stale (>60s), a new longer path should replace it.
+
+        In a mesh network, a stale short path may no longer be valid (node moved, repeater
+        went offline). Accepting the new longer path ensures we have a working route.
+        """
+        from app.packet_processor import _process_advertisement
+
+        test_pubkey = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        await ContactRepository.upsert(
+            {
+                "public_key": test_pubkey,
+                "name": "TestNode",
+                "type": 1,
+                "last_seen": 1000,
+                "last_path_len": 1,  # Short path
+                "last_path": "aa",
+            }
+        )
+
+        from unittest.mock import MagicMock
+
+        from app.decoder import ParsedAdvertisement
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        # New longer path arriving AFTER 60s window (timestamp 1000 + 61 = 1061)
+        long_packet_info = MagicMock()
+        long_packet_info.path_length = 4
+        long_packet_info.path = bytes.fromhex("aabbccdd")
+        long_packet_info.payload = b""
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_advertisement") as mock_parse:
+                mock_parse.return_value = ParsedAdvertisement(
+                    public_key=test_pubkey,
+                    name="TestNode",
+                    timestamp=1061,
+                    lat=None,
+                    lon=None,
+                    device_role=1,
+                )
+                await _process_advertisement(b"", timestamp=1061, packet_info=long_packet_info)
+
+        # Verify the longer path replaced the stale shorter one
+        contact = await ContactRepository.get_by_key(test_pubkey)
+        assert contact.last_path_len == 4
+        assert contact.last_path == "aabbccdd"
+
 
 class TestAckPipeline:
     """Test ACK flow: outgoing message → ACK received → broadcast update."""
