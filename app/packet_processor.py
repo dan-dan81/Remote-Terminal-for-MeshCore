@@ -39,6 +39,71 @@ from app.websocket import broadcast_error, broadcast_event
 logger = logging.getLogger(__name__)
 
 
+async def _handle_duplicate_message(
+    packet_id: int,
+    msg_type: str,
+    conversation_key: str,
+    text: str,
+    sender_timestamp: int,
+    path: str | None,
+    received: int,
+) -> None:
+    """Handle a duplicate message by updating paths/acks on the existing record.
+
+    Called when MessageRepository.create returns None (INSERT OR IGNORE hit a duplicate).
+    Looks up the existing message, adds the new path, increments ack count for outgoing
+    messages, and broadcasts the update to clients.
+    """
+    existing_msg = await MessageRepository.get_by_content(
+        msg_type=msg_type,
+        conversation_key=conversation_key,
+        text=text,
+        sender_timestamp=sender_timestamp,
+    )
+    if not existing_msg:
+        label = "message" if msg_type == "CHAN" else "DM"
+        logger.warning(
+            "Duplicate %s for %s but couldn't find existing",
+            label,
+            conversation_key[:12],
+        )
+        return
+
+    logger.debug(
+        "Duplicate %s for %s (msg_id=%d, outgoing=%s) - adding path",
+        msg_type,
+        conversation_key[:12],
+        existing_msg.id,
+        existing_msg.outgoing,
+    )
+
+    # Add path if provided
+    if path is not None:
+        paths = await MessageRepository.add_path(existing_msg.id, path, received)
+    else:
+        # Get current paths for broadcast
+        paths = existing_msg.paths or []
+
+    # Increment ack count for outgoing messages (echo confirmation)
+    if existing_msg.outgoing:
+        ack_count = await MessageRepository.increment_ack_count(existing_msg.id)
+    else:
+        ack_count = await MessageRepository.get_ack_count(existing_msg.id)
+
+    # Broadcast updated paths
+    broadcast_event(
+        "message_acked",
+        {
+            "message_id": existing_msg.id,
+            "ack_count": ack_count,
+            "paths": [p.model_dump() for p in paths] if paths else [],
+        },
+    )
+
+    # Mark this packet as decrypted
+    await RawPacketRepository.mark_decrypted(packet_id, existing_msg.id)
+
+
 async def create_message_from_decrypted(
     packet_id: int,
     channel_key: str,
@@ -91,52 +156,9 @@ async def create_message_from_decrypted(
         # 1. Our own outgoing message echoes back (flood routing)
         # 2. Same message arrives via multiple paths before first is committed
         # In either case, add the path to the existing message.
-        existing_msg = await MessageRepository.get_by_content(
-            msg_type="CHAN",
-            conversation_key=channel_key_normalized,
-            text=text,
-            sender_timestamp=timestamp,
+        await _handle_duplicate_message(
+            packet_id, "CHAN", channel_key_normalized, text, timestamp, path, received
         )
-        if not existing_msg:
-            logger.warning(
-                "Duplicate message for channel %s but couldn't find existing",
-                channel_key_normalized[:8],
-            )
-            return None
-
-        logger.debug(
-            "Duplicate message for channel %s (msg_id=%d, outgoing=%s) - adding path",
-            channel_key_normalized[:8],
-            existing_msg.id,
-            existing_msg.outgoing,
-        )
-
-        # Add path if provided
-        if path is not None:
-            paths = await MessageRepository.add_path(existing_msg.id, path, received)
-        else:
-            # Get current paths for broadcast
-            paths = existing_msg.paths or []
-
-        # Increment ack count for outgoing messages (echo confirmation)
-        if existing_msg.outgoing:
-            ack_count = await MessageRepository.increment_ack_count(existing_msg.id)
-        else:
-            ack_count = await MessageRepository.get_ack_count(existing_msg.id)
-
-        # Broadcast updated paths
-        broadcast_event(
-            "message_acked",
-            {
-                "message_id": existing_msg.id,
-                "ack_count": ack_count,
-                "paths": [p.model_dump() for p in paths] if paths else [],
-            },
-        )
-
-        # Mark this packet as decrypted
-        await RawPacketRepository.mark_decrypted(packet_id, existing_msg.id)
-
         return None
 
     logger.info("Stored channel message %d for channel %s", msg_id, channel_key_normalized[:8])
@@ -241,51 +263,15 @@ async def create_dm_message_from_decrypted(
 
     if msg_id is None:
         # Duplicate message detected
-        existing_msg = await MessageRepository.get_by_content(
-            msg_type="PRIV",
-            conversation_key=conversation_key,
-            text=decrypted.message,
-            sender_timestamp=decrypted.timestamp,
+        await _handle_duplicate_message(
+            packet_id,
+            "PRIV",
+            conversation_key,
+            decrypted.message,
+            decrypted.timestamp,
+            path,
+            received,
         )
-        if not existing_msg:
-            logger.warning(
-                "Duplicate DM for contact %s but couldn't find existing",
-                conversation_key[:12],
-            )
-            return None
-
-        logger.debug(
-            "Duplicate DM for contact %s (msg_id=%d, outgoing=%s) - adding path",
-            conversation_key[:12],
-            existing_msg.id,
-            existing_msg.outgoing,
-        )
-
-        # Add path if provided
-        if path is not None:
-            paths = await MessageRepository.add_path(existing_msg.id, path, received)
-        else:
-            paths = existing_msg.paths or []
-
-        # Increment ack count for outgoing messages (echo confirmation)
-        if existing_msg.outgoing:
-            ack_count = await MessageRepository.increment_ack_count(existing_msg.id)
-        else:
-            ack_count = await MessageRepository.get_ack_count(existing_msg.id)
-
-        # Broadcast updated paths
-        broadcast_event(
-            "message_acked",
-            {
-                "message_id": existing_msg.id,
-                "ack_count": ack_count,
-                "paths": [p.model_dump() for p in paths] if paths else [],
-            },
-        )
-
-        # Mark this packet as decrypted
-        await RawPacketRepository.mark_decrypted(packet_id, existing_msg.id)
-
         return None
 
     logger.info(

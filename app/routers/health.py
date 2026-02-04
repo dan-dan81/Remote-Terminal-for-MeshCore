@@ -18,10 +18,8 @@ class HealthResponse(BaseModel):
     oldest_undecrypted_timestamp: int | None
 
 
-@router.get("/health", response_model=HealthResponse)
-async def healthcheck() -> HealthResponse:
-    """Check if the API is running and if the radio is connected."""
-    # Get database file size in MB
+async def build_health_data(radio_connected: bool, serial_port: str | None) -> dict:
+    """Build the health status payload used by REST endpoint and WebSocket broadcasts."""
     db_size_mb = 0.0
     try:
         db_size_bytes = os.path.getsize(settings.database_path)
@@ -29,17 +27,23 @@ async def healthcheck() -> HealthResponse:
     except OSError:
         pass
 
-    # Get oldest undecrypted packet info (gracefully handle if DB not connected)
     oldest_ts = None
     try:
         oldest_ts = await RawPacketRepository.get_oldest_undecrypted()
     except RuntimeError:
         pass  # Database not connected
 
-    return HealthResponse(
-        status="ok" if radio_manager.is_connected else "degraded",
-        radio_connected=radio_manager.is_connected,
-        serial_port=radio_manager.port,
-        database_size_mb=db_size_mb,
-        oldest_undecrypted_timestamp=oldest_ts,
-    )
+    return {
+        "status": "ok" if radio_connected else "degraded",
+        "radio_connected": radio_connected,
+        "serial_port": serial_port,
+        "database_size_mb": db_size_mb,
+        "oldest_undecrypted_timestamp": oldest_ts,
+    }
+
+
+@router.get("/health", response_model=HealthResponse)
+async def healthcheck() -> HealthResponse:
+    """Check if the API is running and if the radio is connected."""
+    data = await build_health_data(radio_manager.is_connected, radio_manager.port)
+    return HealthResponse(**data)

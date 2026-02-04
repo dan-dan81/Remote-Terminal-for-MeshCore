@@ -9,18 +9,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import setup_logging
 from app.database import db
-from app.event_handlers import register_event_handlers
 from app.radio import radio_manager
 from app.radio_sync import (
-    drain_pending_messages,
-    start_message_polling,
-    start_periodic_advert,
-    start_periodic_sync,
     stop_message_polling,
     stop_periodic_advert,
     stop_periodic_sync,
-    sync_and_offload_all,
-    sync_radio_time,
 )
 from app.routers import (
     channels,
@@ -47,46 +40,7 @@ async def lifespan(app: FastAPI):
     try:
         await radio_manager.connect()
         logger.info("Connected to radio")
-        if radio_manager.meshcore:
-            register_event_handlers(radio_manager.meshcore)
-
-            # Export and store private key for server-side DM decryption
-            from app.keystore import export_and_store_private_key
-
-            await export_and_store_private_key(radio_manager.meshcore)
-
-            # Sync radio clock with system time
-            await sync_radio_time()
-
-            # Sync contacts/channels from radio to DB and clear radio
-            logger.info("Syncing and offloading radio data...")
-            result = await sync_and_offload_all()
-            logger.info("Sync complete: %s", result)
-
-            # Start periodic sync
-            start_periodic_sync()
-
-            # Send advertisement to announce our presence (if enabled and not throttled)
-            from app.radio_sync import send_advertisement
-
-            if await send_advertisement():
-                logger.info("Startup advertisement sent")
-            else:
-                logger.debug("Startup advertisement skipped (disabled or throttled)")
-
-            # Start periodic advertisement (every hour)
-            start_periodic_advert()
-
-            await radio_manager.meshcore.start_auto_message_fetching()
-            logger.info("Auto message fetching started")
-
-            # Drain any messages that were queued before we connected
-            drained = await drain_pending_messages()
-            if drained > 0:
-                logger.info("Drained %d pending message(s)", drained)
-
-            # Start periodic message polling as fallback for unreliable push events
-            start_message_polling()
+        await radio_manager.post_connect_setup()
     except Exception as e:
         logger.warning("Failed to connect to radio on startup: %s", e)
 

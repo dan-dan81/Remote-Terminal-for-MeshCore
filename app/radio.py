@@ -108,18 +108,61 @@ class RadioManager:
         self._reconnect_lock: asyncio.Lock | None = None
 
     async def post_connect_setup(self) -> None:
-        """Register event handlers, export private key, and start message fetching.
+        """Full post-connection setup: handlers, key export, sync, advertisements, polling.
 
         Called after every successful connection or reconnection.
+        Idempotent — safe to call repeatedly (periodic tasks have start guards).
         """
         from app.event_handlers import register_event_handlers
         from app.keystore import export_and_store_private_key
+        from app.radio_sync import (
+            drain_pending_messages,
+            send_advertisement,
+            start_message_polling,
+            start_periodic_advert,
+            start_periodic_sync,
+            sync_and_offload_all,
+            sync_radio_time,
+        )
 
-        if self._meshcore:
-            register_event_handlers(self._meshcore)
-            await export_and_store_private_key(self._meshcore)
-            await self._meshcore.start_auto_message_fetching()
-            logger.info("Post-connect setup complete (handlers, key export, message fetching)")
+        if not self._meshcore:
+            return
+
+        register_event_handlers(self._meshcore)
+        await export_and_store_private_key(self._meshcore)
+
+        # Sync radio clock with system time
+        await sync_radio_time()
+
+        # Sync contacts/channels from radio to DB and clear radio
+        logger.info("Syncing and offloading radio data...")
+        result = await sync_and_offload_all()
+        logger.info("Sync complete: %s", result)
+
+        # Start periodic sync (idempotent)
+        start_periodic_sync()
+
+        # Send advertisement to announce our presence (if enabled and not throttled)
+        if await send_advertisement():
+            logger.info("Advertisement sent")
+        else:
+            logger.debug("Advertisement skipped (disabled or throttled)")
+
+        # Start periodic advertisement (idempotent)
+        start_periodic_advert()
+
+        await self._meshcore.start_auto_message_fetching()
+        logger.info("Auto message fetching started")
+
+        # Drain any messages that were queued before we connected
+        drained = await drain_pending_messages()
+        if drained > 0:
+            logger.info("Drained %d pending message(s)", drained)
+
+        # Start periodic message polling as fallback (idempotent)
+        start_message_polling()
+
+        logger.info("Post-connect setup complete")
 
     @property
     def meshcore(self) -> MeshCore | None:
