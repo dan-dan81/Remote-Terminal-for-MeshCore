@@ -199,6 +199,12 @@ export interface CommandResponse {
   sender_timestamp: number | null;
 }
 
+export interface TraceResponse {
+  remote_snr: number | null;
+  local_snr: number | null;
+  path_len: number;
+}
+
 export interface UnreadCounts {
   counts: Record<string, number>;
   mentions: Record<string, boolean>;
