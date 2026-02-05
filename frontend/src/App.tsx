@@ -704,8 +704,10 @@ export function App() {
       if (result.local_snr !== null) parts.push(`Local SNR: ${result.local_snr.toFixed(1)} dB`);
       const detail = parts.join(', ');
       toast.success(detail ? `Trace complete! ${detail}` : 'Trace complete!');
-    } catch {
-      toast.error('No trace response heard');
+    } catch (err) {
+      toast.error('Trace failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
     }
   }, [activeConversation]);
 

@@ -538,10 +538,11 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
 
 @router.post("/{public_key}/trace", response_model=TraceResponse)
 async def request_trace(public_key: str) -> TraceResponse:
-    """Send a direct (zero-hop) trace to a contact and wait for the result.
+    """Send a single-hop trace to a contact and wait for the result.
 
-    This sends a trace with no path (direct only, no repeaters) and waits
-    up to 15 seconds for the TRACE_DATA response.
+    The trace path contains the contact's 1-byte pubkey hash as the sole hop
+    (no intermediate repeaters). The radio firmware requires at least one
+    node in the path.
     """
     mc = require_connected()
 
@@ -550,6 +551,8 @@ async def request_trace(public_key: str) -> TraceResponse:
         raise HTTPException(status_code=404, detail="Contact not found")
 
     tag = random.randint(1, 0xFFFFFFFF)
+    # First 2 hex chars of pubkey = 1-byte hash used by the trace protocol
+    contact_hash = contact.public_key[:2]
 
     # Note: unlike command/telemetry endpoints, trace does NOT need
     # stop/start_auto_message_fetching because the response arrives as a
@@ -558,8 +561,10 @@ async def request_trace(public_key: str) -> TraceResponse:
         # Ensure contact is on radio so the trace can reach them
         await mc.commands.add_contact(contact.to_radio_dict())
 
-        logger.info("Sending direct trace to %s (tag=%d)", contact.public_key[:12], tag)
-        result = await mc.commands.send_trace(path=None, tag=tag)
+        logger.info(
+            "Sending trace to %s (tag=%d, hash=%s)", contact.public_key[:12], tag, contact_hash
+        )
+        result = await mc.commands.send_trace(path=contact_hash, tag=tag)
 
         if result.type == EventType.ERROR:
             raise HTTPException(status_code=500, detail=f"Failed to send trace: {result.payload}")
