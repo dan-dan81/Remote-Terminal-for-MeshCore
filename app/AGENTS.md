@@ -517,7 +517,8 @@ All endpoints are prefixed with `/api`.
 - `WS /api/ws` - Real-time updates (health, contacts, channels, messages, raw packets)
 
 ### Static Files (Production)
-In production, the backend also serves the frontend:
+In production, the backend serves the frontend if `frontend/dist` exists. Users must build the
+frontend first (`cd frontend && npm install && npm run build`):
 - `/` - Serves `frontend/dist/index.html`
 - `/assets/*` - Serves compiled JS/CSS from `frontend/dist/assets/`
 - `/*` - Falls back to `index.html` for SPA routing

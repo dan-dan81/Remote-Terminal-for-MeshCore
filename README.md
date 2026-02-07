@@ -57,13 +57,17 @@ usbipd bind --busid 3-8
 
 **This approach is recommended over Docker due to intermittent serial communications issues I've seen on \*nix systems.**
 
-The frontend is pre-built -- just run the backend:
-
 ```bash
 git clone https://github.com/jkingsman/Remote-Terminal-for-MeshCore.git
 cd Remote-Terminal-for-MeshCore
 
+# Install backend dependencies
 uv sync
+
+# Build frontend
+cd frontend && npm install && npm run build && cd ..
+
+# Run server
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -193,7 +197,7 @@ cd /opt/remoteterm
 sudo -u remoteterm uv venv
 sudo -u remoteterm uv sync
 
-# Build frontend (optional -- already built in repo and served by backend)
+# Build frontend (required for the backend to serve the web UI)
 cd /opt/remoteterm/frontend
 sudo -u remoteterm npm install
 sudo -u remoteterm npm run build

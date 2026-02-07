@@ -10,6 +10,9 @@ wheels/
 frontend/node_modules/
 frontend/test-results/
 
+# Frontend build output (built from source by end users)
+frontend/dist/
+
 # reference librarys
 references/
 

@@ -152,10 +152,10 @@ Terminal 2: `cd frontend && npm run dev`
 
 ### Production
 
-In production, the FastAPI backend serves the compiled frontend:
+In production, the FastAPI backend serves the compiled frontend. You must build the frontend first:
 
 ```bash
-cd frontend && npm run build && cd ..
+cd frontend && npm install && npm run build && cd ..
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
