@@ -8,7 +8,7 @@ Backend server + browser interface for MeshCore mesh radio networks. Attach your
 * Access your radio remotely over your network or VPN
 * Brute force hashtag room names for GroupTexts you don't have keys for yet
 
-**Warning:** This app has no authentication. Run it on a private network only -- do not expose to the internet unless you want strangers sending traffic as you.
+**Warning:** This app has no auth, and is for trusted environments only. _Do not put this on an untrusted network, or open it to the public._ The bots can execute arbitrary Python code which means anyone on your network can, too. If you need access control, consider using a reverse proxy like Nginx, or extending FastAPI.
 
 ![Screenshot of the application's web interface](screenshot.png)
 
