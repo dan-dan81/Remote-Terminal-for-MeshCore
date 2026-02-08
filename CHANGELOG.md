@@ -15,6 +15,23 @@ Misc: Always flood advertisements
 Misc: Better packet dupe handling
 Misc: Dead code cleanup, test improvements
 
+## [1.8.0] - 2026-02-07
+
+Feature: Single hop ping
+Feature: PWA viewport fixes(thanks @rgregg)
+Feature (?): No frontend distribution; build it yourself ;P
+Bugfix: Fix channel message send race condition (concurrent sends could corrupt shared radio slot)
+Bugfix: Fix TOCTOU race in radio reconnect (duplicate connections under contention)
+Bugfix: Better guarding around reconnection
+Bugfix: Duplicate websocket connection fixes
+Bugfix: Settings tab error cleanliness on tab swap
+Bugfix: Fix path traversal vuln
+UI: Swap visualizer legend ordering (yay prettier)
+Misc: Perf and locking improvements
+Misc: Always flood advertisements
+Misc: Better packet dupe handling
+Misc: Dead code cleanup, test improvements
+
 ## [1.7.1] - 2026-02-03
 
 Feature: Clickable hyperlinks
