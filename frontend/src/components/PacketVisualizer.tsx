@@ -1522,15 +1522,6 @@ export function PacketVisualizer({
         <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg p-3 text-xs border border-border">
           <div className="flex gap-6">
             <div className="flex flex-col gap-1.5">
-              <div className="text-muted-foreground font-medium mb-1">Nodes</div>
-              {LEGEND_ITEMS.map((item) => (
-                <div key={item.label} className="flex items-center gap-2">
-                  <span className={item.size}>{item.emoji}</span>
-                  <span>{item.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-1.5">
               <div className="text-muted-foreground font-medium mb-1">Packets</div>
               {PACKET_LEGEND_ITEMS.map((item) => (
                 <div key={item.label} className="flex items-center gap-2">
@@ -1541,6 +1532,15 @@ export function PacketVisualizer({
                     {item.label}
                   </div>
                   <span>{item.description}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="text-muted-foreground font-medium mb-1">Nodes</div>
+              {LEGEND_ITEMS.map((item) => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <span className={item.size}>{item.emoji}</span>
+                  <span>{item.label}</span>
                 </div>
               ))}
             </div>
