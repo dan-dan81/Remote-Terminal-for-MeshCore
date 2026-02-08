@@ -148,7 +148,7 @@ await api.getHealth();
 // Radio
 await api.getRadioConfig();
 await api.updateRadioConfig({ name: 'MyRadio' });
-await api.sendAdvertisement(true);
+await api.sendAdvertisement();
 
 // Contacts/Channels
 await api.getContacts();

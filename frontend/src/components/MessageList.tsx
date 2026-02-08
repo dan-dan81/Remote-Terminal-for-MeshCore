@@ -239,6 +239,14 @@ export function MessageList({
     }
   }, []);
 
+  // Sort messages by received_at ascending (oldest first)
+  // Note: Deduplication is handled by useConversationMessages.addMessageIfNew()
+  // and the database UNIQUE constraint on (type, conversation_key, text, sender_timestamp)
+  const sortedMessages = useMemo(
+    () => [...messages].sort((a, b) => a.received_at - b.received_at),
+    [messages]
+  );
+
   // Look up contact by public key
   const getContact = (conversationKey: string | null): Contact | null => {
     if (!conversationKey) return null;
@@ -300,14 +308,6 @@ export function MessageList({
       </div>
     );
   }
-
-  // Sort messages by received_at ascending (oldest first)
-  // Note: Deduplication is handled by useConversationMessages.addMessageIfNew()
-  // and the database UNIQUE constraint on (type, conversation_key, text, sender_timestamp)
-  const sortedMessages = useMemo(
-    () => [...messages].sort((a, b) => a.received_at - b.received_at),
-    [messages]
-  );
 
   // Helper to get a unique sender key for grouping messages
   const getSenderKey = (msg: Message, sender: string | null): string => {
