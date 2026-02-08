@@ -354,7 +354,11 @@ async def run_historical_dm_decryption(
     our_public_key_bytes = derive_public_key(private_key_bytes)
 
     for packet_id, packet_data, packet_timestamp in packets:
-        # Don't pass our_public_key - we want to decrypt both incoming AND outgoing messages.
+        # Note: passing our_public_key=None means outgoing DMs won't be matched
+        # by try_decrypt_dm (the inbound check requires src_hash == their_first_byte,
+        # which fails for our outgoing packets). This is acceptable because outgoing
+        # DMs are stored directly by the send endpoint. Historical decryption only
+        # recovers incoming messages.
         result = try_decrypt_dm(
             packet_data,
             private_key_bytes,
