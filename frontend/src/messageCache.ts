@@ -1,0 +1,126 @@
+/**
+ * LRU message cache for recently-visited conversations.
+ *
+ * Uses Map insertion-order semantics: the most recently used entry
+ * is always at the end. Eviction removes the first (least-recently-used) entry.
+ *
+ * Cache size: 20 conversations, 200 messages each (~2.4MB worst case).
+ */
+
+import type { Message, MessagePath } from './types';
+
+export const MAX_CACHED_CONVERSATIONS = 20;
+export const MAX_MESSAGES_PER_ENTRY = 200;
+
+export interface CacheEntry {
+  messages: Message[];
+  seenContent: Set<string>;
+  hasOlderMessages: boolean;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+/** Get a cached entry and promote it to most-recently-used. */
+export function get(id: string): CacheEntry | undefined {
+  const entry = cache.get(id);
+  if (!entry) return undefined;
+  // Promote to MRU: delete and re-insert
+  cache.delete(id);
+  cache.set(id, entry);
+  return entry;
+}
+
+/** Insert or update an entry at MRU position, evicting LRU if over capacity. */
+export function set(id: string, entry: CacheEntry): void {
+  // Trim to most recent messages to bound memory
+  if (entry.messages.length > MAX_MESSAGES_PER_ENTRY) {
+    const trimmed = [...entry.messages]
+      .sort((a, b) => b.received_at - a.received_at)
+      .slice(0, MAX_MESSAGES_PER_ENTRY);
+    entry = { ...entry, messages: trimmed, hasOlderMessages: true };
+  }
+  // Remove first so re-insert moves to end
+  cache.delete(id);
+  cache.set(id, entry);
+  // Evict LRU (first entry) if over capacity
+  if (cache.size > MAX_CACHED_CONVERSATIONS) {
+    const lruKey = cache.keys().next().value as string;
+    cache.delete(lruKey);
+  }
+}
+
+/** Add a message to a cached (non-active) conversation with dedup. */
+export function addMessage(id: string, msg: Message, contentKey: string): void {
+  const entry = cache.get(id);
+  if (!entry) return;
+  if (entry.seenContent.has(contentKey)) return;
+  if (entry.messages.some((m) => m.id === msg.id)) return;
+  entry.seenContent.add(contentKey);
+  entry.messages = [...entry.messages, msg];
+  // Trim if over limit (drop oldest by received_at)
+  if (entry.messages.length > MAX_MESSAGES_PER_ENTRY) {
+    entry.messages = [...entry.messages]
+      .sort((a, b) => b.received_at - a.received_at)
+      .slice(0, MAX_MESSAGES_PER_ENTRY);
+  }
+}
+
+/** Scan all cached entries for a message ID and update its ack/paths. */
+export function updateAck(messageId: number, ackCount: number, paths?: MessagePath[]): void {
+  for (const entry of cache.values()) {
+    const idx = entry.messages.findIndex((m) => m.id === messageId);
+    if (idx >= 0) {
+      const updated = [...entry.messages];
+      updated[idx] = {
+        ...entry.messages[idx],
+        acked: ackCount,
+        ...(paths !== undefined && { paths }),
+      };
+      entry.messages = updated;
+      return; // Message IDs are unique, stop after first match
+    }
+  }
+}
+
+/**
+ * Compare fetched messages against current state.
+ * Returns merged array if there are differences (new messages or ack changes),
+ * or null if the cache is already consistent (happy path — no rerender needed).
+ * Preserves any older paginated messages not present in the fetched page.
+ */
+export function reconcile(current: Message[], fetched: Message[]): Message[] | null {
+  const currentById = new Map<number, number>();
+  for (const m of current) {
+    currentById.set(m.id, m.acked);
+  }
+
+  let needsUpdate = false;
+  for (const m of fetched) {
+    const currentAck = currentById.get(m.id);
+    if (currentAck === undefined || currentAck !== m.acked) {
+      needsUpdate = true;
+      break;
+    }
+  }
+  if (!needsUpdate) return null;
+
+  // Merge: fresh recent page + any older paginated messages not in the fetch
+  const fetchedIds = new Set(fetched.map((m) => m.id));
+  const olderMessages = current.filter((m) => !fetchedIds.has(m.id));
+  return [...fetched, ...olderMessages];
+}
+
+/** Evict a specific conversation from the cache. */
+export function remove(id: string): void {
+  cache.delete(id);
+}
+
+/** Clear the entire cache. */
+export function clear(): void {
+  cache.clear();
+}
+
+/** Get current cache size (for testing). */
+export function size(): number {
+  return cache.size;
+}

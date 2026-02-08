@@ -24,7 +24,13 @@ frontend/
 │   ├── api.ts                # REST API client
 │   ├── types.ts              # TypeScript interfaces
 │   ├── useWebSocket.ts       # WebSocket hook with auto-reconnect
+│   ├── messageCache.ts       # LRU message cache for conversation switching
 │   ├── styles.css            # Dark theme CSS
+│   ├── hooks/
+│   │   ├── index.ts
+│   │   ├── useConversationMessages.ts  # Message fetching, pagination, cache integration
+│   │   ├── useUnreadCounts.ts          # Unread count tracking
+│   │   └── useRepeaterMode.ts          # Repeater login/CLI mode
 │   ├── utils/
 │   │   ├── messageParser.ts  # Text parsing utilities
 │   │   ├── conversationState.ts  # localStorage for message times (sidebar sorting)
@@ -87,6 +93,20 @@ App settings are stored server-side and include:
 
 **Migration**: On first load, localStorage preferences are migrated to the server.
 The `preferences_migrated` flag prevents duplicate migrations.
+
+### Message Cache (`messageCache.ts`)
+
+An LRU cache stores messages for recently-visited conversations so switching back is instant
+(no spinner, no fetch). On switch-away, the active conversation's messages are saved to cache.
+On switch-to, cached messages are restored immediately, then a silent background fetch reconciles
+with the backend — only updating state if something differs (missed WS message, stale ack).
+The happy path (cache is consistent) causes zero rerenders.
+
+- Cache capacity: `MAX_CACHED_CONVERSATIONS` (20) entries, `MAX_MESSAGES_PER_ENTRY` (200) messages each
+- Uses `Map` insertion-order for LRU semantics (delete + re-insert promotes to MRU)
+- WebSocket messages for non-active cached conversations are written directly to the cache
+- `reconcile(current, fetched)` compares by message ID + ack count, returns merged array or `null`
+- Deleted conversations are evicted from cache via `remove()`
 
 ### State Flow
 
@@ -521,9 +541,16 @@ npm run test        # Watch mode
 - `messageParser.test.ts` - Sender extraction, time formatting, conversation keys
 - `unreadCounts.test.ts` - Unread tracking logic
 - `contactAvatar.test.ts` - Avatar text extraction, color generation, repeater handling
-- `messageDeduplication.test.ts` - Message deduplication logic
+- `useConversationMessages.test.ts` - Message content key generation, ack update logic
+- `messageCache.test.ts` - LRU cache: eviction, dedup, ack updates, reconciliation
 - `websocket.test.ts` - WebSocket message routing
 - `repeaterMode.test.ts` - Repeater CLI parsing, password "." conversion
+- `useRepeaterMode.test.ts` - Repeater hook: login flow, CLI commands, state reset
+- `integration.test.ts` - Cross-component integration scenarios
+- `urlHash.test.ts` - URL hash parsing and generation
+- `pathUtils.test.ts` - Path distance calculation utilities
+- `radioPresets.test.ts` - Radio preset configuration
+- `api.test.ts` - API client request formatting
 
 ### Test Setup
 

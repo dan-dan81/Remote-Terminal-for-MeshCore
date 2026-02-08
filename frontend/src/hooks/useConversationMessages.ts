@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from '../components/ui/sonner';
 import { api, isAbortError } from '../api';
+import * as messageCache from '../messageCache';
 import type { Conversation, Message, MessagePath } from '../types';
 
 const MESSAGE_PAGE_SIZE = 200;
@@ -38,6 +39,20 @@ export function useConversationMessages(
 
   // Ref to track the conversation ID being fetched to prevent stale responses
   const fetchingConversationIdRef = useRef<string | null>(null);
+
+  // --- Cache integration refs ---
+  // Keep refs in sync with state so we can read current values in the switch effect
+  const messagesRef = useRef<Message[]>([]);
+  const hasOlderMessagesRef = useRef(false);
+  const prevConversationIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    hasOlderMessagesRef.current = hasOlderMessages;
+  }, [hasOlderMessages]);
 
   // Fetch messages for active conversation
   // Note: This is called manually and from the useEffect. The useEffect handles
@@ -146,15 +161,64 @@ export function useConversationMessages(
     }
   }, [activeConversation, loadingOlder, hasOlderMessages, messages]);
 
-  // Fetch messages when conversation changes, with proper cancellation
+  // Background reconciliation: silently fetch from backend after a cache restore
+  // and only update state if something differs (missed WS message, stale ack, etc.).
+  // No-ops on the happy path — zero rerenders when cache is already consistent.
+  function reconcileFromBackend(conversation: Conversation, signal: AbortSignal) {
+    const conversationId = conversation.id;
+    api
+      .getMessages(
+        {
+          type: conversation.type === 'channel' ? 'CHAN' : 'PRIV',
+          conversation_key: conversationId,
+          limit: MESSAGE_PAGE_SIZE,
+        },
+        signal
+      )
+      .then((data) => {
+        // Stale check — conversation may have changed while awaiting
+        if (fetchingConversationIdRef.current !== conversationId) return;
+
+        const merged = messageCache.reconcile(messagesRef.current, data);
+        if (!merged) return; // Cache was consistent — no rerender
+
+        setMessages(merged);
+        seenMessageContent.current.clear();
+        for (const msg of merged) {
+          seenMessageContent.current.add(getMessageContentKey(msg));
+        }
+        if (data.length >= MESSAGE_PAGE_SIZE) {
+          setHasOlderMessages(true);
+        }
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        // Silent failure — we already have cached data
+        console.debug('Background reconciliation failed:', err);
+      });
+  }
+
+  // Fetch messages when conversation changes, with proper cancellation and caching
   useEffect(() => {
     // Abort any previous in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
 
-    // Track which conversation we're now fetching
-    fetchingConversationIdRef.current = activeConversation?.id ?? null;
+    // Save outgoing conversation to cache (if it had messages loaded)
+    const prevId = prevConversationIdRef.current;
+    if (prevId && messagesRef.current.length > 0) {
+      messageCache.set(prevId, {
+        messages: messagesRef.current,
+        seenContent: new Set(seenMessageContent.current),
+        hasOlderMessages: hasOlderMessagesRef.current,
+      });
+    }
+
+    // Track which conversation we're now on
+    const newId = activeConversation?.id ?? null;
+    fetchingConversationIdRef.current = newId;
+    prevConversationIdRef.current = newId;
 
     // Clear state for new conversation
     if (!activeConversation || activeConversation.type === 'raw') {
@@ -163,12 +227,24 @@ export function useConversationMessages(
       return;
     }
 
-    // Create new AbortController for this fetch
+    // Create AbortController for this conversation's fetch (cache reconcile or full fetch)
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Fetch messages with the abort signal
-    fetchMessages(true, controller.signal);
+    // Check cache for the new conversation
+    const cached = messageCache.get(activeConversation.id);
+    if (cached) {
+      // Restore from cache instantly — no spinner
+      setMessages(cached.messages);
+      seenMessageContent.current = new Set(cached.seenContent);
+      setHasOlderMessages(cached.hasOlderMessages);
+      setMessagesLoading(false);
+      // Silently reconcile with backend in case we missed a WS message
+      reconcileFromBackend(activeConversation, controller.signal);
+    } else {
+      // Not cached — full fetch with spinner
+      fetchMessages(true, controller.signal);
+    }
 
     // Cleanup: abort request if conversation changes or component unmounts
     return () => {

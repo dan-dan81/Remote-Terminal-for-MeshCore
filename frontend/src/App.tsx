@@ -7,6 +7,7 @@ import {
   useConversationMessages,
   getMessageContentKey,
 } from './hooks';
+import * as messageCache from './messageCache';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { MessageList } from './components/MessageList';
@@ -181,31 +182,38 @@ export function App() {
         // Track for unread counts and sorting
         trackNewMessage(msg);
 
-        // Count unread for non-active, incoming messages (with deduplication)
-        if (!msg.outgoing && !isForActiveConversation) {
-          // Skip if we've already seen this message content (prevents duplicate increments
-          // when the same message arrives via multiple mesh paths)
+        // For non-active conversations: update cache and count unreads
+        if (!isForActiveConversation) {
           const contentKey = getMessageContentKey(msg);
-          if (seenMessageContentRef.current.has(contentKey)) {
-            return;
-          }
-          seenMessageContentRef.current.add(contentKey);
 
-          // Limit set size to prevent memory issues
-          if (seenMessageContentRef.current.size > 1000) {
-            const keys = Array.from(seenMessageContentRef.current);
-            seenMessageContentRef.current = new Set(keys.slice(-500));
-          }
+          // Update message cache (instant restore on switch)
+          messageCache.addMessage(msg.conversation_key, msg, contentKey);
 
-          let stateKey: string | null = null;
-          if (msg.type === 'CHAN' && msg.conversation_key) {
-            stateKey = getStateKey('channel', msg.conversation_key);
-          } else if (msg.type === 'PRIV' && msg.conversation_key) {
-            stateKey = getStateKey('contact', msg.conversation_key);
-          }
-          if (stateKey) {
-            const hasMention = checkMention(msg.text);
-            incrementUnread(stateKey, hasMention);
+          // Count unread for incoming messages (with deduplication)
+          if (!msg.outgoing) {
+            // Skip if we've already seen this message content (prevents duplicate increments
+            // when the same message arrives via multiple mesh paths)
+            if (seenMessageContentRef.current.has(contentKey)) {
+              return;
+            }
+            seenMessageContentRef.current.add(contentKey);
+
+            // Limit set size to prevent memory issues
+            if (seenMessageContentRef.current.size > 1000) {
+              const keys = Array.from(seenMessageContentRef.current);
+              seenMessageContentRef.current = new Set(keys.slice(-500));
+            }
+
+            let stateKey: string | null = null;
+            if (msg.type === 'CHAN' && msg.conversation_key) {
+              stateKey = getStateKey('channel', msg.conversation_key);
+            } else if (msg.type === 'PRIV' && msg.conversation_key) {
+              stateKey = getStateKey('contact', msg.conversation_key);
+            }
+            if (stateKey) {
+              const hasMention = checkMention(msg.text);
+              incrementUnread(stateKey, hasMention);
+            }
           }
         }
       },
@@ -242,6 +250,7 @@ export function App() {
       },
       onMessageAcked: (messageId: number, ackCount: number, paths?: MessagePath[]) => {
         updateMessageAck(messageId, ackCount, paths);
+        messageCache.updateAck(messageId, ackCount, paths);
       },
     }),
     [addMessageIfNew, trackNewMessage, incrementUnread, updateMessageAck, checkMention]
@@ -600,6 +609,7 @@ export function App() {
     if (!confirm('Delete this channel? Message history will be preserved.')) return;
     try {
       await api.deleteChannel(key);
+      messageCache.remove(key);
       setChannels((prev) => prev.filter((c) => c.key !== key));
       setActiveConversation(null);
       toast.success('Channel deleted');
@@ -616,6 +626,7 @@ export function App() {
     if (!confirm('Delete this contact? Message history will be preserved.')) return;
     try {
       await api.deleteContact(publicKey);
+      messageCache.remove(publicKey);
       setContacts((prev) => prev.filter((c) => c.public_key !== publicKey));
       setActiveConversation(null);
       toast.success('Contact deleted');
@@ -960,6 +971,7 @@ export function App() {
                   </div>
                 </div>
                 <MessageList
+                  key={activeConversation.id}
                   messages={messages}
                   contacts={contacts}
                   loading={messagesLoading}
