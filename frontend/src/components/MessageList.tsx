@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Contact, Message, MessagePath, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
@@ -296,7 +304,10 @@ export function MessageList({
   // Sort messages by received_at ascending (oldest first)
   // Note: Deduplication is handled by useConversationMessages.addMessageIfNew()
   // and the database UNIQUE constraint on (type, conversation_key, text, sender_timestamp)
-  const sortedMessages = [...messages].sort((a, b) => a.received_at - b.received_at);
+  const sortedMessages = useMemo(
+    () => [...messages].sort((a, b) => a.received_at - b.received_at),
+    [messages]
+  );
 
   // Helper to get a unique sender key for grouping messages
   const getSenderKey = (msg: Message, sender: string | null): string => {

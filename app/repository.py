@@ -184,6 +184,11 @@ class ContactRepository:
         return cursor.rowcount > 0
 
     @staticmethod
+    async def mark_all_read(timestamp: int) -> None:
+        """Mark all contacts as read at the given timestamp."""
+        await db.conn.execute("UPDATE contacts SET last_read_at = ?", (timestamp,))
+
+    @staticmethod
     async def get_by_pubkey_first_byte(hex_byte: str) -> list[Contact]:
         """Get contacts whose public key starts with the given hex byte (2 chars)."""
         cursor = await db.conn.execute(
@@ -268,6 +273,11 @@ class ChannelRepository:
         )
         await db.conn.commit()
         return cursor.rowcount > 0
+
+    @staticmethod
+    async def mark_all_read(timestamp: int) -> None:
+        """Mark all channels as read at the given timestamp."""
+        await db.conn.execute("UPDATE channels SET last_read_at = ?", (timestamp,))
 
 
 class MessageRepository:

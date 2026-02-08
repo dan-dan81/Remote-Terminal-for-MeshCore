@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 
 from app.database import db
 from app.models import UnreadCounts
-from app.repository import MessageRepository
+from app.repository import ChannelRepository, ContactRepository, MessageRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/read-state", tags=["read-state"])
@@ -35,9 +35,8 @@ async def mark_all_read() -> dict:
     """
     now = int(time.time())
 
-    # Update all contacts and channels in one transaction
-    await db.conn.execute("UPDATE contacts SET last_read_at = ?", (now,))
-    await db.conn.execute("UPDATE channels SET last_read_at = ?", (now,))
+    await ContactRepository.mark_all_read(now)
+    await ChannelRepository.mark_all_read(now)
     await db.conn.commit()
 
     logger.info("Marked all contacts and channels as read at %d", now)

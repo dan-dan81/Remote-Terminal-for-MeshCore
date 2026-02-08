@@ -485,7 +485,10 @@ export function SettingsModal({
         ) : (
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as SettingsTab)}
+            onValueChange={(v) => {
+              setActiveTab(v as SettingsTab);
+              setError('');
+            }}
             className="w-full"
           >
             <TabsList className="grid w-full grid-cols-5">
