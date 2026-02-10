@@ -13,6 +13,9 @@ from app.repository import MessageRepository
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/messages", tags=["messages"])
 
+# Serialize channel sends that reuse a temporary radio slot.
+_channel_send_lock = asyncio.Lock()
+
 
 @router.get("", response_model=list[Message])
 async def list_messages(
@@ -176,32 +179,36 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         expected_hash,
     )
 
-    # Load the channel to a temporary radio slot before sending
-    set_result = await mc.commands.set_channel(
-        channel_idx=TEMP_RADIO_SLOT,
-        channel_name=db_channel.name,
-        channel_secret=key_bytes,
-    )
-    if set_result.type == EventType.ERROR:
-        logger.warning(
-            "Failed to set channel on radio slot %d before sending: %s",
-            TEMP_RADIO_SLOT,
-            set_result.payload,
+    async with _channel_send_lock:
+        # Load the channel to a temporary radio slot before sending
+        set_result = await mc.commands.set_channel(
+            channel_idx=TEMP_RADIO_SLOT,
+            channel_name=db_channel.name,
+            channel_secret=key_bytes,
         )
-        # Continue anyway - the channel might already be correctly configured
+        if set_result.type == EventType.ERROR:
+            logger.warning(
+                "Failed to set channel on radio slot %d before sending: %s",
+                TEMP_RADIO_SLOT,
+                set_result.payload,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to configure channel on radio before sending message",
+            )
 
-    logger.info("Sending channel message to %s: %s", db_channel.name, request.text[:50])
+        logger.info("Sending channel message to %s: %s", db_channel.name, request.text[:50])
 
-    # Capture timestamp BEFORE sending so we can pass the same value to both the radio
-    # and the database. This ensures the echo's timestamp matches our stored message
-    # for proper deduplication.
-    now = int(time.time())
+        # Capture timestamp BEFORE sending so we can pass the same value to both the radio
+        # and the database. This ensures the echo's timestamp matches our stored message
+        # for proper deduplication.
+        now = int(time.time())
 
-    result = await mc.commands.send_chan_msg(
-        chan=TEMP_RADIO_SLOT,
-        msg=request.text,
-        timestamp=now.to_bytes(4, "little"),  # Pass as bytes for compatibility
-    )
+        result = await mc.commands.send_chan_msg(
+            chan=TEMP_RADIO_SLOT,
+            msg=request.text,
+            timestamp=now.to_bytes(4, "little"),  # Pass as bytes for compatibility
+        )
 
     if result.type == EventType.ERROR:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
