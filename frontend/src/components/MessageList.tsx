@@ -163,6 +163,9 @@ export function MessageList({
     wasNearBottom: true, // Default to true so initial messages scroll to bottom
   });
 
+  // Track conversation key to detect when entire message set changes
+  const prevConvKeyRef = useRef<string | null>(null);
+
   // Handle scroll position AFTER render
   useLayoutEffect(() => {
     if (!listRef.current) return;
@@ -170,8 +173,15 @@ export function MessageList({
     const list = listRef.current;
     const messagesAdded = messages.length - prevMessagesLengthRef.current;
 
-    if (isInitialLoadRef.current && messages.length > 0) {
-      // Initial load - scroll to bottom
+    // Detect if messages are from a different conversation (handles the case where
+    // the key prop remount consumes isInitialLoadRef on stale data from the previous
+    // conversation before the cache restore effect sets the correct messages)
+    const convKey = messages.length > 0 ? messages[0].conversation_key : null;
+    const conversationChanged = convKey !== null && convKey !== prevConvKeyRef.current;
+    if (convKey !== null) prevConvKeyRef.current = convKey;
+
+    if ((isInitialLoadRef.current || conversationChanged) && messages.length > 0) {
+      // Initial load or conversation switch - scroll to bottom
       list.scrollTop = list.scrollHeight;
       isInitialLoadRef.current = false;
     } else if (messagesAdded > 0 && prevMessagesLengthRef.current > 0) {
@@ -195,6 +205,7 @@ export function MessageList({
     if (messages.length === 0) {
       isInitialLoadRef.current = true;
       prevMessagesLengthRef.current = 0;
+      prevConvKeyRef.current = null;
       scrollStateRef.current = {
         scrollTop: 0,
         scrollHeight: 0,
