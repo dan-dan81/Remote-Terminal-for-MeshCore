@@ -329,10 +329,9 @@ class RadioManager:
 
                     if not current_connected:
                         # Attempt reconnection on every loop while disconnected
-                        if not self.is_reconnecting:
-                            if await self.reconnect():
-                                await self.post_connect_setup()
-                                self._last_connected = True
+                        if not self.is_reconnecting and await self.reconnect():
+                            await self.post_connect_setup()
+                            self._last_connected = True
 
                     elif not self._last_connected and current_connected:
                         # Connection restored (might have reconnected automatically)

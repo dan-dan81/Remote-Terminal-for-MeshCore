@@ -18,7 +18,12 @@ from meshcore import EventType
 
 from app.models import Contact
 from app.radio import radio_manager
-from app.repository import AppSettingsRepository, ChannelRepository, ContactRepository, MessageRepository
+from app.repository import (
+    AppSettingsRepository,
+    ChannelRepository,
+    ContactRepository,
+    MessageRepository,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -128,12 +128,15 @@ export function useConversationMessages(
       return;
 
     // Get the true oldest message as cursor for the next page
-    const oldestMessage = messages.reduce((oldest, msg) => {
-      if (!oldest) return msg;
-      if (msg.received_at < oldest.received_at) return msg;
-      if (msg.received_at === oldest.received_at && msg.id < oldest.id) return msg;
-      return oldest;
-    }, null as Message | null);
+    const oldestMessage = messages.reduce(
+      (oldest, msg) => {
+        if (!oldest) return msg;
+        if (msg.received_at < oldest.received_at) return msg;
+        if (msg.received_at === oldest.received_at && msg.id < oldest.id) return msg;
+        return oldest;
+      },
+      null as Message | null
+    );
     if (!oldestMessage) return;
 
     setLoadingOlder(true);
