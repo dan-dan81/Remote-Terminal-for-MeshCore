@@ -47,7 +47,7 @@ frontend/
 │   │   ├── MessageList.tsx   # Message display, avatars, clickable senders
 │   │   ├── MessageInput.tsx  # Text input with imperative handle
 │   │   ├── ContactAvatar.tsx # Contact profile image component
-│   │   ├── RawPacketList.tsx # Raw packet feed display
+│   │   ├── RawPacketList.tsx # Raw packet feed (tertiary debug/observation tool)
 │   │   ├── MapView.tsx       # Leaflet map showing node locations
 │   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker (lazy-loads wordlist)
 │   │   ├── NewMessageModal.tsx

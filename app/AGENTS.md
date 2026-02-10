@@ -232,7 +232,7 @@ messages (
     text TEXT NOT NULL,
     sender_timestamp INTEGER,
     received_at INTEGER NOT NULL,
-    path TEXT,                    -- Hex-encoded routing path (2 chars per hop), null for outgoing
+    paths TEXT,                   -- JSON array of {path, received_at} for multiple delivery paths
     txt_type INTEGER DEFAULT 0,
     signature TEXT,
     outgoing INTEGER DEFAULT 0,
@@ -244,10 +244,8 @@ raw_packets (
     id INTEGER PRIMARY KEY,
     timestamp INTEGER NOT NULL,
     data BLOB NOT NULL,           -- Raw packet bytes
-    decrypted INTEGER DEFAULT 0,
     message_id INTEGER,           -- FK to messages if decrypted
-    decrypt_attempts INTEGER DEFAULT 0,
-    last_attempt INTEGER,
+    payload_hash TEXT,            -- SHA256 of payload for deduplication (UNIQUE index)
     FOREIGN KEY (message_id) REFERENCES messages(id)
 )
 
@@ -364,8 +362,16 @@ packet, `packet_processor.py` handles the complete flow:
 export, unknown contact), `on_contact_message` handles DMs from the MeshCore library's
 `CONTACT_MSG_RECV` event. DB deduplication prevents double-storage when both paths fire.
 
+**Outgoing DMs**: Outgoing direct messages are only sent via the app's REST API
+(`POST /api/messages/direct`), which stores the plaintext directly in the database.
+No decryption is needed for outgoing DMs. The real-time packet processor may also see
+the outgoing packet via `RX_LOG_DATA`, but the DB UNIQUE constraint deduplicates it
+against the already-stored plaintext. Historical decryption intentionally skips outgoing
+packets for the same reason — the app already has the plaintext.
+
 **Historical decryption**: When creating a contact with `try_historical=True`, the server
-attempts to decrypt all stored `TEXT_MESSAGE` packets for that contact.
+attempts to decrypt all stored `TEXT_MESSAGE` packets for that contact. This only recovers
+**incoming** messages; outgoing DMs are already stored as plaintext by the send endpoint.
 
 **Direction detection**: The decoder uses the 1-byte dest_hash and src_hash to determine
 if a message is incoming or outgoing. Edge case: when both bytes match (1/256 chance),
@@ -443,10 +449,11 @@ When ACK event arrives, the message's ack count is incremented.
 
 ### Channel Message Repeats
 
-Flood messages echo back through repeaters. Detection uses:
-- Channel key
-- Text hash
-- Timestamp (±5 second window)
+Flood messages echo back through repeaters. Repeats are detected via the database
+UNIQUE constraint on `(type, conversation_key, text, sender_timestamp)`. When an INSERT
+hits a duplicate, `_handle_duplicate_message()` in `packet_processor.py` increments the
+ack count and adds the new delivery path. There is no timestamp-windowed matching;
+deduplication is exact-match only.
 
 Each repeat increments the ack count. The frontend displays:
 - `?` = no acks

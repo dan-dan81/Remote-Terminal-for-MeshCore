@@ -61,6 +61,30 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
                      └─────────────┘
 ```
 
+## Feature Priority
+
+**Primary (must work correctly):**
+- Sending and receiving direct messages and channel messages
+- Accurate message display: correct ordering, deduplication, pagination/history loading, and real-time updates without data loss or duplicates
+- Accurate ACK tracking, repeat/echo counting, and path display
+- Historical packet decryption (recovering incoming messages using newly-added keys)
+- Outgoing DMs are stored as plaintext by the send endpoint — no decryption needed
+
+**Secondary:**
+- Channel key cracker (WebGPU brute-force)
+- Repeater management (telemetry, CLI commands, ACL)
+
+**Tertiary (best-effort, quality-of-life):**
+- Raw packet feed — a debug/observation tool ("radio aquarium"); interesting to watch or copy packets from, but not critical infrastructure
+- Map view — visual display of node locations from advertisements
+- Network visualizer — force-directed graph of mesh topology
+- Bot system — automated message responses
+- Read state tracking / mark-all-read — convenience feature for unread badges; no need for transactional atomicity or race-condition hardening
+
+## Error Handling Philosophy
+
+**Background tasks** (WebSocket broadcasts, periodic sync, contact auto-loading, etc.) use fire-and-forget `asyncio.create_task`. Exceptions in these tasks are logged to the backend logs, which is sufficient for debugging. There is no need to track task references or add done-callbacks purely for error visibility. If there's a convenient way to bubble an error to the frontend (e.g., via `broadcast_error` for user-actionable problems), do so, but this is minor and best-effort.
+
 ## Key Design Principles
 
 1. **Store-and-serve**: Backend stores all packets even when no client is connected
@@ -99,7 +123,7 @@ The following are **deliberate design choices**, not bugs. They are documented i
 
 **Direct messages**: Expected ACK code is tracked. When ACK event arrives, message marked as acked.
 
-**Channel messages**: Flood messages echo back. The decoder identifies repeats by matching (channel_idx, text_hash, timestamp ±5s) and marks the original as "acked".
+**Channel messages**: Flood messages echo back through repeaters. Repeats are identified by the database UNIQUE constraint on `(type, conversation_key, text, sender_timestamp)` — when an INSERT hits a duplicate, `_handle_duplicate_message()` in `packet_processor.py` increments the ack count on the original and adds the new path. There is no timestamp-windowed matching; deduplication is exact-match only.
 
 ## Directory Structure
 
@@ -217,29 +241,39 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | GET | `/api/health` | Connection status |
 | GET | `/api/radio/config` | Radio configuration |
 | PATCH | `/api/radio/config` | Update name, location, radio params |
-| POST | `/api/radio/advertise` | Send advertisement |
-| POST | `/api/radio/reconnect` | Manual radio reconnection |
-| POST | `/api/radio/reboot` | Reboot radio or reconnect if disconnected |
 | PUT | `/api/radio/private-key` | Import private key to radio |
+| POST | `/api/radio/advertise` | Send advertisement |
+| POST | `/api/radio/reboot` | Reboot radio or reconnect if disconnected |
+| POST | `/api/radio/reconnect` | Manual radio reconnection |
 | GET | `/api/contacts` | List contacts |
+| GET | `/api/contacts/{key}` | Get contact by public key or prefix |
 | POST | `/api/contacts` | Create contact (optionally trigger historical DM decrypt) |
+| DELETE | `/api/contacts/{key}` | Delete contact |
 | POST | `/api/contacts/sync` | Pull from radio |
+| POST | `/api/contacts/{key}/add-to-radio` | Push contact to radio |
+| POST | `/api/contacts/{key}/remove-from-radio` | Remove contact from radio |
+| POST | `/api/contacts/{key}/mark-read` | Mark contact conversation as read |
 | POST | `/api/contacts/{key}/telemetry` | Request telemetry from repeater |
 | POST | `/api/contacts/{key}/command` | Send CLI command to repeater |
+| POST | `/api/contacts/{key}/trace` | Trace route to contact |
 | GET | `/api/channels` | List channels |
+| GET | `/api/channels/{key}` | Get channel by key |
 | POST | `/api/channels` | Create channel |
+| DELETE | `/api/channels/{key}` | Delete channel |
+| POST | `/api/channels/sync` | Pull from radio |
+| POST | `/api/channels/{key}/mark-read` | Mark channel as read |
 | GET | `/api/messages` | List with filters |
 | POST | `/api/messages/direct` | Send direct message |
 | POST | `/api/messages/channel` | Send channel message |
+| GET | `/api/packets/undecrypted/count` | Count of undecrypted packets |
 | POST | `/api/packets/decrypt/historical` | Decrypt stored packets |
-| GET | `/api/packets/decrypt/progress` | Get historical decryption progress |
-| POST | `/api/packets/maintenance` | Delete old packets (cleanup) |
-| POST | `/api/contacts/{key}/mark-read` | Mark contact conversation as read |
-| POST | `/api/channels/{key}/mark-read` | Mark channel as read |
+| POST | `/api/packets/maintenance` | Delete old packets and vacuum |
 | GET | `/api/read-state/unreads` | Server-computed unread counts, mentions, last message times |
 | POST | `/api/read-state/mark-all-read` | Mark all conversations as read |
 | GET | `/api/settings` | Get app settings |
 | PATCH | `/api/settings` | Update app settings |
+| POST | `/api/settings/favorites/toggle` | Toggle favorite status |
+| POST | `/api/settings/migrate` | One-time migration from frontend localStorage |
 | WS | `/api/ws` | Real-time updates |
 
 ## Key Concepts
@@ -321,6 +355,7 @@ mc.subscribe(EventType.ACK, handler)
 | `MESHCORE_BLE_ADDRESS` | *(none)* | BLE device address (mutually exclusive with serial/TCP) |
 | `MESHCORE_BLE_PIN` | *(required with BLE)* | BLE PIN code |
 | `MESHCORE_DATABASE_PATH` | `data/meshcore.db` | SQLite database location |
-| `MESHCORE_MAX_RADIO_CONTACTS` | `200` | Max recent contacts to keep on radio for DM ACKs |
+
+**Note:** `max_radio_contacts` is a runtime setting stored in the database (`app_settings` table), not an environment variable. It is configured via `PATCH /api/settings`.
 
 **Transport mutual exclusivity:** Only one of `MESHCORE_SERIAL_PORT`, `MESHCORE_TCP_HOST`, or `MESHCORE_BLE_ADDRESS` may be set. If none are set, serial auto-detection is used.
