@@ -644,7 +644,7 @@ export function App() {
   const handleCreateContact = useCallback(
     async (name: string, publicKey: string, tryHistorical: boolean) => {
       const created = await api.createContact(publicKey, name || undefined, tryHistorical);
-      const data = await api.getContacts();
+      const data = await fetchAllContacts();
       setContacts(data);
 
       setActiveConversation({
@@ -653,7 +653,7 @@ export function App() {
         name: getContactDisplayName(created.name, created.public_key),
       });
     },
-    []
+    [fetchAllContacts]
   );
 
   // Create channel handler
