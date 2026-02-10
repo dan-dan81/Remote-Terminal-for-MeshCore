@@ -35,11 +35,12 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'uv run uvicorn app.main:app --host 127.0.0.1 --port 8000',
+    command:
+      'bash -c "if [ ! -d frontend/dist ]; then cd frontend && npm install && npm run build; fi; uv run uvicorn app.main:app --host 127.0.0.1 --port 8000"',
     cwd: projectRoot,
     port: 8000,
     reuseExistingServer: false,
-    timeout: 30_000,
+    timeout: 180_000,
     env: {
       MESHCORE_DATABASE_PATH: path.join(tmpDir, 'e2e-test.db'),
       // Pass through the serial port from the environment
