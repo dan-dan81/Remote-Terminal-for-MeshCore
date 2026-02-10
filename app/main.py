@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -97,11 +97,16 @@ if FRONTEND_DIR.exists():
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
         """Serve frontend files, falling back to index.html for SPA routing."""
-        file_path = FRONTEND_DIR / path
+        base_dir = FRONTEND_DIR.resolve()
+        file_path = (FRONTEND_DIR / path).resolve()
+        try:
+            file_path.relative_to(base_dir)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not found") from None
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
         # Fall back to index.html for SPA routing
-        return FileResponse(FRONTEND_DIR / "index.html")
+        return FileResponse(base_dir / "index.html")
 
     @app.get("/")
     async def serve_index():
