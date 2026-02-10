@@ -312,9 +312,11 @@ class RadioManager:
         async def monitor_loop():
             from app.websocket import broadcast_health
 
+            CHECK_INTERVAL_SECONDS = 5
+
             while True:
                 try:
-                    await asyncio.sleep(5)  # Check every 5 seconds
+                    await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
                     current_connected = self.is_connected
 
@@ -325,10 +327,12 @@ class RadioManager:
                         broadcast_health(False, self._connection_info)
                         self._last_connected = False
 
-                        # Attempt reconnection
-                        await asyncio.sleep(3)  # Wait a bit before trying
-                        if await self.reconnect():
-                            await self.post_connect_setup()
+                    if not current_connected:
+                        # Attempt reconnection on every loop while disconnected
+                        if not self.is_reconnecting:
+                            if await self.reconnect():
+                                await self.post_connect_setup()
+                                self._last_connected = True
 
                     elif not self._last_connected and current_connected:
                         # Connection restored (might have reconnected automatically)
