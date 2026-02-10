@@ -26,7 +26,7 @@ export interface RadioConfigUpdate {
 export interface HealthStatus {
   status: string;
   radio_connected: boolean;
-  serial_port: string | null;
+  connection_info: string | null;
   database_size_mb: number;
   oldest_undecrypted_timestamp: number | null;
 }

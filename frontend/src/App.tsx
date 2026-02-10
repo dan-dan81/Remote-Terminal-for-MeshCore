@@ -136,7 +136,9 @@ export function App() {
         if (prev !== null && prev.radio_connected !== data.radio_connected) {
           if (data.radio_connected) {
             toast.success('Radio connected', {
-              description: data.serial_port ? `Connected to ${data.serial_port}` : undefined,
+              description: data.connection_info
+                ? `Connected via ${data.connection_info}`
+                : undefined,
             });
             // Refresh config after reconnection (may have changed after reboot)
             api.getRadioConfig().then(setConfig).catch(console.error);

@@ -123,13 +123,13 @@ def broadcast_success(message: str, details: str | None = None) -> None:
     asyncio.create_task(ws_manager.broadcast("success", data))
 
 
-def broadcast_health(radio_connected: bool, serial_port: str | None = None) -> None:
+def broadcast_health(radio_connected: bool, connection_info: str | None = None) -> None:
     """Broadcast health status change to all connected clients."""
 
     async def _broadcast():
         from app.routers.health import build_health_data
 
-        data = await build_health_data(radio_connected, serial_port)
+        data = await build_health_data(radio_connected, connection_info)
         await ws_manager.broadcast("health", data)
 
     asyncio.create_task(_broadcast())

@@ -23,7 +23,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     # Send initial health status
     try:
-        health_data = await build_health_data(radio_manager.is_connected, radio_manager.port)
+        health_data = await build_health_data(
+            radio_manager.is_connected, radio_manager.connection_info
+        )
         await ws_manager.send_personal(websocket, "health", health_data)
 
     except Exception as e:

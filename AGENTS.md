@@ -20,7 +20,7 @@ npm run build # run a frontend build
 
 ## Overview
 
-A web interface for MeshCore mesh radio networks. The backend connects to a MeshCore-compatible radio over serial and exposes REST/WebSocket APIs. The React frontend provides real-time messaging and radio configuration.
+A web interface for MeshCore mesh radio networks. The backend connects to a MeshCore-compatible radio over Serial, TCP, or BLE and exposes REST/WebSocket APIs. The React frontend provides real-time messaging and radio configuration.
 
 **For detailed component documentation, see:**
 - `app/AGENTS.md` - Backend (FastAPI, database, radio connection, packet decryption)
@@ -54,7 +54,7 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 │  │              RadioManager + Event Handlers               │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └───────────────────────────┼──────────────────────────────────────┘
-                            │ Serial
+                            │ Serial / TCP / BLE
                      ┌──────┴──────┐
                      │ MeshCore    │
                      │   Radio     │
@@ -308,5 +308,11 @@ mc.subscribe(EventType.ACK, handler)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MESHCORE_SERIAL_PORT` | auto-detect | Serial port for radio |
+| `MESHCORE_TCP_HOST` | *(none)* | TCP host for radio (mutually exclusive with serial/BLE) |
+| `MESHCORE_TCP_PORT` | `4000` | TCP port (used with `MESHCORE_TCP_HOST`) |
+| `MESHCORE_BLE_ADDRESS` | *(none)* | BLE device address (mutually exclusive with serial/TCP) |
+| `MESHCORE_BLE_PIN` | *(required with BLE)* | BLE PIN code |
 | `MESHCORE_DATABASE_PATH` | `data/meshcore.db` | SQLite database location |
 | `MESHCORE_MAX_RADIO_CONTACTS` | `200` | Max recent contacts to keep on radio for DM ACKs |
+
+**Transport mutual exclusivity:** Only one of `MESHCORE_SERIAL_PORT`, `MESHCORE_TCP_HOST`, or `MESHCORE_BLE_ADDRESS` may be set. If none are set, serial auto-detection is used.
