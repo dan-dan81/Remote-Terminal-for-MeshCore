@@ -14,7 +14,7 @@ frontend/test-results/
 frontend/dist/
 frontend/package-lock.json
 
-# reference librarys
+# reference libraries
 references/
 
 # ancillary LLM files
