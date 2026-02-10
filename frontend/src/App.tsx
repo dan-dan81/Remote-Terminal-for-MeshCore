@@ -57,6 +57,7 @@ const MAX_RAW_PACKETS = 500;
 export function App() {
   const messageInputRef = useRef<MessageInputHandle>(null);
   const activeConversationRef = useRef<Conversation | null>(null);
+  const rebootPollTokenRef = useRef(0);
   // Track seen message content to prevent duplicate unread increments
   // Uses content-based key (type-conversation_key-text-sender_timestamp) for deduplication
   const seenMessageContentRef = useRef<Set<string>>(new Set());
@@ -79,6 +80,11 @@ export function App() {
 
   // Track previous health status to detect changes
   const prevHealthRef = useRef<HealthStatus | null>(null);
+  useEffect(() => {
+    return () => {
+      rebootPollTokenRef.current += 1;
+    };
+  }, []);
 
   // Keep user's name in ref for mention detection in WebSocket callback
   const myNameRef = useRef<string | null>(null);
@@ -533,11 +539,14 @@ export function App() {
   const handleReboot = useCallback(async () => {
     await api.rebootRadio();
     setHealth((prev) => (prev ? { ...prev, radio_connected: false } : prev));
+    const pollToken = ++rebootPollTokenRef.current;
     const pollUntilReconnected = async () => {
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000));
+        if (rebootPollTokenRef.current !== pollToken) return;
         try {
           const data = await api.getHealth();
+          if (rebootPollTokenRef.current !== pollToken) return;
           setHealth(data);
           if (data.radio_connected) {
             fetchConfig();
