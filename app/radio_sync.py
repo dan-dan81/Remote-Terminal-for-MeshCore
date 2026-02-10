@@ -18,7 +18,7 @@ from meshcore import EventType
 
 from app.models import Contact
 from app.radio import radio_manager
-from app.repository import AppSettingsRepository, ChannelRepository, ContactRepository
+from app.repository import AppSettingsRepository, ChannelRepository, ContactRepository, MessageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,13 @@ async def sync_and_offload_contacts() -> dict:
             await ContactRepository.upsert(
                 Contact.from_radio_dict(public_key, contact_data, on_radio=False)
             )
+            claimed = await MessageRepository.claim_prefix_messages(public_key.lower())
+            if claimed > 0:
+                logger.info(
+                    "Claimed %d prefix DM message(s) for contact %s",
+                    claimed,
+                    public_key[:12],
+                )
             synced += 1
 
             # Remove from radio

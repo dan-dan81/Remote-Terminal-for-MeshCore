@@ -60,6 +60,10 @@ export function useWebSocket(options: UseWebSocketOptions) {
     ws.onopen = () => {
       console.log('WebSocket connected');
       setConnected(true);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
 
     ws.onclose = () => {
@@ -68,6 +72,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
       wsRef.current = null;
 
       // Reconnect after 3 seconds
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       reconnectTimeoutRef.current = window.setTimeout(() => {
         console.log('Attempting WebSocket reconnect...');
         connect();
@@ -146,6 +153,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
       clearInterval(pingInterval);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
       if (wsRef.current) {
         wsRef.current.close();

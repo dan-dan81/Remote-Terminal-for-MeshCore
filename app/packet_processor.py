@@ -685,6 +685,13 @@ async def _process_advertisement(
     }
 
     await ContactRepository.upsert(contact_data)
+    claimed = await MessageRepository.claim_prefix_messages(advert.public_key.lower())
+    if claimed > 0:
+        logger.info(
+            "Claimed %d prefix DM message(s) for contact %s",
+            claimed,
+            advert.public_key[:12],
+        )
 
     # Broadcast contact update to connected clients
     broadcast_event(

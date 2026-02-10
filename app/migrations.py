@@ -993,3 +993,4 @@ async def _migrate_015_fix_null_sender_timestamp(conn: aiosqlite.Connection) -> 
         )
 
     await conn.commit()
+

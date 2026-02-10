@@ -362,6 +362,16 @@ packet, `packet_processor.py` handles the complete flow:
 export, unknown contact), `on_contact_message` handles DMs from the MeshCore library's
 `CONTACT_MSG_RECV` event. DB deduplication prevents double-storage when both paths fire.
 
+**Prefix-stored DMs (edge case)**: A rare scenario can occur when the radio can decrypt
+a DM (contact is on the radio) but the server cannot (private key not exported or
+contact not yet known server-side). The `CONTACT_MSG_RECV` payload may only include a
+pubkey prefix. If the full key isn't known yet, the message is stored with the prefix
+as `conversation_key`. When a full contact key becomes known (via advertisement or
+radio sync), the server attempts to **claim** those prefix messages and upgrade them
+to the full key. Claims only occur when the prefix matches exactly one contact to
+avoid mis-attribution in large contact sets. Until claimed, these DMs will not show
+in the UI because conversations are keyed by full public keys.
+
 **Outgoing DMs**: Outgoing direct messages are only sent via the app's REST API
 (`POST /api/messages/direct`), which stores the plaintext directly in the database.
 No decryption is needed for outgoing DMs. The real-time packet processor may also see

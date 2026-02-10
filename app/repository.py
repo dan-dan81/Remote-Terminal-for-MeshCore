@@ -390,7 +390,11 @@ class MessageRepository:
         cursor = await db.conn.execute(
             """UPDATE messages SET conversation_key = ?
                WHERE type = 'PRIV' AND length(conversation_key) < 64
-               AND ? LIKE conversation_key || '%'""",
+               AND ? LIKE conversation_key || '%'
+               AND (
+                   SELECT COUNT(*) FROM contacts
+                   WHERE public_key LIKE messages.conversation_key || '%'
+               ) = 1""",
             (lower_key, lower_key),
         )
         await db.conn.commit()
