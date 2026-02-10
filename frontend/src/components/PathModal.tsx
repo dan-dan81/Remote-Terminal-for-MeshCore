@@ -10,6 +10,7 @@ import {
 import { Button } from './ui/button';
 import {
   resolvePath,
+  parsePathHops,
   calculateDistance,
   isValidLocation,
   formatDistance,
@@ -60,6 +61,15 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto py-2 space-y-4">
+          {/* Raw path summary */}
+          <div className="text-xs font-mono text-muted-foreground/70 pb-2 border-b border-border">
+            {paths.map((p, index) => {
+              const hops = parsePathHops(p.path);
+              const rawPath = hops.length > 0 ? hops.join('->') : 'direct';
+              return <div key={index}>{rawPath}</div>;
+            })}
+          </div>
+
           {resolvedPaths.map((pathData, index) => (
             <div key={index}>
               {!hasSinglePath && (

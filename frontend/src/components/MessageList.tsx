@@ -462,7 +462,26 @@ export function MessageList({
                       )}
                     </>
                   )}
-                  {msg.outgoing && (msg.acked > 0 ? ` ✓${msg.acked > 1 ? msg.acked : ''}` : ' ?')}
+                  {msg.outgoing && (msg.acked > 0
+                    ? msg.paths && msg.paths.length > 0
+                      ? <span
+                          className="cursor-pointer hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPath({
+                              paths: msg.paths!,
+                              senderInfo: {
+                                name: config?.name || 'Unknown',
+                                publicKeyOrPrefix: config?.public_key || '',
+                                lat: config?.lat ?? null,
+                                lon: config?.lon ?? null,
+                              },
+                            });
+                          }}
+                          title="View echo paths"
+                        >{` ✓${msg.acked > 1 ? msg.acked : ''}`}</span>
+                      : ` ✓${msg.acked > 1 ? msg.acked : ''}`
+                    : ' ?')}
                 </div>
               </div>
             </div>
