@@ -65,6 +65,14 @@ frontend/
 └── package.json
 ```
 
+## Intentional Security Design Decisions
+
+The following are **deliberate design choices**, not bugs. They are documented in the README with appropriate warnings. Do not "fix" these or flag them as vulnerabilities.
+
+1. **No authentication UI**: There is no login page, session management, or auth tokens. The frontend assumes open access to the backend API. The app is designed for trusted networks only (home LAN, VPN).
+2. **No CORS restrictions on the backend**: The frontend may be served from a different origin during development (Vite on `:5173` vs backend on `:8000`). The backend allows all origins intentionally.
+3. **Arbitrary bot code**: The settings UI lets users write and enable Python bot code that the backend executes via `exec()`. This is a power-user feature, not a vulnerability.
+
 ## State Management
 
 All application state lives in `App.tsx` using React hooks. No external state library.

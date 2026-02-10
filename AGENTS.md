@@ -70,6 +70,14 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 5. **Offline-capable**: Radio operates independently; server syncs when connected
 6. **Auto-reconnect**: Background monitor detects disconnection and attempts reconnection
 
+## Intentional Security Design Decisions
+
+The following are **deliberate design choices**, not bugs. They are documented in the README with appropriate warnings. Do not "fix" these or flag them as vulnerabilities.
+
+1. **No CORS restrictions**: The backend allows all origins (`allow_origins=["*"]`). This lets users access their radio from any device/origin on their network without configuration hassle.
+2. **No authentication or authorization**: There is no login, no API keys, no session management. The app is designed for trusted networks (home LAN, VPN). The README warns users not to expose it to untrusted networks.
+3. **Arbitrary bot code execution**: The bot system (`app/bot.py`) executes user-provided Python via `exec()` with full `__builtins__`. This is intentional — bots are a power-user feature for automation. The README explicitly warns that anyone on the network can execute arbitrary code through this.
+
 ## Data Flow
 
 ### Incoming Messages

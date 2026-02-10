@@ -40,6 +40,14 @@ app/
     └── ws.py         # WebSocket endpoint at /api/ws
 ```
 
+## Intentional Security Design Decisions
+
+The following are **deliberate design choices**, not bugs. They are documented in the README with appropriate warnings. Do not "fix" these or flag them as vulnerabilities.
+
+1. **No CORS restrictions**: `CORSMiddleware` in `main.py` allows all origins, methods, and headers. This lets users access their radio from any device/origin on their network.
+2. **No authentication or authorization**: All API endpoints and the WebSocket are openly accessible. The app is designed for trusted networks only (home LAN, VPN).
+3. **Arbitrary bot code execution**: `bot.py` uses `exec()` with full `__builtins__` to run user-provided Python code. This is intentional — bots are a power-user automation feature. Safeguards are limited to timeouts and concurrency limits, not sandboxing.
+
 ## Key Architectural Patterns
 
 ### Repository Pattern
