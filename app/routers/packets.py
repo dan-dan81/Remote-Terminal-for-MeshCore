@@ -1,4 +1,5 @@
 import logging
+import aiosqlite
 from hashlib import sha256
 
 from fastapi import APIRouter, BackgroundTasks
@@ -261,8 +262,9 @@ async def run_maintenance(request: MaintenanceRequest) -> MaintenanceResult:
     deleted = await RawPacketRepository.prune_old_undecrypted(request.prune_undecrypted_days)
     logger.info("Deleted %d old undecrypted packets", deleted)
 
-    # Run VACUUM to reclaim space (must be outside transaction, use executescript)
-    await db.conn.executescript("VACUUM;")
+    # Run VACUUM to reclaim space on a dedicated connection
+    async with aiosqlite.connect(db.db_path) as vacuum_conn:
+        await vacuum_conn.executescript("VACUUM;")
     logger.info("Database vacuumed")
 
     return MaintenanceResult(packets_deleted=deleted, vacuumed=True)
