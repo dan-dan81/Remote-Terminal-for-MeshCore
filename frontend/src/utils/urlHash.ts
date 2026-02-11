@@ -1,13 +1,18 @@
-import type { Conversation } from '../types';
+import type { Channel, Contact, Conversation } from '../types';
+import { getContactDisplayName } from './pubkey';
 
 interface ParsedHashConversation {
   type: 'channel' | 'contact' | 'raw' | 'map' | 'visualizer';
+  /** Conversation identity token (channel key or contact public key, or legacy name token) */
   name: string;
+  /** Optional human-readable label segment (ignored for identity resolution) */
+  label?: string;
   /** For map view: public key prefix to focus on */
   mapFocusKey?: string;
 }
 
-// Parse URL hash to get conversation (e.g., #channel/Public or #contact/JohnDoe or #raw or #map/focus/ABCD1234)
+// Parse URL hash to get conversation
+// (e.g., #channel/ABCDEF0123456789ABCDEF0123456789 or #contact/<64-char-pubkey>).
 export function parseHashConversation(): ParsedHashConversation | null {
   const hash = window.location.hash.slice(1); // Remove leading #
   if (!hash) return null;
@@ -37,12 +42,51 @@ export function parseHashConversation(): ParsedHashConversation | null {
   if (slashIndex === -1) return null;
 
   const type = hash.slice(0, slashIndex);
-  const name = decodeURIComponent(hash.slice(slashIndex + 1));
-
-  if ((type === 'channel' || type === 'contact') && name) {
-    return { type, name };
+  const value = hash.slice(slashIndex + 1);
+  if (!(type === 'channel' || type === 'contact') || !value) {
+    return null;
   }
-  return null;
+
+  // Support both:
+  // - Legacy: #channel/Public
+  // - Stable: #channel/<id>
+  // - Stable + readable: #channel/<id>/<display-name>
+  const valueSlashIndex = value.indexOf('/');
+  const tokenRaw = valueSlashIndex === -1 ? value : value.slice(0, valueSlashIndex);
+  const labelRaw = valueSlashIndex === -1 ? '' : value.slice(valueSlashIndex + 1);
+
+  const token = decodeURIComponent(tokenRaw);
+  if (!token) return null;
+
+  return {
+    type,
+    name: token,
+    ...(labelRaw ? { label: decodeURIComponent(labelRaw) } : {}),
+  };
+}
+
+export function resolveChannelFromHashToken(token: string, channels: Channel[]): Channel | null {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) return null;
+
+  // Preferred path: stable identity by channel key.
+  const byKey = channels.find((c) => c.key.toLowerCase() === normalizedToken.toLowerCase());
+  if (byKey) return byKey;
+
+  // Backward compatibility for legacy name-based hashes.
+  return channels.find((c) => c.name === normalizedToken || c.name === `#${normalizedToken}`) || null;
+}
+
+export function resolveContactFromHashToken(token: string, contacts: Contact[]): Contact | null {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) return null;
+
+  // Preferred path: stable identity by full public key.
+  const byKey = contacts.find((c) => c.public_key.toLowerCase() === normalizedToken.toLowerCase());
+  if (byKey) return byKey;
+
+  // Backward compatibility for legacy name/prefix-based hashes.
+  return contacts.find((c) => getContactDisplayName(c.name, c.public_key) === normalizedToken) || null;
 }
 
 /**
@@ -59,10 +103,13 @@ export function getConversationHash(conv: Conversation | null): string {
   if (conv.type === 'raw') return '#raw';
   if (conv.type === 'map') return '#map';
   if (conv.type === 'visualizer') return '#visualizer';
-  // Strip leading # from channel names for cleaner URLs
-  const name =
-    conv.type === 'channel' && conv.name.startsWith('#') ? conv.name.slice(1) : conv.name;
-  return `#${conv.type}/${encodeURIComponent(name)}`;
+
+  // Use immutable IDs for identity, append readable label for UX.
+  if (conv.type === 'channel') {
+    const label = conv.name.startsWith('#') ? conv.name.slice(1) : conv.name;
+    return `#channel/${encodeURIComponent(conv.id)}/${encodeURIComponent(label)}`;
+  }
+  return `#contact/${encodeURIComponent(conv.id)}/${encodeURIComponent(conv.name)}`;
 }
 
 // Update URL hash without adding to history

@@ -29,7 +29,13 @@ import {
 } from './utils/conversationState';
 import { formatTime } from './utils/messageParser';
 import { getContactDisplayName } from './utils/pubkey';
-import { parseHashConversation, updateUrlHash, getMapFocusHash } from './utils/urlHash';
+import {
+  parseHashConversation,
+  updateUrlHash,
+  getMapFocusHash,
+  resolveChannelFromHashToken,
+  resolveContactFromHashToken,
+} from './utils/urlHash';
 import { isValidLocation, calculateDistance, formatDistance } from './utils/pathUtils';
 import {
   isFavorite,
@@ -425,11 +431,9 @@ export function App() {
       return;
     }
 
-    // Handle channel hash
+    // Handle channel hash (ID-first with legacy-name fallback)
     if (hashConv?.type === 'channel') {
-      const channel = channels.find(
-        (c) => c.name === hashConv.name || c.name === `#${hashConv.name}`
-      );
+      const channel = resolveChannelFromHashToken(hashConv.name, channels);
       if (channel) {
         setActiveConversation({ type: 'channel', id: channel.key, name: channel.name });
         hasSetDefaultConversation.current = true;
@@ -459,9 +463,7 @@ export function App() {
 
     const hashConv = parseHashConversation();
     if (hashConv?.type === 'contact') {
-      const contact = contacts.find(
-        (c) => getContactDisplayName(c.name, c.public_key) === hashConv.name
-      );
+      const contact = resolveContactFromHashToken(hashConv.name, contacts);
       if (contact) {
         setActiveConversation({
           type: 'contact',

@@ -6,8 +6,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { parseHashConversation, getConversationHash, getMapFocusHash } from '../utils/urlHash';
-import type { Conversation } from '../types';
+import {
+  parseHashConversation,
+  getConversationHash,
+  getMapFocusHash,
+  resolveChannelFromHashToken,
+  resolveContactFromHashToken,
+} from '../utils/urlHash';
+import type { Channel, Contact, Conversation } from '../types';
 
 describe('parseHashConversation', () => {
   let originalHash: string;
@@ -69,19 +75,35 @@ describe('parseHashConversation', () => {
   });
 
   it('parses channel hash', () => {
-    window.location.hash = '#channel/Public';
+    window.location.hash = '#channel/ABCDEF0123456789ABCDEF0123456789';
 
     const result = parseHashConversation();
 
-    expect(result).toEqual({ type: 'channel', name: 'Public' });
+    expect(result).toEqual({ type: 'channel', name: 'ABCDEF0123456789ABCDEF0123456789' });
   });
 
   it('parses contact hash', () => {
-    window.location.hash = '#contact/Alice';
+    window.location.hash =
+      '#contact/abc123def4567890abc123def4567890abc123def4567890abc123def4567890';
 
     const result = parseHashConversation();
 
-    expect(result).toEqual({ type: 'contact', name: 'Alice' });
+    expect(result).toEqual({
+      type: 'contact',
+      name: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
+    });
+  });
+
+  it('parses id plus readable label and preserves id token', () => {
+    window.location.hash = '#channel/ABCDEF0123456789ABCDEF0123456789/Public%20Room';
+
+    const result = parseHashConversation();
+
+    expect(result).toEqual({
+      type: 'channel',
+      name: 'ABCDEF0123456789ABCDEF0123456789',
+      label: 'Public Room',
+    });
   });
 
   it('decodes URL-encoded names', () => {
@@ -153,7 +175,7 @@ describe('getConversationHash', () => {
 
     const result = getConversationHash(conv);
 
-    expect(result).toBe('#channel/Public');
+    expect(result).toBe('#channel/key123/Public');
   });
 
   it('generates contact hash', () => {
@@ -161,31 +183,31 @@ describe('getConversationHash', () => {
 
     const result = getConversationHash(conv);
 
-    expect(result).toBe('#contact/Alice');
+    expect(result).toBe('#contact/pubkey123/Alice');
   });
 
-  it('strips leading # from channel names', () => {
+  it('uses channel id even when name starts with #', () => {
     const conv: Conversation = { type: 'channel', id: 'key123', name: '#TestChannel' };
 
     const result = getConversationHash(conv);
 
-    expect(result).toBe('#channel/TestChannel');
+    expect(result).toBe('#channel/key123/TestChannel');
   });
 
-  it('encodes special characters in names', () => {
-    const conv: Conversation = { type: 'contact', id: 'key', name: 'John Doe' };
+  it('encodes special characters in ids', () => {
+    const conv: Conversation = { type: 'contact', id: 'key with space', name: 'John Doe' };
 
     const result = getConversationHash(conv);
 
-    expect(result).toBe('#contact/John%20Doe');
+    expect(result).toBe('#contact/key%20with%20space/John%20Doe');
   });
 
-  it('does not strip # from contact names', () => {
+  it('uses id regardless of contact display name', () => {
     const conv: Conversation = { type: 'contact', id: 'key', name: '#Hashtag' };
 
     const result = getConversationHash(conv);
 
-    expect(result).toBe('#contact/%23Hashtag');
+    expect(result).toBe('#contact/key/%23Hashtag');
   });
 });
 
@@ -207,7 +229,7 @@ describe('parseHashConversation and getConversationHash roundtrip', () => {
     window.location.hash = hash;
     const parsed = parseHashConversation();
 
-    expect(parsed).toEqual({ type: 'channel', name: 'Test Channel' });
+    expect(parsed).toEqual({ type: 'channel', name: 'key123', label: 'Test Channel' });
   });
 
   it('contact roundtrip preserves data', () => {
@@ -217,7 +239,7 @@ describe('parseHashConversation and getConversationHash roundtrip', () => {
     window.location.hash = hash;
     const parsed = parseHashConversation();
 
-    expect(parsed).toEqual({ type: 'contact', name: 'Alice Bob' });
+    expect(parsed).toEqual({ type: 'contact', name: 'pubkey', label: 'Alice Bob' });
   });
 
   it('raw roundtrip preserves type', () => {
@@ -238,6 +260,124 @@ describe('parseHashConversation and getConversationHash roundtrip', () => {
     const parsed = parseHashConversation();
 
     expect(parsed).toEqual({ type: 'map', name: 'map' });
+  });
+});
+
+describe('resolveChannelFromHashToken', () => {
+  const channels: Channel[] = [
+    {
+      key: 'ABCDEF0123456789ABCDEF0123456789',
+      name: 'Public',
+      is_hashtag: false,
+      on_radio: true,
+      last_read_at: null,
+    },
+    {
+      key: '11111111111111111111111111111111',
+      name: '#mesh',
+      is_hashtag: true,
+      on_radio: false,
+      last_read_at: null,
+    },
+    {
+      key: '22222222222222222222222222222222',
+      name: 'Public',
+      is_hashtag: false,
+      on_radio: false,
+      last_read_at: null,
+    },
+  ];
+
+  it('prefers stable key lookup (case-insensitive)', () => {
+    const result = resolveChannelFromHashToken(
+      'abcdef0123456789abcdef0123456789',
+      channels
+    );
+    expect(result?.key).toBe('ABCDEF0123456789ABCDEF0123456789');
+  });
+
+  it('supports legacy name-based hash lookup', () => {
+    const result = resolveChannelFromHashToken('Public', channels);
+    expect(result?.key).toBe('ABCDEF0123456789ABCDEF0123456789');
+  });
+
+  it('supports legacy hashtag hash without leading #', () => {
+    const result = resolveChannelFromHashToken('mesh', channels);
+    expect(result?.key).toBe('11111111111111111111111111111111');
+  });
+});
+
+describe('resolveContactFromHashToken', () => {
+  const contacts: Contact[] = [
+    {
+      public_key: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
+      name: 'Alice',
+      type: 1,
+      flags: 0,
+      last_path: null,
+      last_path_len: -1,
+      last_advert: null,
+      lat: null,
+      lon: null,
+      last_seen: null,
+      on_radio: false,
+      last_contacted: null,
+      last_read_at: null,
+    },
+    {
+      public_key: 'def456abc1237890def456abc1237890def456abc1237890def456abc1237890',
+      name: 'Alice',
+      type: 1,
+      flags: 0,
+      last_path: null,
+      last_path_len: -1,
+      last_advert: null,
+      lat: null,
+      lon: null,
+      last_seen: null,
+      on_radio: false,
+      last_contacted: null,
+      last_read_at: null,
+    },
+    {
+      public_key: 'eeeeee111111222222333333444444555555666666777777888888999999aaaa',
+      name: null,
+      type: 1,
+      flags: 0,
+      last_path: null,
+      last_path_len: -1,
+      last_advert: null,
+      lat: null,
+      lon: null,
+      last_seen: null,
+      on_radio: false,
+      last_contacted: null,
+      last_read_at: null,
+    },
+  ];
+
+  it('prefers stable public-key lookup (case-insensitive)', () => {
+    const result = resolveContactFromHashToken(
+      'ABC123DEF4567890ABC123DEF4567890ABC123DEF4567890ABC123DEF4567890',
+      contacts
+    );
+    expect(result?.public_key).toBe(
+      'abc123def4567890abc123def4567890abc123def4567890abc123def4567890'
+    );
+  });
+
+  it('supports legacy display-name hash lookup', () => {
+    const result = resolveContactFromHashToken('Alice', contacts);
+    expect(result?.public_key).toBe(
+      'abc123def4567890abc123def4567890abc123def4567890abc123def4567890'
+    );
+  });
+
+  it('supports legacy unnamed-contact prefix hash lookup', () => {
+    const result = resolveContactFromHashToken('eeeeee111111', contacts);
+    expect(result?.public_key).toBe(
+      'eeeeee111111222222333333444444555555666666777777888888999999aaaa'
+    );
   });
 });
 
