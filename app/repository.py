@@ -51,8 +51,8 @@ class ContactRepository:
                 if "last_path_len" in contact
                 else contact.get("out_path_len", -1),
                 contact.get("last_advert"),
-                contact.get("lat") or contact.get("adv_lat"),
-                contact.get("lon") or contact.get("adv_lon"),
+                contact.get("lat") if contact.get("lat") is not None else contact.get("adv_lat"),
+                contact.get("lon") if contact.get("lon") is not None else contact.get("adv_lon"),
                 contact.get("last_seen", int(time.time())),
                 contact.get("on_radio", False),
                 contact.get("last_contacted"),
@@ -162,7 +162,7 @@ class ContactRepository:
     @staticmethod
     async def update_last_contacted(public_key: str, timestamp: int | None = None) -> None:
         """Update the last_contacted timestamp for a contact."""
-        ts = timestamp or int(time.time())
+        ts = timestamp if timestamp is not None else int(time.time())
         await db.conn.execute(
             "UPDATE contacts SET last_contacted = ?, last_seen = ? WHERE public_key = ?",
             (ts, ts, public_key.lower()),
@@ -175,7 +175,7 @@ class ContactRepository:
 
         Returns True if a row was updated, False if contact not found.
         """
-        ts = timestamp or int(time.time())
+        ts = timestamp if timestamp is not None else int(time.time())
         cursor = await db.conn.execute(
             "UPDATE contacts SET last_read_at = ? WHERE public_key = ?",
             (ts, public_key.lower()),
@@ -266,7 +266,7 @@ class ChannelRepository:
 
         Returns True if a row was updated, False if channel not found.
         """
-        ts = timestamp or int(time.time())
+        ts = timestamp if timestamp is not None else int(time.time())
         cursor = await db.conn.execute(
             "UPDATE channels SET last_read_at = ? WHERE key = ?",
             (ts, key.upper()),
@@ -350,7 +350,7 @@ class MessageRepository:
         This is used when a repeat/echo of a message arrives via a different route.
         Returns the updated list of paths.
         """
-        ts = received_at or int(time.time())
+        ts = received_at if received_at is not None else int(time.time())
 
         # Get current paths
         cursor = await db.conn.execute("SELECT paths FROM messages WHERE id = ?", (message_id,))
@@ -605,7 +605,7 @@ class RawPacketRepository:
         Deduplication is based on the SHA-256 hash of the packet payload
         (excluding routing/path information).
         """
-        ts = timestamp or int(time.time())
+        ts = timestamp if timestamp is not None else int(time.time())
 
         # Compute payload hash for deduplication
         payload = extract_payload(data)

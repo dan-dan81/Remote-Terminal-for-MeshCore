@@ -31,9 +31,9 @@ class Contact(BaseModel):
             "flags": self.flags,
             "out_path": self.last_path or "",
             "out_path_len": self.last_path_len,
-            "adv_lat": self.lat or 0.0,
-            "adv_lon": self.lon or 0.0,
-            "last_advert": self.last_advert or 0,
+            "adv_lat": self.lat if self.lat is not None else 0.0,
+            "adv_lon": self.lon if self.lon is not None else 0.0,
+            "last_advert": self.last_advert if self.last_advert is not None else 0,
         }
 
     @staticmethod

@@ -4,6 +4,7 @@ import type { LatLngBoundsExpression, CircleMarker as LeafletCircleMarker } from
 import 'leaflet/dist/leaflet.css';
 import type { Contact } from '../types';
 import { formatTime } from '../utils/messageParser';
+import { isValidLocation } from '../utils/pathUtils';
 import { CONTACT_TYPE_REPEATER } from '../types';
 
 interface MapViewProps {
@@ -97,7 +98,7 @@ export function MapView({ contacts, focusedKey }: MapViewProps) {
   const mappableContacts = useMemo(() => {
     const sevenDaysAgo = Date.now() / 1000 - 7 * 24 * 60 * 60;
     return contacts.filter(
-      (c) => c.lat != null && c.lon != null && c.last_seen != null && c.last_seen > sevenDaysAgo
+      (c) => isValidLocation(c.lat, c.lon) && c.last_seen != null && c.last_seen > sevenDaysAgo
     );
   }, [contacts]);
 
