@@ -189,28 +189,31 @@ export function App() {
         // Track for unread counts and sorting
         trackNewMessage(msg);
 
+        const contentKey = getMessageContentKey(msg);
+
+        // Dedup: check if we've already seen this content BEFORE marking it seen.
+        // This must happen before the active/non-active branch so that messages
+        // first seen in the active conversation are tracked — otherwise a mesh
+        // duplicate arriving after the user switches away would create a phantom
+        // unread badge.
+        const alreadySeen = !msg.outgoing && seenMessageContentRef.current.has(contentKey);
+        if (!msg.outgoing) {
+          seenMessageContentRef.current.add(contentKey);
+
+          // Limit set size to prevent memory issues
+          if (seenMessageContentRef.current.size > 1000) {
+            const keys = Array.from(seenMessageContentRef.current);
+            seenMessageContentRef.current = new Set(keys.slice(-500));
+          }
+        }
+
         // For non-active conversations: update cache and count unreads
         if (!isForActiveConversation) {
-          const contentKey = getMessageContentKey(msg);
-
           // Update message cache (instant restore on switch)
           messageCache.addMessage(msg.conversation_key, msg, contentKey);
 
-          // Count unread for incoming messages (with deduplication)
-          if (!msg.outgoing) {
-            // Skip if we've already seen this message content (prevents duplicate increments
-            // when the same message arrives via multiple mesh paths)
-            if (seenMessageContentRef.current.has(contentKey)) {
-              return;
-            }
-            seenMessageContentRef.current.add(contentKey);
-
-            // Limit set size to prevent memory issues
-            if (seenMessageContentRef.current.size > 1000) {
-              const keys = Array.from(seenMessageContentRef.current);
-              seenMessageContentRef.current = new Set(keys.slice(-500));
-            }
-
+          // Count unread for incoming messages (skip duplicates from multiple mesh paths)
+          if (!msg.outgoing && !alreadySeen) {
             let stateKey: string | null = null;
             if (msg.type === 'CHAN' && msg.conversation_key) {
               stateKey = getStateKey('channel', msg.conversation_key);
