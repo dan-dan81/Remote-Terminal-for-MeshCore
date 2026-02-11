@@ -62,56 +62,52 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
 
         <div className="flex-1 overflow-y-auto py-2 space-y-4">
           {/* Raw path summary */}
-          <div className="text-xs font-mono text-muted-foreground/70 pb-2 border-b border-border">
+          <div className="text-sm">
             {paths.map((p, index) => {
               const hops = parsePathHops(p.path);
               const rawPath = hops.length > 0 ? hops.join('->') : 'direct';
-              return <div key={index}>{rawPath}</div>;
+              return (
+                <div key={index}>
+                  <span className="text-foreground/70 font-semibold">Path {index + 1}:</span>{' '}
+                  <span className="font-mono text-muted-foreground/70">{rawPath}</span>
+                </div>
+              );
             })}
           </div>
+
+          {/* Straight-line distance (sender to receiver, same for all routes) */}
+          {resolvedPaths.length > 0 &&
+            isValidLocation(resolvedPaths[0].resolved.sender.lat, resolvedPaths[0].resolved.sender.lon) &&
+            isValidLocation(resolvedPaths[0].resolved.receiver.lat, resolvedPaths[0].resolved.receiver.lon) && (
+              <div className="text-sm pb-2 border-b border-border">
+                <span className="text-muted-foreground">Straight-line distance: </span>
+                <span className="font-medium">
+                  {formatDistance(
+                    calculateDistance(
+                      resolvedPaths[0].resolved.sender.lat,
+                      resolvedPaths[0].resolved.sender.lon,
+                      resolvedPaths[0].resolved.receiver.lat,
+                      resolvedPaths[0].resolved.receiver.lon
+                    )!
+                  )}
+                </span>
+              </div>
+            )}
 
           {resolvedPaths.map((pathData, index) => (
             <div key={index}>
               {!hasSinglePath && (
-                <div className="text-xs text-muted-foreground font-medium mb-2 pb-1 border-b border-border">
-                  Path {index + 1} — received {formatTime(pathData.received_at)}
+                <div className="text-sm text-foreground/70 font-semibold mb-2 pb-1 border-b border-border">
+                  Path {index + 1}{' '}
+                  <span className="font-normal text-muted-foreground">— received {formatTime(pathData.received_at)}</span>
                 </div>
               )}
               <PathVisualization
                 resolved={pathData.resolved}
                 senderInfo={senderInfo}
-                hideStraightLine={!hasSinglePath}
               />
             </div>
           ))}
-
-          {/* Straight-line distance shown once for multi-path (same for all routes) */}
-          {!hasSinglePath &&
-            resolvedPaths.length > 0 &&
-            (() => {
-              const first = resolvedPaths[0].resolved;
-              if (
-                isValidLocation(first.sender.lat, first.sender.lon) &&
-                isValidLocation(first.receiver.lat, first.receiver.lon)
-              ) {
-                return (
-                  <div className="pt-3 mt-1 border-t border-border">
-                    <span className="text-sm text-muted-foreground">Straight-line distance: </span>
-                    <span className="text-sm font-medium">
-                      {formatDistance(
-                        calculateDistance(
-                          first.sender.lat,
-                          first.sender.lon,
-                          first.receiver.lat,
-                          first.receiver.lon
-                        )!
-                      )}
-                    </span>
-                  </div>
-                );
-              }
-              return null;
-            })()}
         </div>
 
         <DialogFooter>
@@ -125,11 +121,9 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
 interface PathVisualizationProps {
   resolved: ResolvedPath;
   senderInfo: SenderInfo;
-  /** If true, hide the straight-line distance (shown once at container level for multi-path) */
-  hideStraightLine?: boolean;
 }
 
-function PathVisualization({ resolved, senderInfo, hideStraightLine }: PathVisualizationProps) {
+function PathVisualization({ resolved, senderInfo }: PathVisualizationProps) {
   // Track previous location for each hop to calculate distances
   // Returns null if previous hop was ambiguous or has invalid location
   const getPrevLocation = (hopIndex: number): { lat: number | null; lon: number | null } | null => {
@@ -205,30 +199,6 @@ function PathVisualization({ resolved, senderInfo, hideStraightLine }: PathVisua
         </div>
       )}
 
-      {/* Straight-line distance (when both sender and receiver have coordinates) */}
-      {!hideStraightLine &&
-        isValidLocation(resolved.sender.lat, resolved.sender.lon) &&
-        isValidLocation(resolved.receiver.lat, resolved.receiver.lon) && (
-          <div
-            className={
-              resolved.totalDistances && resolved.totalDistances.length > 0
-                ? 'pt-1'
-                : 'pt-3 mt-3 border-t border-border'
-            }
-          >
-            <span className="text-sm text-muted-foreground">Straight-line distance: </span>
-            <span className="text-sm font-medium">
-              {formatDistance(
-                calculateDistance(
-                  resolved.sender.lat,
-                  resolved.sender.lon,
-                  resolved.receiver.lat,
-                  resolved.receiver.lon
-                )!
-              )}
-            </span>
-          </div>
-        )}
     </div>
   );
 }
@@ -271,9 +241,12 @@ function PathNode({
 
       {/* Content */}
       <div className="pb-3 flex-1 min-w-0">
-        <div className="text-xs text-muted-foreground font-medium">{label}</div>
+        <div className="text-sm font-semibold">
+          <span className="text-primary">{label}:</span>{' '}
+          <span className="text-primary font-mono">{prefix}</span>
+        </div>
         <div className="font-medium truncate">
-          {name} <span className="text-muted-foreground font-mono text-sm">({prefix})</span>
+          {name}
           {distance !== null && (
             <span className="text-xs text-muted-foreground ml-1">- {formatDistance(distance)}</span>
           )}
@@ -315,20 +288,21 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
       {/* Vertical line and dot column */}
       <div className="flex flex-col items-center w-4 flex-shrink-0">
         <div className="w-0.5 h-3 bg-border" />
-        <div className="w-3 h-3 rounded-full bg-muted-foreground flex-shrink-0" />
+        <div className="w-3 h-3 rounded-full bg-primary/50 flex-shrink-0" />
         <div className="w-0.5 flex-1 bg-border" />
       </div>
 
       {/* Content */}
       <div className="pb-3 flex-1 min-w-0">
-        <div className="text-xs text-muted-foreground font-medium">
-          Hop {hopNumber}
-          {isAmbiguous && <span className="text-yellow-500 ml-1">(ambiguous)</span>}
+        <div className="text-sm font-semibold">
+          <span className="text-foreground/80">Hop {hopNumber}:</span>{' '}
+          <span className="text-primary font-mono">{hop.prefix}</span>
+          {isAmbiguous && <span className="text-yellow-500 ml-1 font-normal">(ambiguous)</span>}
         </div>
 
         {isUnknown ? (
           <div className="font-medium text-muted-foreground/70">
-            &lt;UNKNOWN <span className="font-mono text-sm">{hop.prefix}</span>&gt;
+            &lt;UNKNOWN&gt;
           </div>
         ) : isAmbiguous ? (
           <div>
@@ -337,10 +311,7 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
               const hasLocation = isValidLocation(contact.lat, contact.lon);
               return (
                 <div key={contact.public_key} className="font-medium truncate">
-                  {contact.name || contact.public_key.slice(0, 12)}{' '}
-                  <span className="text-muted-foreground font-mono text-sm">
-                    ({contact.public_key.slice(0, 2).toUpperCase()})
-                  </span>
+                  {contact.name || contact.public_key.slice(0, 12)}
                   {dist !== null && (
                     <span className="text-xs text-muted-foreground ml-1">
                       - {formatDistance(dist)}
@@ -359,8 +330,7 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
           </div>
         ) : (
           <div className="font-medium truncate">
-            {hop.matches[0].name || hop.matches[0].public_key.slice(0, 12)}{' '}
-            <span className="text-muted-foreground font-mono text-sm">({hop.prefix})</span>
+            {hop.matches[0].name || hop.matches[0].public_key.slice(0, 12)}
             {hop.distanceFromPrev !== null && (
               <span className="text-xs text-muted-foreground ml-1">
                 - {formatDistance(hop.distanceFromPrev)}
