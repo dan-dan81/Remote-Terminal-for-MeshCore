@@ -214,8 +214,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                   : 'text-muted-foreground'
             )}
           >
-            {textByteLen}/{limits!.hardLimit}b
-            {remaining < 0 && ` (${remaining})`}
+            {textByteLen}/{limits!.hardLimit}b{remaining < 0 && ` (${remaining})`}
           </span>
           {warningMessage && (
             <span className={cn(limitState === 'error' ? 'text-red-500' : 'text-yellow-500')}>
