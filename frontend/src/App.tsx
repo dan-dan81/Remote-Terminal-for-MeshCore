@@ -108,7 +108,6 @@ export function App() {
     loadingOlder,
     hasOlderMessages,
     setMessages,
-    fetchMessages,
     fetchOlderMessages,
     addMessageIfNew,
     updateMessageAck,
@@ -498,14 +497,29 @@ export function App() {
     async (text: string) => {
       if (!activeConversation) return;
 
+      // Capture conversation identity before the await — the user could switch
+      // conversations while the send is in flight.
+      const conversationId = activeConversation.id;
+
+      let sent: Message;
       if (activeConversation.type === 'channel') {
-        await api.sendChannelMessage(activeConversation.id, text);
+        sent = await api.sendChannelMessage(activeConversation.id, text);
       } else {
-        await api.sendDirectMessage(activeConversation.id, text);
+        sent = await api.sendDirectMessage(activeConversation.id, text);
       }
-      await fetchMessages();
+
+      // Add the returned message directly instead of re-fetching all messages.
+      // A full fetchMessages() replaces the array, which resets messagesAdded to 0
+      // and skips the scroll-to-bottom — especially when racing with the initial
+      // conversation load or a WebSocket delivery that already incremented the count.
+      // The send endpoints do NOT broadcast via WebSocket, so for DMs this is the
+      // only path that shows the sent message. For channels, the radio echo may
+      // eventually arrive via WS, but addMessageIfNew deduplicates by content key.
+      if (activeConversationRef.current?.id === conversationId) {
+        addMessageIfNew(sent);
+      }
     },
-    [activeConversation, fetchMessages]
+    [activeConversation, addMessageIfNew]
   );
 
   // Config save handler
