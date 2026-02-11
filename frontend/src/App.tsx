@@ -127,7 +127,7 @@ export function App() {
     activeContactIsRepeater,
     handleTelemetryRequest,
     handleRepeaterCommand,
-  } = useRepeaterMode(activeConversation, contacts, setMessages);
+  } = useRepeaterMode(activeConversation, contacts, setMessages, activeConversationRef);
 
   // WebSocket handlers - memoized to prevent reconnection loops
   const wsHandlers = useMemo(

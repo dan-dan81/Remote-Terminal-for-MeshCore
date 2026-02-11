@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, type RefObject } from 'react';
 import { api } from '../api';
 import type {
   Contact,
@@ -118,7 +118,8 @@ export interface UseRepeaterModeResult {
 export function useRepeaterMode(
   activeConversation: Conversation | null,
   contacts: Contact[],
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>,
+  activeConversationRef: RefObject<Conversation | null>
 ): UseRepeaterModeResult {
   const [repeaterLoggedIn, setRepeaterLoggedIn] = useState(false);
   const { handleAirtimeCommand, stopTracking } = useAirtimeTracking(setMessages);
@@ -142,26 +143,31 @@ export function useRepeaterMode(
       if (!activeConversation || activeConversation.type !== 'contact') return;
       if (!activeContactIsRepeater) return;
 
+      const conversationId = activeConversation.id;
+
       try {
-        const telemetry = await api.requestTelemetry(activeConversation.id, password);
+        const telemetry = await api.requestTelemetry(conversationId, password);
+
+        // User may have switched conversations during the await
+        if (activeConversationRef.current?.id !== conversationId) return;
 
         // Create local messages to display the telemetry (not persisted to database)
         const telemetryMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           formatTelemetry(telemetry),
           false,
           0
         );
 
         const neighborsMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           formatNeighbors(telemetry.neighbors),
           false,
           1
         );
 
         const aclMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           formatAcl(telemetry.acl),
           false,
           2
@@ -173,8 +179,9 @@ export function useRepeaterMode(
         // Mark as logged in for CLI command mode
         setRepeaterLoggedIn(true);
       } catch (err) {
+        if (activeConversationRef.current?.id !== conversationId) return;
         const errorMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           `Telemetry request failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
           false,
           0
@@ -182,7 +189,7 @@ export function useRepeaterMode(
         setMessages((prev) => [...prev, errorMessage]);
       }
     },
-    [activeConversation, activeContactIsRepeater, setMessages]
+    [activeConversation, activeContactIsRepeater, setMessages, activeConversationRef]
   );
 
   // Send CLI command to a repeater (after logged in)
@@ -191,20 +198,25 @@ export function useRepeaterMode(
       if (!activeConversation || activeConversation.type !== 'contact') return;
       if (!activeContactIsRepeater || !repeaterLoggedIn) return;
 
+      const conversationId = activeConversation.id;
+
       // Check for special airtime commands first (handled locally)
-      const handled = await handleAirtimeCommand(command, activeConversation.id);
+      const handled = await handleAirtimeCommand(command, conversationId);
       if (handled) return;
 
       // Show the command as an outgoing message
-      const commandMessage = createLocalMessage(activeConversation.id, `> ${command}`, true, 0);
+      const commandMessage = createLocalMessage(conversationId, `> ${command}`, true, 0);
       setMessages((prev) => [...prev, commandMessage]);
 
       try {
-        const response = await api.sendRepeaterCommand(activeConversation.id, command);
+        const response = await api.sendRepeaterCommand(conversationId, command);
+
+        // User may have switched conversations during the await
+        if (activeConversationRef.current?.id !== conversationId) return;
 
         // Use the actual timestamp from the repeater if available
         const responseMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           response.response,
           false,
           1
@@ -215,8 +227,9 @@ export function useRepeaterMode(
 
         setMessages((prev) => [...prev, responseMessage]);
       } catch (err) {
+        if (activeConversationRef.current?.id !== conversationId) return;
         const errorMessage = createLocalMessage(
-          activeConversation.id,
+          conversationId,
           `Command failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
           false,
           1
@@ -230,6 +243,7 @@ export function useRepeaterMode(
       repeaterLoggedIn,
       setMessages,
       handleAirtimeCommand,
+      activeConversationRef,
     ]
   );
 
