@@ -187,7 +187,10 @@ class TestMessagesEndpoint:
         with (
             patch("app.dependencies.radio_manager") as mock_rm,
             patch("app.repository.ChannelRepository") as mock_chan_repo,
-            patch("app.repository.AppSettingsRepository.get", new=AsyncMock(return_value=AppSettings())),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
             patch("app.routers.messages.MessageRepository") as mock_msg_repo,
         ):
             mock_rm.is_connected = True

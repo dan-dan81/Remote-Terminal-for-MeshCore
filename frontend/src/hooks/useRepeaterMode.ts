@@ -166,12 +166,7 @@ export function useRepeaterMode(
           1
         );
 
-        const aclMessage = createLocalMessage(
-          conversationId,
-          formatAcl(telemetry.acl),
-          false,
-          2
-        );
+        const aclMessage = createLocalMessage(conversationId, formatAcl(telemetry.acl), false, 2);
 
         // Add all messages to the list
         setMessages((prev) => [...prev, telemetryMessage, neighborsMessage, aclMessage]);
@@ -215,12 +210,7 @@ export function useRepeaterMode(
         if (activeConversationRef.current?.id !== conversationId) return;
 
         // Use the actual timestamp from the repeater if available
-        const responseMessage = createLocalMessage(
-          conversationId,
-          response.response,
-          false,
-          1
-        );
+        const responseMessage = createLocalMessage(conversationId, response.response, false, 1);
         if (response.sender_timestamp) {
           responseMessage.sender_timestamp = response.sender_timestamp;
         }

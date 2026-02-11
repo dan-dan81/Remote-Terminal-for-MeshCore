@@ -598,7 +598,9 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
                     break
 
             if len(selected_contacts) < max_contacts:
-                recent_contacts = await ContactRepository.get_recent_non_repeaters(limit=max_contacts)
+                recent_contacts = await ContactRepository.get_recent_non_repeaters(
+                    limit=max_contacts
+                )
                 for contact in recent_contacts:
                     key = contact.public_key.lower()
                     if key in selected_keys:

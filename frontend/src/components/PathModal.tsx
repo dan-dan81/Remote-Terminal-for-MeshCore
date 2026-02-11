@@ -77,8 +77,14 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
 
           {/* Straight-line distance (sender to receiver, same for all routes) */}
           {resolvedPaths.length > 0 &&
-            isValidLocation(resolvedPaths[0].resolved.sender.lat, resolvedPaths[0].resolved.sender.lon) &&
-            isValidLocation(resolvedPaths[0].resolved.receiver.lat, resolvedPaths[0].resolved.receiver.lon) && (
+            isValidLocation(
+              resolvedPaths[0].resolved.sender.lat,
+              resolvedPaths[0].resolved.sender.lon
+            ) &&
+            isValidLocation(
+              resolvedPaths[0].resolved.receiver.lat,
+              resolvedPaths[0].resolved.receiver.lon
+            ) && (
               <div className="text-sm pb-2 border-b border-border">
                 <span className="text-muted-foreground">Straight-line distance: </span>
                 <span className="font-medium">
@@ -99,13 +105,12 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
               {!hasSinglePath && (
                 <div className="text-sm text-foreground/70 font-semibold mb-2 pb-1 border-b border-border">
                   Path {index + 1}{' '}
-                  <span className="font-normal text-muted-foreground">— received {formatTime(pathData.received_at)}</span>
+                  <span className="font-normal text-muted-foreground">
+                    — received {formatTime(pathData.received_at)}
+                  </span>
                 </div>
               )}
-              <PathVisualization
-                resolved={pathData.resolved}
-                senderInfo={senderInfo}
-              />
+              <PathVisualization resolved={pathData.resolved} senderInfo={senderInfo} />
             </div>
           ))}
         </div>
@@ -198,7 +203,6 @@ function PathVisualization({ resolved, senderInfo }: PathVisualizationProps) {
           </span>
         </div>
       )}
-
     </div>
   );
 }
@@ -301,9 +305,7 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
         </div>
 
         {isUnknown ? (
-          <div className="font-medium text-muted-foreground/70">
-            &lt;UNKNOWN&gt;
-          </div>
+          <div className="font-medium text-muted-foreground/70">&lt;UNKNOWN&gt;</div>
         ) : isAmbiguous ? (
           <div>
             {hop.matches.map((contact) => {

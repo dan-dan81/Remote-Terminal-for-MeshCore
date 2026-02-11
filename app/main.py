@@ -2,13 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.config import setup_logging
 from app.database import db
+from app.frontend_static import register_frontend_static_routes
 from app.radio import radio_manager
 from app.radio_sync import (
     stop_message_polling,
@@ -88,27 +87,4 @@ app.include_router(ws.router, prefix="/api")
 
 # Serve frontend static files in production
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
-
-if FRONTEND_DIR.exists():
-    # Serve static assets (JS, CSS, etc.)
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
-
-    # Serve other static files from frontend/dist (like wordlist)
-    @app.get("/{path:path}")
-    async def serve_frontend(path: str):
-        """Serve frontend files, falling back to index.html for SPA routing."""
-        base_dir = FRONTEND_DIR.resolve()
-        file_path = (FRONTEND_DIR / path).resolve()
-        try:
-            file_path.relative_to(base_dir)
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Not found") from None
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        # Fall back to index.html for SPA routing
-        return FileResponse(base_dir / "index.html")
-
-    @app.get("/")
-    async def serve_index():
-        """Serve the frontend index.html."""
-        return FileResponse(FRONTEND_DIR / "index.html")
+register_frontend_static_routes(app, FRONTEND_DIR)

@@ -307,13 +307,17 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
         status = None
         for attempt in range(1, 4):
             logger.debug("Status request attempt %d/3", attempt)
-            status = await mc.commands.req_status_sync(contact.public_key, timeout=10, min_timeout=5)
+            status = await mc.commands.req_status_sync(
+                contact.public_key, timeout=10, min_timeout=5
+            )
             if status:
                 break
             logger.debug("Status request timeout, retrying...")
 
         if not status:
-            raise HTTPException(status_code=504, detail="No response from repeater after 3 attempts")
+            raise HTTPException(
+                status_code=504, detail="No response from repeater after 3 attempts"
+            )
 
         logger.info("Received telemetry from %s: %s", contact.public_key[:12], status)
 
@@ -482,7 +486,9 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
         send_result = await mc.commands.send_cmd(contact.public_key, request.command)
 
         if send_result.type == EventType.ERROR:
-            raise HTTPException(status_code=500, detail=f"Failed to send command: {send_result.payload}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to send command: {send_result.payload}"
+            )
 
         # Wait for response (MESSAGES_WAITING event, then get_msg)
         try:
@@ -503,7 +509,9 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
             response_event = await mc.commands.get_msg()
 
             if response_event.type == EventType.ERROR:
-                return CommandResponse(command=request.command, response=f"(error: {response_event.payload})")
+                return CommandResponse(
+                    command=request.command, response=f"(error: {response_event.payload})"
+                )
 
             # Extract the response text and timestamp from the payload
             response_text = response_event.payload.get("text", str(response_event.payload))

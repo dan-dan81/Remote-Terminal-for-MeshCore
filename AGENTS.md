@@ -184,7 +184,7 @@ Terminal 2: `cd frontend && npm run dev`
 
 ### Production
 
-In production, the FastAPI backend serves the compiled frontend. You must build the frontend first:
+In production, the FastAPI backend serves the compiled frontend. Build the frontend first:
 
 ```bash
 cd frontend && npm install && npm run build && cd ..
@@ -192,6 +192,8 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Access at `http://localhost:8000`. All API routes are prefixed with `/api`.
+
+If `frontend/dist` (or `frontend/dist/index.html`) is missing, backend startup now logs an explicit error and continues serving API routes. In that case, frontend static routes are not mounted until a frontend build is present.
 
 ## Testing
 
@@ -207,6 +209,7 @@ Key test files:
 - `tests/test_event_handlers.py` - ACK tracking, repeat detection
 - `tests/test_api.py` - API endpoints, read state tracking
 - `tests/test_migrations.py` - Database migration system
+- `tests/test_frontend_static.py` - Frontend static route registration (missing `dist`/`index.html` handling)
 
 ### Frontend (Vitest)
 
