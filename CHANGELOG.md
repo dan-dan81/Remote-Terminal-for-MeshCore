@@ -1,3 +1,20 @@
+## [1.9.0] - 2026-02-10
+
+Feature: Favorited contacts are preferentially loaded onto the radio
+Feature: Add recent-message caching for fast switching
+Feature: Add echo paths modal when echo-heard checkbox is clicked
+Feature: Add experimental byte-perfect double-send for bad RF environments to try to punch the message out
+Frontend: Better styling on echo + message path display
+Bugfix: Prevent frontend static file serving path traversal vuln
+Bugfix: Safer prefix-claiming for DMs we don't have the key for
+Bugfix: Prevent injection from mentions with special characters
+Bugfix: Fix repeaters comms showing in wrong channel when repeater operations are in flight and the channel is changed quickly
+Bugfix: App can boot and test without a frontend dir
+Misc: Improve and consistent-ify (?) backend radio operation lock management
+Misc: Frontend performance and safety enhancements
+Misc: Move builds to non-bundled; usage requires building the Frontend
+Misc: Update tests and agent docs
+
 ## [1.8.0] - 2026-02-07
 
 Feature: Single hop ping
