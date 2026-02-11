@@ -415,3 +415,100 @@ class TestMessageRepositoryGetAckCount:
             result = await MessageRepository.get_ack_count(message_id=42)
 
         assert result == 0
+
+
+class TestAppSettingsRepository:
+    """Test AppSettingsRepository parsing and migration edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_get_handles_corrupted_json_and_invalid_sort_order(self):
+        """Corrupted JSON fields are recovered with safe defaults."""
+        mock_conn = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(
+            return_value={
+                "max_radio_contacts": 250,
+                "favorites": "{not-json",
+                "auto_decrypt_dm_on_advert": 1,
+                "sidebar_sort_order": "invalid",
+                "last_message_times": "{also-not-json",
+                "preferences_migrated": 0,
+                "advert_interval": None,
+                "last_advert_time": None,
+                "bots": "{bad-bots-json",
+            }
+        )
+        mock_conn.execute = AsyncMock(return_value=mock_cursor)
+        mock_db = MagicMock()
+        mock_db.conn = mock_conn
+
+        with patch("app.repository.db", mock_db):
+            from app.repository import AppSettingsRepository
+
+            settings = await AppSettingsRepository.get()
+
+        assert settings.max_radio_contacts == 250
+        assert settings.favorites == []
+        assert settings.last_message_times == {}
+        assert settings.sidebar_sort_order == "recent"
+        assert settings.bots == []
+        assert settings.advert_interval == 0
+        assert settings.last_advert_time == 0
+
+    @pytest.mark.asyncio
+    async def test_add_favorite_is_idempotent(self):
+        """Adding an existing favorite does not write duplicate entries."""
+        from app.models import AppSettings, Favorite
+
+        existing = AppSettings(favorites=[Favorite(type="contact", id="aa" * 32)])
+
+        with (
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new_callable=AsyncMock,
+                return_value=existing,
+            ),
+            patch(
+                "app.repository.AppSettingsRepository.update",
+                new_callable=AsyncMock,
+            ) as mock_update,
+        ):
+            from app.repository import AppSettingsRepository
+
+            result = await AppSettingsRepository.add_favorite("contact", "aa" * 32)
+
+        assert result == existing
+        mock_update.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_migrate_preferences_uses_recent_for_invalid_sort_order(self):
+        """Migration normalizes invalid sort order to 'recent'."""
+        from app.models import AppSettings
+
+        current = AppSettings(preferences_migrated=False)
+        migrated = AppSettings(preferences_migrated=True, sidebar_sort_order="recent")
+
+        with (
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new_callable=AsyncMock,
+                return_value=current,
+            ),
+            patch(
+                "app.repository.AppSettingsRepository.update",
+                new_callable=AsyncMock,
+                return_value=migrated,
+            ) as mock_update,
+        ):
+            from app.repository import AppSettingsRepository
+
+            result, did_migrate = await AppSettingsRepository.migrate_preferences_from_frontend(
+                favorites=[{"type": "contact", "id": "bb" * 32}],
+                sort_order="weird-order",
+                last_message_times={"contact-bbbbbbbbbbbb": 123},
+            )
+
+        assert did_migrate is True
+        assert result.preferences_migrated is True
+        assert mock_update.call_args.kwargs["sidebar_sort_order"] == "recent"
+        assert mock_update.call_args.kwargs["preferences_migrated"] is True

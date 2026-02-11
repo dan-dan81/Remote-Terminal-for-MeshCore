@@ -462,9 +462,10 @@ export function MessageList({
                       )}
                     </>
                   )}
-                  {msg.outgoing && (msg.acked > 0
-                    ? msg.paths && msg.paths.length > 0
-                      ? <span
+                  {msg.outgoing &&
+                    (msg.acked > 0 ? (
+                      msg.paths && msg.paths.length > 0 ? (
+                        <span
                           className="cursor-pointer hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -480,8 +481,12 @@ export function MessageList({
                           }}
                           title="View echo paths"
                         >{` ✓${msg.acked > 1 ? msg.acked : ''}`}</span>
-                      : ` ✓${msg.acked > 1 ? msg.acked : ''}`
-                    : ' ?')}
+                      ) : (
+                        ` ✓${msg.acked > 1 ? msg.acked : ''}`
+                      )
+                    ) : (
+                      ' ?'
+                    ))}
                 </div>
               </div>
             </div>
