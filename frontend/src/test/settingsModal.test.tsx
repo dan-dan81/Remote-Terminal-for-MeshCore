@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SettingsModal } from '../components/SettingsModal';
-import type { AppSettings, HealthStatus, RadioConfig } from '../types';
+import type { AppSettings, AppSettingsUpdate, HealthStatus, RadioConfig } from '../types';
 
 const baseConfig: RadioConfig = {
   public_key: 'aa'.repeat(32),
@@ -29,6 +29,7 @@ const baseHealth: HealthStatus = {
 
 const baseSettings: AppSettings = {
   max_radio_contacts: 200,
+  experimental_channel_double_send: false,
   favorites: [],
   auto_decrypt_dm_on_advert: false,
   sidebar_sort_order: 'recent',
@@ -40,7 +41,7 @@ const baseSettings: AppSettings = {
 
 function renderModal(overrides?: {
   appSettings?: AppSettings;
-  onSaveAppSettings?: (update: { max_radio_contacts?: number }) => Promise<void>;
+  onSaveAppSettings?: (update: AppSettingsUpdate) => Promise<void>;
   onRefreshAppSettings?: () => Promise<void>;
 }) {
   const onSaveAppSettings = overrides?.onSaveAppSettings ?? vi.fn(async () => {});
@@ -118,6 +119,24 @@ describe('SettingsModal', () => {
 
     await waitFor(() => {
       expect(onSaveAppSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  it('saves experimental channel double-send toggle through onSaveAppSettings', async () => {
+    const { onSaveAppSettings } = renderModal({
+      appSettings: { ...baseSettings, experimental_channel_double_send: false },
+    });
+
+    openConnectivityTab();
+
+    const toggle = screen.getByLabelText('Always send channel messages twice');
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    await waitFor(() => {
+      expect(onSaveAppSettings).toHaveBeenCalledWith({
+        experimental_channel_double_send: true,
+      });
     });
   });
 });

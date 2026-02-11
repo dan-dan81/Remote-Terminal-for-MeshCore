@@ -263,6 +263,13 @@ class AppSettings(BaseModel):
             "(favorite contacts first, then recent non-repeaters)"
         ),
     )
+    experimental_channel_double_send: bool = Field(
+        default=False,
+        description=(
+            "Experimental: when enabled, channel messages are sent twice with a 3-second delay, "
+            "reusing the same timestamp bytes"
+        ),
+    )
     favorites: list[Favorite] = Field(
         default_factory=list, description="List of favorited conversations"
     )

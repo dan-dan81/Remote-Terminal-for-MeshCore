@@ -133,6 +133,7 @@ export interface BotConfig {
 
 export interface AppSettings {
   max_radio_contacts: number;
+  experimental_channel_double_send: boolean;
   favorites: { type: string; id: string }[];
   auto_decrypt_dm_on_advert: boolean;
   sidebar_sort_order: string;

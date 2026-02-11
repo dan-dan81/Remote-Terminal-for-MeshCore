@@ -100,8 +100,8 @@ class TestMigration001:
             # Run migrations
             applied = await run_migrations(conn)
 
-            assert applied == 15  # All 15 migrations run
-            assert await get_version(conn) == 15
+            assert applied == 16  # All 16 migrations run
+            assert await get_version(conn) == 16
 
             # Verify columns exist by inserting and selecting
             await conn.execute(
@@ -183,9 +183,9 @@ class TestMigration001:
             applied1 = await run_migrations(conn)
             applied2 = await run_migrations(conn)
 
-            assert applied1 == 15  # All 15 migrations run
+            assert applied1 == 16  # All 16 migrations run
             assert applied2 == 0  # No migrations on second run
-            assert await get_version(conn) == 15
+            assert await get_version(conn) == 16
         finally:
             await conn.close()
 
@@ -245,9 +245,9 @@ class TestMigration001:
             # Run migrations - should not fail
             applied = await run_migrations(conn)
 
-            # All 15 migrations applied (version incremented) but no error
-            assert applied == 15
-            assert await get_version(conn) == 15
+            # All 16 migrations applied (version incremented) but no error
+            assert applied == 16
+            assert await get_version(conn) == 16
         finally:
             await conn.close()
 
@@ -374,10 +374,10 @@ class TestMigration013:
             )
             await conn.commit()
 
-            # Run migration 13 (plus 14+15 which also run)
+            # Run migration 13 (plus 14+15+16 which also run)
             applied = await run_migrations(conn)
-            assert applied == 3
-            assert await get_version(conn) == 15
+            assert applied == 4
+            assert await get_version(conn) == 16
 
             # Verify bots array was created with migrated data
             cursor = await conn.execute("SELECT bots FROM app_settings WHERE id = 1")

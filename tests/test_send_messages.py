@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from meshcore import EventType
 
-from app.models import Channel, Contact, SendChannelMessageRequest, SendDirectMessageRequest
+from app.models import (
+    AppSettings,
+    Channel,
+    Contact,
+    SendChannelMessageRequest,
+    SendDirectMessageRequest,
+)
 from app.routers.messages import send_channel_message, send_direct_message
 
 
@@ -133,7 +139,12 @@ class TestOutgoingChannelBotTrigger:
                 "app.repository.ChannelRepository.get_by_key",
                 new=AsyncMock(return_value=db_channel),
             ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
             patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=1)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
             patch("app.decoder.calculate_channel_hash", return_value="abcd"),
             patch("app.bot.run_bot_for_message", new=AsyncMock()) as mock_bot,
         ):
@@ -165,7 +176,12 @@ class TestOutgoingChannelBotTrigger:
                 "app.repository.ChannelRepository.get_by_key",
                 new=AsyncMock(return_value=db_channel),
             ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
             patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=1)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
             patch("app.decoder.calculate_channel_hash", return_value="abcd"),
             patch("app.bot.run_bot_for_message", new=AsyncMock()) as mock_bot,
         ):
@@ -193,10 +209,99 @@ class TestOutgoingChannelBotTrigger:
                 "app.repository.ChannelRepository.get_by_key",
                 new=AsyncMock(return_value=db_channel),
             ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
             patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=1)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
             patch("app.decoder.calculate_channel_hash", return_value="abcd"),
             patch("app.bot.run_bot_for_message", new=slow_bot),
         ):
             request = SendChannelMessageRequest(channel_key=db_channel.key, text="test")
             message = await send_channel_message(request)
             assert message.outgoing is True
+
+    @pytest.mark.asyncio
+    async def test_send_channel_msg_double_send_when_experimental_enabled(self):
+        """Experimental setting triggers an immediate byte-perfect duplicate send."""
+        mc = _make_mc(name="MyNode")
+        db_channel = Channel(key="dd" * 16, name="#double")
+        settings = AppSettings(experimental_channel_double_send=True)
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch(
+                "app.repository.ChannelRepository.get_by_key",
+                new=AsyncMock(return_value=db_channel),
+            ),
+            patch("app.repository.AppSettingsRepository.get", new=AsyncMock(return_value=settings)),
+            patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=1)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
+            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
+            patch("app.bot.run_bot_for_message", new=AsyncMock()),
+            patch("app.routers.messages.asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
+            request = SendChannelMessageRequest(channel_key=db_channel.key, text="same bytes")
+            await send_channel_message(request)
+
+        assert mc.commands.send_chan_msg.await_count == 2
+        mock_sleep.assert_awaited_once_with(3)
+        first_call = mc.commands.send_chan_msg.await_args_list[0].kwargs
+        second_call = mc.commands.send_chan_msg.await_args_list[1].kwargs
+        assert first_call["chan"] == second_call["chan"]
+        assert first_call["msg"] == second_call["msg"]
+        assert first_call["timestamp"] == second_call["timestamp"]
+
+    @pytest.mark.asyncio
+    async def test_send_channel_msg_single_send_when_experimental_disabled(self):
+        """Default setting keeps channel sends to a single radio command."""
+        mc = _make_mc(name="MyNode")
+        db_channel = Channel(key="ee" * 16, name="#single")
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch(
+                "app.repository.ChannelRepository.get_by_key",
+                new=AsyncMock(return_value=db_channel),
+            ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
+            patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=1)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
+            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
+            patch("app.bot.run_bot_for_message", new=AsyncMock()),
+        ):
+            request = SendChannelMessageRequest(channel_key=db_channel.key, text="single send")
+            await send_channel_message(request)
+
+        assert mc.commands.send_chan_msg.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_send_channel_msg_response_includes_current_ack_count(self):
+        """Send response reflects latest DB ack count at response time."""
+        mc = _make_mc(name="MyNode")
+        db_channel = Channel(key="ff" * 16, name="#acked")
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch(
+                "app.repository.ChannelRepository.get_by_key",
+                new=AsyncMock(return_value=db_channel),
+            ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=AppSettings()),
+            ),
+            patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=123)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=2)),
+            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
+            patch("app.bot.run_bot_for_message", new=AsyncMock()),
+        ):
+            request = SendChannelMessageRequest(channel_key=db_channel.key, text="acked now")
+            message = await send_channel_message(request)
+
+        assert message.id == 123
+        assert message.acked == 2

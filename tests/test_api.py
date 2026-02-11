@@ -169,7 +169,7 @@ class TestMessagesEndpoint:
     @pytest.mark.asyncio
     async def test_send_channel_message_duplicate_returns_500(self):
         """If MessageRepository.create returns None (duplicate), returns 500."""
-        from app.models import SendChannelMessageRequest
+        from app.models import AppSettings, SendChannelMessageRequest
         from app.routers.messages import send_channel_message
 
         mock_mc = MagicMock()
@@ -187,6 +187,7 @@ class TestMessagesEndpoint:
         with (
             patch("app.dependencies.radio_manager") as mock_rm,
             patch("app.repository.ChannelRepository") as mock_chan_repo,
+            patch("app.repository.AppSettingsRepository.get", new=AsyncMock(return_value=AppSettings())),
             patch("app.routers.messages.MessageRepository") as mock_msg_repo,
         ):
             mock_rm.is_connected = True

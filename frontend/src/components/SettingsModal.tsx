@@ -92,6 +92,7 @@ export function SettingsModal({
   const [cr, setCr] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [maxRadioContacts, setMaxRadioContacts] = useState('');
+  const [experimentalChannelDoubleSend, setExperimentalChannelDoubleSend] = useState(false);
 
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -161,6 +162,7 @@ export function SettingsModal({
   useEffect(() => {
     if (appSettings) {
       setMaxRadioContacts(String(appSettings.max_radio_contacts));
+      setExperimentalChannelDoubleSend(appSettings.experimental_channel_double_send);
       setAutoDecryptOnAdvert(appSettings.auto_decrypt_dm_on_advert);
       setAdvertInterval(String(appSettings.advert_interval));
       setBots(appSettings.bots || []);
@@ -290,9 +292,16 @@ export function SettingsModal({
     setLoading(true);
 
     try {
+      const update: AppSettingsUpdate = {};
       const newMaxRadioContacts = parseInt(maxRadioContacts, 10);
       if (!isNaN(newMaxRadioContacts) && newMaxRadioContacts !== appSettings?.max_radio_contacts) {
-        await onSaveAppSettings({ max_radio_contacts: newMaxRadioContacts });
+        update.max_radio_contacts = newMaxRadioContacts;
+      }
+      if (experimentalChannelDoubleSend !== appSettings?.experimental_channel_double_send) {
+        update.experimental_channel_double_send = experimentalChannelDoubleSend;
+      }
+      if (Object.keys(update).length > 0) {
+        await onSaveAppSettings(update);
       }
       toast.success('Connectivity settings saved');
     } catch (err) {
@@ -753,6 +762,27 @@ export function SettingsModal({
                 <p className="text-xs text-muted-foreground">
                   Favorite contacts load first, then recent non-repeater contacts until this limit
                   is reached (1-1000)
+                </p>
+              </div>
+
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md space-y-3">
+                <p className="text-sm text-yellow-500">
+                  <strong>Experimental:</strong> Adds a duplicate channel send after a 3-second
+                  delay, using the exact same timestamp bytes.
+                </p>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={experimentalChannelDoubleSend}
+                    onChange={(e) => setExperimentalChannelDoubleSend(e.target.checked)}
+                    className="w-4 h-4 rounded border-input accent-primary"
+                  />
+                  <span className="text-sm">Always send channel messages twice</span>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  This increases channel airtime and adds a 3-second second-attempt delay. Most
+                  clients deduplicate repeats by payload and timestamp, but behavior can vary by
+                  firmware/client.
                 </p>
               </div>
 

@@ -36,7 +36,7 @@ app/
     ├── messages.py   # Message list and send (direct/channel)
     ├── packets.py    # Raw packet endpoints, historical decryption
     ├── read_state.py # Read state: unread counts, mark-all-read
-    ├── settings.py   # App settings (max_radio_contacts)
+    ├── settings.py   # App settings (max_radio_contacts, experimental_channel_double_send, etc.)
     └── ws.py         # WebSocket endpoint at /api/ws
 ```
 
@@ -65,6 +65,7 @@ await RawPacketRepository.mark_decrypted(packet_id, message_id)
 # App settings (single-row pattern)
 settings = await AppSettingsRepository.get()
 await AppSettingsRepository.update(auto_decrypt_dm_on_advert=True)
+await AppSettingsRepository.update(experimental_channel_double_send=True)
 await AppSettingsRepository.add_favorite("contact", public_key)
 ```
 
@@ -252,6 +253,7 @@ raw_packets (
 app_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),  -- Single-row pattern
     max_radio_contacts INTEGER DEFAULT 200,
+    experimental_channel_double_send INTEGER DEFAULT 0,  -- Experimental delayed byte-perfect channel resend
     favorites TEXT DEFAULT '[]',            -- JSON array of {type, id}
     auto_decrypt_dm_on_advert INTEGER DEFAULT 0,
     sidebar_sort_order TEXT DEFAULT 'recent',  -- 'recent' or 'alpha'
@@ -527,7 +529,7 @@ All endpoints are prefixed with `/api`.
 ### Messages
 - `GET /api/messages?type=&conversation_key=&limit=&offset=` - List with filters
 - `POST /api/messages/direct` - Send direct message
-- `POST /api/messages/channel` - Send channel message
+- `POST /api/messages/channel` - Send channel message (stores outgoing immediately; response includes current ack count)
 
 ### Packets
 - `GET /api/packets/undecrypted/count` - Count of undecrypted packets
@@ -535,7 +537,7 @@ All endpoints are prefixed with `/api`.
 
 ### Settings
 - `GET /api/settings` - Get all app settings
-- `PATCH /api/settings` - Update settings (max_radio_contacts, auto_decrypt_dm_on_advert, sidebar_sort_order)
+- `PATCH /api/settings` - Update settings (max_radio_contacts, experimental_channel_double_send, auto_decrypt_dm_on_advert, sidebar_sort_order)
 - `POST /api/settings/favorites` - Add a favorite
 - `DELETE /api/settings/favorites` - Remove a favorite
 - `POST /api/settings/favorites/toggle` - Toggle favorite status

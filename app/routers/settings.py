@@ -41,6 +41,13 @@ class AppSettingsUpdate(BaseModel):
             "Maximum contacts to keep on radio (favorites first, then recent non-repeaters)"
         ),
     )
+    experimental_channel_double_send: bool | None = Field(
+        default=None,
+        description=(
+            "Experimental: always send channel messages twice with a 3-second delay using "
+            "identical timestamp bytes"
+        ),
+    )
     auto_decrypt_dm_on_advert: bool | None = Field(
         default=None,
         description="Whether to attempt historical DM decryption on new contact advertisement",
@@ -101,6 +108,13 @@ async def update_settings(update: AppSettingsUpdate) -> AppSettings:
     if update.max_radio_contacts is not None:
         logger.info("Updating max_radio_contacts to %d", update.max_radio_contacts)
         kwargs["max_radio_contacts"] = update.max_radio_contacts
+
+    if update.experimental_channel_double_send is not None:
+        logger.info(
+            "Updating experimental_channel_double_send to %s",
+            update.experimental_channel_double_send,
+        )
+        kwargs["experimental_channel_double_send"] = update.experimental_channel_double_send
 
     if update.auto_decrypt_dm_on_advert is not None:
         logger.info("Updating auto_decrypt_dm_on_advert to %s", update.auto_decrypt_dm_on_advert)

@@ -144,6 +144,7 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
 
 # Temporary radio slot used for sending channel messages
 TEMP_RADIO_SLOT = 0
+EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS = 3
 
 
 @router.post("/channel", response_model=Message)
@@ -153,13 +154,14 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
 
     # Get channel info from our database
     from app.decoder import calculate_channel_hash
-    from app.repository import ChannelRepository
+    from app.repository import AppSettingsRepository, ChannelRepository
 
     db_channel = await ChannelRepository.get_by_key(request.channel_key)
     if not db_channel:
         raise HTTPException(
             status_code=404, detail=f"Channel {request.channel_key} not found in database"
         )
+    app_settings = await AppSettingsRepository.get()
 
     # Convert channel key hex to bytes
     try:
@@ -177,6 +179,11 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         TEMP_RADIO_SLOT,
         expected_hash,
     )
+    channel_key_upper = request.channel_key.upper()
+    radio_name = mc.self_info.get("name", "") if mc.self_info else ""
+    text_with_sender = f"{radio_name}: {request.text}" if radio_name else request.text
+    message_id: int | None = None
+    now: int | None = None
 
     async with radio_manager.radio_operation("send_channel_message"):
         # Load the channel to a temporary radio slot before sending
@@ -202,35 +209,53 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         # and the database. This ensures the echo's timestamp matches our stored message
         # for proper deduplication.
         now = int(time.time())
+        timestamp_bytes = now.to_bytes(4, "little")
 
         result = await mc.commands.send_chan_msg(
             chan=TEMP_RADIO_SLOT,
             msg=request.text,
-            timestamp=now.to_bytes(4, "little"),  # Pass as bytes for compatibility
+            timestamp=timestamp_bytes,
         )
 
-    if result.type == EventType.ERROR:
-        raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
+        if result.type == EventType.ERROR:
+            raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
 
-    # Store outgoing message with sender prefix (to match echo format)
-    # The radio includes "SenderName: " prefix when broadcasting, so we store it the same way
-    # to enable proper deduplication when the echo comes back
-    channel_key_upper = request.channel_key.upper()
-    radio_name = mc.self_info.get("name", "") if mc.self_info else ""
-    text_with_sender = f"{radio_name}: {request.text}" if radio_name else request.text
-    message_id = await MessageRepository.create(
-        msg_type="CHAN",
-        text=text_with_sender,
-        conversation_key=channel_key_upper,
-        sender_timestamp=now,
-        received_at=now,
-        outgoing=True,
-    )
-    if message_id is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to store outgoing message - unexpected duplicate",
+        # Store outgoing immediately after the first successful send to avoid a race where
+        # our own echo lands before persistence (especially with delayed duplicate sends).
+        message_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text=text_with_sender,
+            conversation_key=channel_key_upper,
+            sender_timestamp=now,
+            received_at=now,
+            outgoing=True,
         )
+        if message_id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to store outgoing message - unexpected duplicate",
+            )
+
+        if app_settings.experimental_channel_double_send:
+            logger.debug(
+                "Experimental channel double-send enabled; waiting %ds before byte-perfect duplicate",
+                EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS,
+            )
+            await asyncio.sleep(EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS)
+            duplicate_result = await mc.commands.send_chan_msg(
+                chan=TEMP_RADIO_SLOT,
+                msg=request.text,
+                timestamp=timestamp_bytes,
+            )
+            if duplicate_result.type == EventType.ERROR:
+                logger.warning(
+                    "Experimental duplicate channel send failed: %s", duplicate_result.payload
+                )
+
+    if message_id is None or now is None:
+        raise HTTPException(status_code=500, detail="Failed to store outgoing message")
+
+    acked_count = await MessageRepository.get_ack_count(message_id)
 
     message = Message(
         id=message_id,
@@ -240,7 +265,7 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         sender_timestamp=now,
         received_at=now,
         outgoing=True,
-        acked=0,
+        acked=acked_count,
     )
 
     # Trigger bots for outgoing channel messages (runs in background, doesn't block response)

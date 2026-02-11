@@ -51,7 +51,7 @@ frontend/
 │   │   ├── MapView.tsx       # Leaflet map showing node locations
 │   │   ├── CrackerPanel.tsx  # WebGPU channel key cracker (lazy-loads wordlist)
 │   │   ├── NewMessageModal.tsx
-│   │   └── SettingsModal.tsx # Unified settings: radio config, identity, serial, database, advertise
+│   │   └── SettingsModal.tsx # Unified settings: radio config, identity, connectivity, database, advertise
 │   └── test/
 │       ├── setup.ts          # Test setup (jsdom, matchers)
 │       ├── messageParser.test.ts
@@ -97,6 +97,7 @@ App settings are stored server-side and include:
 - `favorites` - List of favorited conversations (channels/contacts)
 - `sidebar_sort_order` - 'recent' or 'alpha'
 - `auto_decrypt_dm_on_advert` - Auto-decrypt historical DMs on new contact
+- `experimental_channel_double_send` - Experimental setting to send a byte-perfect channel resend after 3 seconds
 - `last_message_times` - Map of conversation keys to last message timestamps
 
 **Migration**: On first load, localStorage preferences are migrated to the server.
@@ -264,6 +265,7 @@ interface Favorite {
 
 interface AppSettings {
   max_radio_contacts: number;
+  experimental_channel_double_send: boolean;
   favorites: Favorite[];
   auto_decrypt_dm_on_advert: boolean;
   sidebar_sort_order: 'recent' | 'alpha';

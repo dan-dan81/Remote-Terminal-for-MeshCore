@@ -428,6 +428,7 @@ class TestAppSettingsRepository:
         mock_cursor.fetchone = AsyncMock(
             return_value={
                 "max_radio_contacts": 250,
+                "experimental_channel_double_send": 1,
                 "favorites": "{not-json",
                 "auto_decrypt_dm_on_advert": 1,
                 "sidebar_sort_order": "invalid",
@@ -448,6 +449,7 @@ class TestAppSettingsRepository:
             settings = await AppSettingsRepository.get()
 
         assert settings.max_radio_contacts == 250
+        assert settings.experimental_channel_double_send is True
         assert settings.favorites == []
         assert settings.last_message_times == {}
         assert settings.sidebar_sort_order == "recent"

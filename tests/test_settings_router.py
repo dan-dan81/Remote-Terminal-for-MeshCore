@@ -21,9 +21,11 @@ def _settings(
     favorites: list[Favorite] | None = None,
     migrated: bool = False,
     max_radio_contacts: int = 200,
+    experimental_channel_double_send: bool = False,
 ) -> AppSettings:
     return AppSettings(
         max_radio_contacts=max_radio_contacts,
+        experimental_channel_double_send=experimental_channel_double_send,
         favorites=favorites or [],
         auto_decrypt_dm_on_advert=False,
         sidebar_sort_order="recent",
@@ -45,7 +47,11 @@ class TestUpdateSettings:
             return_value=updated,
         ) as mock_update:
             result = await update_settings(
-                AppSettingsUpdate(max_radio_contacts=321, advert_interval=3600)
+                AppSettingsUpdate(
+                    max_radio_contacts=321,
+                    advert_interval=3600,
+                    experimental_channel_double_send=True,
+                )
             )
 
         assert result.max_radio_contacts == 321
@@ -53,6 +59,7 @@ class TestUpdateSettings:
         assert mock_update.call_args.kwargs == {
             "max_radio_contacts": 321,
             "advert_interval": 3600,
+            "experimental_channel_double_send": True,
         }
 
     @pytest.mark.asyncio

@@ -142,6 +142,13 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 15)
         applied += 1
 
+    # Migration 16: Add experimental_channel_double_send setting
+    if version < 16:
+        logger.info("Applying migration 16: add experimental_channel_double_send column")
+        await _migrate_016_add_experimental_channel_double_send(conn)
+        await set_version(conn, 16)
+        applied += 1
+
     if applied > 0:
         logger.info(
             "Applied %d migration(s), schema now at version %d", applied, await get_version(conn)
@@ -991,5 +998,26 @@ async def _migrate_015_fix_null_sender_timestamp(conn: aiosqlite.Connection) -> 
             "Could not create null-safe dedup index due to existing duplicates - "
             "the application-level dedup will handle these"
         )
+
+    await conn.commit()
+
+
+async def _migrate_016_add_experimental_channel_double_send(conn: aiosqlite.Connection) -> None:
+    """
+    Add experimental_channel_double_send column to app_settings table.
+
+    When enabled, channel sends perform an immediate byte-perfect duplicate send
+    using the same timestamp bytes.
+    """
+    try:
+        await conn.execute(
+            "ALTER TABLE app_settings ADD COLUMN experimental_channel_double_send INTEGER DEFAULT 0"
+        )
+        logger.debug("Added experimental_channel_double_send column to app_settings")
+    except aiosqlite.OperationalError as e:
+        if "duplicate column" in str(e).lower():
+            logger.debug("experimental_channel_double_send column already exists, skipping")
+        else:
+            raise
 
     await conn.commit()

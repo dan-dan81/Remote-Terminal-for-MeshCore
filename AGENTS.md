@@ -356,6 +356,8 @@ mc.subscribe(EventType.ACK, handler)
 | `MESHCORE_BLE_PIN` | *(required with BLE)* | BLE PIN code |
 | `MESHCORE_DATABASE_PATH` | `data/meshcore.db` | SQLite database location |
 
-**Note:** `max_radio_contacts` is a runtime setting stored in the database (`app_settings` table), not an environment variable. It is configured via `PATCH /api/settings`.
+**Note:** `max_radio_contacts` and `experimental_channel_double_send` are runtime settings stored in the database (`app_settings` table), not environment variables. They are configured via `PATCH /api/settings`.
+
+`experimental_channel_double_send` is an opt-in experimental setting: when enabled, channel sends perform a second byte-perfect resend after a 3-second delay.
 
 **Transport mutual exclusivity:** Only one of `MESHCORE_SERIAL_PORT`, `MESHCORE_TCP_HOST`, or `MESHCORE_BLE_ADDRESS` may be set. If none are set, serial auto-detection is used.
