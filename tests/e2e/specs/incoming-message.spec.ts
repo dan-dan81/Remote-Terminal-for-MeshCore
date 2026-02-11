@@ -158,8 +158,8 @@ test.describe('Incoming mesh messages', () => {
     await expect(modal).toBeVisible();
 
     // Verify the modal has the basic structural elements every path modal should have
-    await expect(modal.getByText('Sender')).toBeVisible();
-    await expect(modal.getByText('Receiver (me)')).toBeVisible();
+    await expect(modal.getByText('Sender:').first()).toBeVisible();
+    await expect(modal.getByText('Receiver (me):').first()).toBeVisible();
 
     // Title should be either "Message Path" (single) or "Message Paths (N)" (multiple)
     const titleEl = modal.locator('h2, [class*="DialogTitle"]').first();

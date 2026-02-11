@@ -81,6 +81,47 @@ export function deleteChannel(key: string): Promise<void> {
   return fetchJson(`/channels/${key}`, { method: 'DELETE' });
 }
 
+// --- Contacts ---
+
+export interface Contact {
+  public_key: string;
+  name: string | null;
+  type: number;
+  flags: number;
+  last_path: string | null;
+  last_path_len: number;
+  last_advert: number | null;
+  lat: number | null;
+  lon: number | null;
+  last_seen: number | null;
+  on_radio: boolean;
+  last_contacted: number | null;
+  last_read_at: number | null;
+}
+
+export function getContacts(limit: number = 100, offset: number = 0): Promise<Contact[]> {
+  return fetchJson(`/contacts?limit=${limit}&offset=${offset}`);
+}
+
+export function createContact(
+  publicKey: string,
+  name?: string,
+  tryHistorical: boolean = false
+): Promise<Contact> {
+  return fetchJson('/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      public_key: publicKey,
+      ...(name ? { name } : {}),
+      try_historical: tryHistorical,
+    }),
+  });
+}
+
+export function deleteContact(publicKey: string): Promise<{ status: string }> {
+  return fetchJson(`/contacts/${publicKey}`, { method: 'DELETE' });
+}
+
 // --- Messages ---
 
 export interface MessagePath {

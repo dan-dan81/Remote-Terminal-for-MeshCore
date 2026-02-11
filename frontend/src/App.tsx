@@ -59,11 +59,13 @@ import type {
 } from './types';
 
 const MAX_RAW_PACKETS = 500;
+const PUBLIC_CHANNEL_KEY = '8B3387E9C5CDEA6AC9E5EDBAA115CD72';
 
 export function App() {
   const messageInputRef = useRef<MessageInputHandle>(null);
   const activeConversationRef = useRef<Conversation | null>(null);
   const rebootPollTokenRef = useRef(0);
+  const pendingDeleteFallbackRef = useRef(false);
   // Track seen message content to prevent duplicate unread increments
   // Uses content-based key (type-conversation_key-text-sender_timestamp) for deduplication
   const seenMessageContentRef = useRef<Set<string>>(new Set());
@@ -497,6 +499,29 @@ export function App() {
     }
   }, [activeConversation]);
 
+  // If a delete action left us without an active conversation, recover to Public
+  // once channels are available. This is scoped to delete flows only so it doesn't
+  // interfere with hash-based startup resolution.
+  useEffect(() => {
+    if (!pendingDeleteFallbackRef.current) return;
+    if (activeConversation) {
+      pendingDeleteFallbackRef.current = false;
+      return;
+    }
+
+    const publicChannel =
+      channels.find((c) => c.key === PUBLIC_CHANNEL_KEY) || channels.find((c) => c.name === 'Public');
+    if (!publicChannel) return;
+
+    hasSetDefaultConversation.current = true;
+    pendingDeleteFallbackRef.current = false;
+    setActiveConversation({
+      type: 'channel',
+      id: publicChannel.key,
+      name: publicChannel.name,
+    });
+  }, [activeConversation, channels]);
+
   // Send message handler
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -638,10 +663,20 @@ export function App() {
   const handleDeleteChannel = useCallback(async (key: string) => {
     if (!confirm('Delete this channel? Message history will be preserved.')) return;
     try {
+      pendingDeleteFallbackRef.current = true;
       await api.deleteChannel(key);
       messageCache.remove(key);
-      setChannels((prev) => prev.filter((c) => c.key !== key));
-      setActiveConversation(null);
+      const refreshedChannels = await api.getChannels();
+      setChannels(refreshedChannels);
+      const publicChannel =
+        refreshedChannels.find((c) => c.key === PUBLIC_CHANNEL_KEY) ||
+        refreshedChannels.find((c) => c.name === 'Public');
+      hasSetDefaultConversation.current = true;
+      setActiveConversation({
+        type: 'channel',
+        id: publicChannel?.key || PUBLIC_CHANNEL_KEY,
+        name: publicChannel?.name || 'Public',
+      });
       toast.success('Channel deleted');
     } catch (err) {
       console.error('Failed to delete channel:', err);
@@ -655,10 +690,21 @@ export function App() {
   const handleDeleteContact = useCallback(async (publicKey: string) => {
     if (!confirm('Delete this contact? Message history will be preserved.')) return;
     try {
+      pendingDeleteFallbackRef.current = true;
       await api.deleteContact(publicKey);
       messageCache.remove(publicKey);
       setContacts((prev) => prev.filter((c) => c.public_key !== publicKey));
-      setActiveConversation(null);
+      const refreshedChannels = await api.getChannels();
+      setChannels(refreshedChannels);
+      const publicChannel =
+        refreshedChannels.find((c) => c.key === PUBLIC_CHANNEL_KEY) ||
+        refreshedChannels.find((c) => c.name === 'Public');
+      hasSetDefaultConversation.current = true;
+      setActiveConversation({
+        type: 'channel',
+        id: publicChannel?.key || PUBLIC_CHANNEL_KEY,
+        name: publicChannel?.name || 'Public',
+      });
       toast.success('Contact deleted');
     } catch (err) {
       console.error('Failed to delete contact:', err);
