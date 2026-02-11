@@ -515,9 +515,10 @@ CONTACT_SYNC_THROTTLE_SECONDS = 30  # Don't sync more than once per 30 seconds
 
 async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
     """
-    Load recent non-repeater contacts to the radio for DM ACK support.
+    Load contacts to the radio for DM ACK support.
 
-    This ensures the radio can auto-ACK incoming DMs from recent contacts.
+    Favorite contacts are prioritized first, then recent non-repeater contacts
+    fill remaining slots up to max_radio_contacts.
     Only runs at most once every CONTACT_SYNC_THROTTLE_SECONDS unless forced.
 
     Returns counts of contacts loaded.
@@ -538,17 +539,53 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
     _last_contact_sync = now
 
     try:
-        # Get recent non-repeater contacts from database
+        # Build prioritized contact list:
+        # 1) favorite contacts, in favorite order
+        # 2) most recent non-repeater contacts (excluding already-selected favorites)
         app_settings = await AppSettingsRepository.get()
         max_contacts = app_settings.max_radio_contacts
-        contacts = await ContactRepository.get_recent_non_repeaters(limit=max_contacts)
-        logger.debug("Found %d recent non-repeater contacts to sync", len(contacts))
+        selected_contacts: list[Contact] = []
+        selected_keys: set[str] = set()
+
+        favorite_contacts_loaded = 0
+        for favorite in app_settings.favorites:
+            if favorite.type != "contact":
+                continue
+            contact = await ContactRepository.get_by_key_or_prefix(favorite.id)
+            if not contact:
+                continue
+            key = contact.public_key.lower()
+            if key in selected_keys:
+                continue
+            selected_keys.add(key)
+            selected_contacts.append(contact)
+            favorite_contacts_loaded += 1
+            if len(selected_contacts) >= max_contacts:
+                break
+
+        if len(selected_contacts) < max_contacts:
+            recent_contacts = await ContactRepository.get_recent_non_repeaters(limit=max_contacts)
+            for contact in recent_contacts:
+                key = contact.public_key.lower()
+                if key in selected_keys:
+                    continue
+                selected_keys.add(key)
+                selected_contacts.append(contact)
+                if len(selected_contacts) >= max_contacts:
+                    break
+
+        logger.debug(
+            "Selected %d contacts to sync (%d favorite contacts first, limit=%d)",
+            len(selected_contacts),
+            favorite_contacts_loaded,
+            max_contacts,
+        )
 
         loaded = 0
         already_on_radio = 0
         failed = 0
 
-        for contact in contacts:
+        for contact in selected_contacts:
             # Check if already on radio
             radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
             if radio_contact:

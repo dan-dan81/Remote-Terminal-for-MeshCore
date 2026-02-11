@@ -751,7 +751,8 @@ export function SettingsModal({
                   onChange={(e) => setMaxRadioContacts(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Recent non-repeater contacts loaded to radio for DM auto-ACK (1-1000)
+                  Favorite contacts load first, then recent non-repeater contacts until this
+                  limit is reached (1-1000)
                 </p>
               </div>
 

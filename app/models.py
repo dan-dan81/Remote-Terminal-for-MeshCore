@@ -258,7 +258,10 @@ class AppSettings(BaseModel):
 
     max_radio_contacts: int = Field(
         default=200,
-        description="Maximum non-repeater contacts to keep on radio for DM ACKs",
+        description=(
+            "Maximum contacts to keep on radio for DM ACKs "
+            "(favorite contacts first, then recent non-repeaters)"
+        ),
     )
     favorites: list[Favorite] = Field(
         default_factory=list, description="List of favorited conversations"

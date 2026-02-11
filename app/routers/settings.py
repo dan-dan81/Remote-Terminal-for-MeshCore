@@ -37,7 +37,9 @@ class AppSettingsUpdate(BaseModel):
         default=None,
         ge=1,
         le=1000,
-        description="Maximum non-repeater contacts to keep on radio (1-1000)",
+        description=(
+            "Maximum contacts to keep on radio (favorites first, then recent non-repeaters)"
+        ),
     )
     auto_decrypt_dm_on_advert: bool | None = Field(
         default=None,

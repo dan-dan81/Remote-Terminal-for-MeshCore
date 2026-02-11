@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from meshcore import EventType
 
-from app.models import Contact
+from app.models import Contact, Favorite
 from app.radio_sync import (
     is_polling_paused,
     pause_polling,
@@ -206,6 +206,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
@@ -233,6 +234,105 @@ class TestSyncRecentContactsToRadio:
         assert mock_set_on_radio.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_favorites_loaded_before_recent_contacts(self):
+        """Favorite contacts are loaded first, then recents until limit."""
+        favorite_contact = _make_contact(KEY_A, "Alice")
+        recent_contacts = [_make_contact(KEY_B, "Bob"), _make_contact("cc" * 32, "Carol")]
+
+        mock_mc = MagicMock()
+        mock_mc.get_contact_by_key_prefix = MagicMock(return_value=None)
+        mock_result = MagicMock()
+        mock_result.type = EventType.OK
+        mock_mc.commands.add_contact = AsyncMock(return_value=mock_result)
+
+        mock_settings = MagicMock()
+        mock_settings.max_radio_contacts = 2
+        mock_settings.favorites = [Favorite(type="contact", id=KEY_A)]
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.get_by_key_or_prefix",
+                new_callable=AsyncMock,
+                return_value=favorite_contact,
+            ) as mock_get_by_key_or_prefix,
+            patch(
+                "app.radio_sync.ContactRepository.get_recent_non_repeaters",
+                new_callable=AsyncMock,
+                return_value=recent_contacts,
+            ),
+            patch(
+                "app.radio_sync.ContactRepository.set_on_radio",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.radio_sync.AppSettingsRepository.get",
+                new_callable=AsyncMock,
+                return_value=mock_settings,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_recent_contacts_to_radio()
+
+        assert result["loaded"] == 2
+        mock_get_by_key_or_prefix.assert_called_once_with(KEY_A)
+        loaded_keys = [
+            call.args[0]["public_key"] for call in mock_mc.commands.add_contact.call_args_list
+        ]
+        assert loaded_keys == [KEY_A, KEY_B]
+
+    @pytest.mark.asyncio
+    async def test_favorite_contact_not_loaded_twice_if_also_recent(self):
+        """A favorite contact that is also recent is loaded only once."""
+        favorite_contact = _make_contact(KEY_A, "Alice")
+        recent_contacts = [favorite_contact, _make_contact(KEY_B, "Bob")]
+
+        mock_mc = MagicMock()
+        mock_mc.get_contact_by_key_prefix = MagicMock(return_value=None)
+        mock_result = MagicMock()
+        mock_result.type = EventType.OK
+        mock_mc.commands.add_contact = AsyncMock(return_value=mock_result)
+
+        mock_settings = MagicMock()
+        mock_settings.max_radio_contacts = 2
+        mock_settings.favorites = [Favorite(type="contact", id=KEY_A)]
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.get_by_key_or_prefix",
+                new_callable=AsyncMock,
+                return_value=favorite_contact,
+            ),
+            patch(
+                "app.radio_sync.ContactRepository.get_recent_non_repeaters",
+                new_callable=AsyncMock,
+                return_value=recent_contacts,
+            ),
+            patch(
+                "app.radio_sync.ContactRepository.set_on_radio",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.radio_sync.AppSettingsRepository.get",
+                new_callable=AsyncMock,
+                return_value=mock_settings,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_recent_contacts_to_radio()
+
+        assert result["loaded"] == 2
+        loaded_keys = [
+            call.args[0]["public_key"] for call in mock_mc.commands.add_contact.call_args_list
+        ]
+        assert loaded_keys == [KEY_A, KEY_B]
+
+    @pytest.mark.asyncio
     async def test_skips_contacts_already_on_radio(self):
         """Contacts already on radio are counted but not re-added."""
         contacts = [_make_contact(KEY_A, "Alice", on_radio=True)]
@@ -243,6 +343,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
@@ -278,6 +379,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
@@ -311,6 +413,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
@@ -357,6 +460,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
@@ -398,6 +502,7 @@ class TestSyncRecentContactsToRadio:
 
         mock_settings = MagicMock()
         mock_settings.max_radio_contacts = 200
+        mock_settings.favorites = []
 
         with (
             patch("app.radio_sync.radio_manager") as mock_rm,
