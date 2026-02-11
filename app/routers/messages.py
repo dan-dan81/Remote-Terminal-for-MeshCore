@@ -236,6 +236,9 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
                 detail="Failed to store outgoing message - unexpected duplicate",
             )
 
+        # Experimental: byte-perfect resend after a delay to improve delivery reliability.
+        # This intentionally holds the radio operation lock for the full delay — it is an
+        # opt-in experimental feature where blocking other radio operations is acceptable.
         if app_settings.experimental_channel_double_send:
             logger.debug(
                 "Experimental channel double-send enabled; waiting %ds before byte-perfect duplicate",

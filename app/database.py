@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS messages (
     signature TEXT,
     outgoing INTEGER DEFAULT 0,
     acked INTEGER DEFAULT 0,
+    -- Deduplication: identical text + timestamp in the same conversation is treated as a
+    -- mesh echo/repeat. Second-precision timestamps mean two intentional identical messages
+    -- within the same second would collide, but this is not feasible in practice — LoRa
+    -- transmission takes several seconds per message, and the UI clears the input on send.
     UNIQUE(type, conversation_key, text, sender_timestamp)
 );
 
