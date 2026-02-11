@@ -74,7 +74,9 @@ export function resolveChannelFromHashToken(token: string, channels: Channel[]):
   if (byKey) return byKey;
 
   // Backward compatibility for legacy name-based hashes.
-  return channels.find((c) => c.name === normalizedToken || c.name === `#${normalizedToken}`) || null;
+  return (
+    channels.find((c) => c.name === normalizedToken || c.name === `#${normalizedToken}`) || null
+  );
 }
 
 export function resolveContactFromHashToken(token: string, contacts: Contact[]): Contact | null {
@@ -86,7 +88,9 @@ export function resolveContactFromHashToken(token: string, contacts: Contact[]):
   if (byKey) return byKey;
 
   // Backward compatibility for legacy name/prefix-based hashes.
-  return contacts.find((c) => getContactDisplayName(c.name, c.public_key) === normalizedToken) || null;
+  return (
+    contacts.find((c) => getContactDisplayName(c.name, c.public_key) === normalizedToken) || null
+  );
 }
 
 /**

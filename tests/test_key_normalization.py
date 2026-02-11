@@ -3,7 +3,7 @@
 import pytest
 
 from app.database import Database
-from app.repository import ContactRepository, MessageRepository
+from app.repository import AmbiguousPublicKeyPrefixError, ContactRepository, MessageRepository
 
 
 @pytest.fixture
@@ -117,3 +117,43 @@ async def test_duplicate_with_same_text_and_null_timestamp_rejected(test_db):
         received_at=received_at,
     )
     assert msg_id2 is None  # duplicate rejected
+
+
+@pytest.mark.asyncio
+async def test_get_by_key_prefix_returns_none_when_ambiguous(test_db):
+    """Ambiguous prefixes should not resolve to an arbitrary contact."""
+    key1 = "abc1230000000000000000000000000000000000000000000000000000000000"
+    key2 = "abc123ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+    await ContactRepository.upsert({"public_key": key1, "name": "A"})
+    await ContactRepository.upsert({"public_key": key2, "name": "B"})
+
+    contact = await ContactRepository.get_by_key_prefix("abc123")
+    assert contact is None
+
+
+@pytest.mark.asyncio
+async def test_get_by_key_or_prefix_raises_on_ambiguous_prefix(test_db):
+    """Prefix lookup should raise when multiple contacts match."""
+    key1 = "abc1230000000000000000000000000000000000000000000000000000000000"
+    key2 = "abc123ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+    await ContactRepository.upsert({"public_key": key1, "name": "A"})
+    await ContactRepository.upsert({"public_key": key2, "name": "B"})
+
+    with pytest.raises(AmbiguousPublicKeyPrefixError):
+        await ContactRepository.get_by_key_or_prefix("abc123")
+
+
+@pytest.mark.asyncio
+async def test_get_by_key_or_prefix_prefers_exact_full_key(test_db):
+    """Exact key lookup works even when the shorter prefix is ambiguous."""
+    key1 = "abc1230000000000000000000000000000000000000000000000000000000000"
+    key2 = "abc123ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+    await ContactRepository.upsert({"public_key": key1, "name": "A"})
+    await ContactRepository.upsert({"public_key": key2, "name": "B"})
+
+    contact = await ContactRepository.get_by_key_or_prefix(key2.upper())
+    assert contact is not None
+    assert contact.public_key == key2

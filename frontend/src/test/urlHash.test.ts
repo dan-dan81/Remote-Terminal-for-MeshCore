@@ -289,10 +289,7 @@ describe('resolveChannelFromHashToken', () => {
   ];
 
   it('prefers stable key lookup (case-insensitive)', () => {
-    const result = resolveChannelFromHashToken(
-      'abcdef0123456789abcdef0123456789',
-      channels
-    );
+    const result = resolveChannelFromHashToken('abcdef0123456789abcdef0123456789', channels);
     expect(result?.key).toBe('ABCDEF0123456789ABCDEF0123456789');
   });
 

@@ -132,7 +132,9 @@ class SendMessageRequest(BaseModel):
 
 
 class SendDirectMessageRequest(SendMessageRequest):
-    destination: str = Field(description="Public key or prefix of recipient")
+    destination: str = Field(
+        description="Recipient public key (64-char hex preferred; prefix must resolve uniquely)"
+    )
 
 
 class SendChannelMessageRequest(SendMessageRequest):

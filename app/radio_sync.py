@@ -19,6 +19,7 @@ from meshcore import EventType
 from app.models import Contact
 from app.radio import RadioOperationBusyError, radio_manager
 from app.repository import (
+    AmbiguousPublicKeyPrefixError,
     AppSettingsRepository,
     ChannelRepository,
     ContactRepository,
@@ -585,7 +586,14 @@ async def sync_recent_contacts_to_radio(force: bool = False) -> dict:
             for favorite in app_settings.favorites:
                 if favorite.type != "contact":
                     continue
-                contact = await ContactRepository.get_by_key_or_prefix(favorite.id)
+                try:
+                    contact = await ContactRepository.get_by_key_or_prefix(favorite.id)
+                except AmbiguousPublicKeyPrefixError:
+                    logger.warning(
+                        "Skipping favorite contact '%s': ambiguous key prefix; use full key",
+                        favorite.id,
+                    )
+                    continue
                 if not contact:
                     continue
                 key = contact.public_key.lower()

@@ -90,7 +90,7 @@ class TestCreateContact:
 
         with (
             patch(
-                "app.routers.contacts.ContactRepository.get_by_key_or_prefix",
+                "app.routers.contacts.ContactRepository.get_by_key",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -123,7 +123,7 @@ class TestCreateContact:
         from fastapi.testclient import TestClient
 
         with patch(
-            "app.routers.contacts.ContactRepository.get_by_key_or_prefix",
+            "app.routers.contacts.ContactRepository.get_by_key",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -160,7 +160,7 @@ class TestCreateContact:
 
         with (
             patch(
-                "app.routers.contacts.ContactRepository.get_by_key_or_prefix",
+                "app.routers.contacts.ContactRepository.get_by_key",
                 new_callable=AsyncMock,
                 return_value=existing,
             ),
@@ -219,6 +219,30 @@ class TestGetContact:
             response = client.get(f"/api/contacts/{KEY_A}")
 
         assert response.status_code == 404
+
+    def test_get_ambiguous_prefix_returns_409(self):
+        from fastapi.testclient import TestClient
+
+        from app.repository import AmbiguousPublicKeyPrefixError
+
+        with patch(
+            "app.routers.contacts.ContactRepository.get_by_key_or_prefix",
+            new_callable=AsyncMock,
+            side_effect=AmbiguousPublicKeyPrefixError(
+                "abcd12",
+                [
+                    "abcd120000000000000000000000000000000000000000000000000000000000",
+                    "abcd12ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                ],
+            ),
+        ):
+            from app.main import app
+
+            client = TestClient(app)
+            response = client.get("/api/contacts/abcd12")
+
+        assert response.status_code == 409
+        assert "ambiguous" in response.json()["detail"].lower()
 
 
 class TestMarkRead:

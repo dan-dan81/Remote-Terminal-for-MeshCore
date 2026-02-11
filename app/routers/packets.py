@@ -211,7 +211,7 @@ async def decrypt_historical_packets(
         # Try to find contact name for display
         from app.repository import ContactRepository
 
-        contact = await ContactRepository.get_by_key_or_prefix(contact_public_key_hex)
+        contact = await ContactRepository.get_by_key(contact_public_key_hex)
         display_name = contact.name if contact else None
 
         background_tasks.add_task(

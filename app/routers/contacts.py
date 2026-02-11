@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.packet_processor import start_historical_dm_decryption
 from app.radio import radio_manager
-from app.repository import ContactRepository, MessageRepository
+from app.repository import AmbiguousPublicKeyPrefixError, ContactRepository, MessageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,26 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 # Delay between repeater radio operations to allow key exchange and path establishment
 REPEATER_OP_DELAY_SECONDS = 2.0
+
+
+def _ambiguous_contact_detail(err: AmbiguousPublicKeyPrefixError) -> str:
+    sample = ", ".join(key[:12] for key in err.matches[:2])
+    return (
+        f"Ambiguous contact key prefix '{err.prefix}'. "
+        f"Use a full 64-character public key. Matching contacts: {sample}"
+    )
+
+
+async def _resolve_contact_or_404(
+    public_key: str, not_found_detail: str = "Contact not found"
+) -> Contact:
+    try:
+        contact = await ContactRepository.get_by_key_or_prefix(public_key)
+    except AmbiguousPublicKeyPrefixError as err:
+        raise HTTPException(status_code=409, detail=_ambiguous_contact_detail(err)) from err
+    if not contact:
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    return contact
 
 
 async def prepare_repeater_connection(mc, contact: Contact, password: str) -> None:
@@ -89,7 +109,7 @@ async def create_contact(
         raise HTTPException(status_code=400, detail="Invalid public key: must be valid hex") from e
 
     # Check if contact already exists
-    existing = await ContactRepository.get_by_key_or_prefix(request.public_key)
+    existing = await ContactRepository.get_by_key(request.public_key)
     if existing:
         # Update name if provided
         if request.name:
@@ -153,10 +173,7 @@ async def create_contact(
 @router.get("/{public_key}", response_model=Contact)
 async def get_contact(public_key: str) -> Contact:
     """Get a specific contact by public key or prefix."""
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    return contact
+    return await _resolve_contact_or_404(public_key)
 
 
 @router.post("/sync")
@@ -189,9 +206,7 @@ async def remove_contact_from_radio(public_key: str) -> dict:
     """Remove a contact from the radio (keeps it in database)."""
     mc = require_connected()
 
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     # Get the contact from radio
     radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
@@ -216,9 +231,7 @@ async def add_contact_to_radio(public_key: str) -> dict:
     """Add a contact from the database to the radio."""
     mc = require_connected()
 
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found in database")
+    contact = await _resolve_contact_or_404(public_key, "Contact not found in database")
 
     # Check if already on radio
     radio_contact = mc.get_contact_by_key_prefix(contact.public_key[:12])
@@ -239,9 +252,7 @@ async def add_contact_to_radio(public_key: str) -> dict:
 @router.post("/{public_key}/mark-read")
 async def mark_contact_read(public_key: str) -> dict:
     """Mark a contact conversation as read (update last_read_at timestamp)."""
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     updated = await ContactRepository.update_last_read_at(contact.public_key)
     if not updated:
@@ -253,9 +264,7 @@ async def mark_contact_read(public_key: str) -> dict:
 @router.delete("/{public_key}")
 async def delete_contact(public_key: str) -> dict:
     """Delete a contact from the database (and radio if present)."""
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     # Remove from radio if connected and contact is on radio
     if radio_manager.is_connected and radio_manager.meshcore:
@@ -282,9 +291,7 @@ async def request_telemetry(public_key: str, request: TelemetryRequest) -> Telem
     mc = require_connected()
 
     # Get contact from database
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     # Verify it's a repeater
     if contact.type != CONTACT_TYPE_REPEATER:
@@ -459,9 +466,7 @@ async def send_repeater_command(public_key: str, request: CommandRequest) -> Com
     mc = require_connected()
 
     # Get contact from database
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     # Verify it's a repeater
     if contact.type != CONTACT_TYPE_REPEATER:
@@ -540,9 +545,7 @@ async def request_trace(public_key: str) -> TraceResponse:
     """
     mc = require_connected()
 
-    contact = await ContactRepository.get_by_key_or_prefix(public_key)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    contact = await _resolve_contact_or_404(public_key)
 
     tag = random.randint(1, 0xFFFFFFFF)
     # First 2 hex chars of pubkey = 1-byte hash used by the trace protocol

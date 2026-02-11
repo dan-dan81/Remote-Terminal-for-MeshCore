@@ -20,6 +20,15 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 
+class AmbiguousPublicKeyPrefixError(ValueError):
+    """Raised when a public key prefix matches multiple contacts."""
+
+    def __init__(self, prefix: str, matches: list[str]):
+        self.prefix = prefix.lower()
+        self.matches = matches
+        super().__init__(f"Ambiguous public key prefix '{self.prefix}'")
+
+
 class ContactRepository:
     @staticmethod
     async def upsert(contact: dict[str, Any]) -> None:
@@ -89,12 +98,30 @@ class ContactRepository:
 
     @staticmethod
     async def get_by_key_prefix(prefix: str) -> Contact | None:
+        """Get a contact by key prefix only if it resolves uniquely.
+
+        Returns None when no contacts match OR when multiple contacts match
+        the prefix (to avoid silently selecting the wrong contact).
+        """
+        normalized_prefix = prefix.lower()
         cursor = await db.conn.execute(
-            "SELECT * FROM contacts WHERE public_key LIKE ? LIMIT 1",
-            (f"{prefix.lower()}%",),
+            "SELECT * FROM contacts WHERE public_key LIKE ? ORDER BY public_key LIMIT 2",
+            (f"{normalized_prefix}%",),
         )
-        row = await cursor.fetchone()
-        return ContactRepository._row_to_contact(row) if row else None
+        rows = list(await cursor.fetchall())
+        if len(rows) != 1:
+            return None
+        return ContactRepository._row_to_contact(rows[0])
+
+    @staticmethod
+    async def _get_prefix_matches(prefix: str, limit: int = 2) -> list[Contact]:
+        """Get contacts matching a key prefix, up to limit."""
+        cursor = await db.conn.execute(
+            "SELECT * FROM contacts WHERE public_key LIKE ? ORDER BY public_key LIMIT ?",
+            (f"{prefix.lower()}%", limit),
+        )
+        rows = list(await cursor.fetchall())
+        return [ContactRepository._row_to_contact(row) for row in rows]
 
     @staticmethod
     async def get_by_key_or_prefix(key_or_prefix: str) -> Contact | None:
@@ -103,9 +130,18 @@ class ContactRepository:
         Useful when the input might be a full 64-char public key or a shorter prefix.
         """
         contact = await ContactRepository.get_by_key(key_or_prefix)
-        if not contact:
-            contact = await ContactRepository.get_by_key_prefix(key_or_prefix)
-        return contact
+        if contact:
+            return contact
+
+        matches = await ContactRepository._get_prefix_matches(key_or_prefix, limit=2)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise AmbiguousPublicKeyPrefixError(
+                key_or_prefix,
+                [m.public_key for m in matches],
+            )
+        return None
 
     @staticmethod
     async def get_all(limit: int = 100, offset: int = 0) -> list[Contact]:
@@ -416,9 +452,20 @@ class MessageRepository:
             query += " AND type = ?"
             params.append(msg_type)
         if conversation_key:
-            # Support both exact match and prefix match for DMs
-            query += " AND conversation_key LIKE ?"
-            params.append(f"{conversation_key}%")
+            normalized_key = conversation_key
+            # Prefer exact matching for full keys.
+            if len(conversation_key) == 64:
+                normalized_key = conversation_key.lower()
+                query += " AND conversation_key = ?"
+                params.append(normalized_key)
+            elif len(conversation_key) == 32:
+                normalized_key = conversation_key.upper()
+                query += " AND conversation_key = ?"
+                params.append(normalized_key)
+            else:
+                # Prefix match is only for legacy/partial key callers.
+                query += " AND conversation_key LIKE ?"
+                params.append(f"{conversation_key}%")
 
         if before is not None and before_id is not None:
             query += " AND (received_at < ? OR (received_at = ? AND id < ?))"

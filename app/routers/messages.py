@@ -9,7 +9,7 @@ from app.dependencies import require_connected
 from app.event_handlers import track_pending_ack
 from app.models import Message, SendChannelMessageRequest, SendDirectMessageRequest
 from app.radio import radio_manager
-from app.repository import MessageRepository
+from app.repository import AmbiguousPublicKeyPrefixError, MessageRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -47,7 +47,17 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
     # First check our database for the contact
     from app.repository import ContactRepository
 
-    db_contact = await ContactRepository.get_by_key_or_prefix(request.destination)
+    try:
+        db_contact = await ContactRepository.get_by_key_or_prefix(request.destination)
+    except AmbiguousPublicKeyPrefixError as err:
+        sample = ", ".join(key[:12] for key in err.matches[:2])
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Ambiguous destination key prefix '{err.prefix}'. "
+                f"Use a full 64-character public key. Matching contacts: {sample}"
+            ),
+        ) from err
     if not db_contact:
         raise HTTPException(
             status_code=404, detail=f"Contact not found in database: {request.destination}"

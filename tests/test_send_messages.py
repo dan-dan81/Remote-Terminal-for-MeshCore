@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from meshcore import EventType
 
 from app.models import (
@@ -13,6 +14,7 @@ from app.models import (
     SendChannelMessageRequest,
     SendDirectMessageRequest,
 )
+from app.repository import AmbiguousPublicKeyPrefixError
 from app.routers.messages import send_channel_message, send_direct_message
 
 
@@ -122,6 +124,34 @@ class TestOutgoingDMBotTrigger:
 
             call_kwargs = mock_bot.call_args[1]
             assert call_kwargs["sender_name"] is None
+
+    @pytest.mark.asyncio
+    async def test_send_dm_ambiguous_prefix_returns_409(self):
+        """Ambiguous destination prefix should fail instead of selecting a random contact."""
+        mc = _make_mc()
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch(
+                "app.repository.ContactRepository.get_by_key_or_prefix",
+                new=AsyncMock(
+                    side_effect=AmbiguousPublicKeyPrefixError(
+                        "abc123",
+                        [
+                            "abc1230000000000000000000000000000000000000000000000000000000000",
+                            "abc123ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                        ],
+                    )
+                ),
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await send_direct_message(
+                    SendDirectMessageRequest(destination="abc123", text="Hello")
+                )
+
+        assert exc_info.value.status_code == 409
+        assert "ambiguous" in exc_info.value.detail.lower()
 
 
 class TestOutgoingChannelBotTrigger:

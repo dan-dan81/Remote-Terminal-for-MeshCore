@@ -238,7 +238,7 @@ async def create_dm_message_from_decrypted(
     """
     # Check if sender is a repeater - repeaters only send CLI responses, not chat messages.
     # CLI responses are handled by the command endpoint, not stored in chat history.
-    contact = await ContactRepository.get_by_key_or_prefix(their_public_key)
+    contact = await ContactRepository.get_by_key(their_public_key)
     if contact and contact.type == CONTACT_TYPE_REPEATER:
         logger.debug(
             "Skipping message from repeater %s (CLI responses not stored): %s",

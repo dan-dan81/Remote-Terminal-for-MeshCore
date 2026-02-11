@@ -7,7 +7,7 @@ from meshcore import EventType
 
 from app.models import CONTACT_TYPE_REPEATER, Contact
 from app.packet_processor import process_raw_packet
-from app.repository import ContactRepository, MessageRepository
+from app.repository import AmbiguousPublicKeyPrefixError, ContactRepository, MessageRepository
 from app.websocket import broadcast_event
 
 if TYPE_CHECKING:
@@ -74,7 +74,14 @@ async def on_contact_message(event: "Event") -> None:
 
     # Look up contact from database - use prefix lookup only if needed
     # (get_by_key_or_prefix does exact match first, then prefix fallback)
-    contact = await ContactRepository.get_by_key_or_prefix(sender_pubkey)
+    try:
+        contact = await ContactRepository.get_by_key_or_prefix(sender_pubkey)
+    except AmbiguousPublicKeyPrefixError:
+        logger.warning(
+            "DM sender prefix '%s' is ambiguous; storing under prefix until full key is known",
+            sender_pubkey,
+        )
+        contact = None
     if contact:
         sender_pubkey = contact.public_key.lower()
 
