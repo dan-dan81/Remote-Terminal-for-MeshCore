@@ -16,11 +16,18 @@ import { cn } from '@/lib/utils';
 // MeshCore message size limits (empirically determined from LoRa packet constraints)
 // Direct delivery allows ~156 bytes; multi-hop requires buffer for path growth.
 // Channels include "sender: " prefix in the encrypted payload.
-const DM_HARD_LIMIT = 156; // Max for direct delivery
+// All limits are in bytes (UTF-8), not characters, since LoRa packets are byte-constrained.
+const DM_HARD_LIMIT = 156; // Max bytes for direct delivery
 const DM_WARNING_THRESHOLD = 140; // Conservative for multi-hop
-const CHANNEL_HARD_LIMIT = 156; // Base limit before sender overhead
+const CHANNEL_HARD_LIMIT = 156; // Base byte limit before sender overhead
 const CHANNEL_WARNING_THRESHOLD = 120; // Conservative for multi-hop
-const CHANNEL_DANGER_BUFFER = 8; // Red zone starts this many chars before hard limit
+const CHANNEL_DANGER_BUFFER = 8; // Red zone starts this many bytes before hard limit
+
+const textEncoder = new TextEncoder();
+/** Get UTF-8 byte length of a string (LoRa packets are byte-constrained, not character-constrained). */
+function byteLen(s: string): number {
+  return textEncoder.encode(s).length;
+}
 
 interface MessageInputProps {
   onSend: (text: string) => Promise<void>;
@@ -65,9 +72,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         hardLimit: DM_HARD_LIMIT,
       };
     } else if (conversationType === 'channel') {
-      // Channel hard limit = 156 - senderName.length - 2 (for ": " separator)
-      const nameLen = senderName?.length ?? 10;
-      const hardLimit = Math.max(1, CHANNEL_HARD_LIMIT - nameLen - 2);
+      // Channel hard limit = 156 bytes - senderName bytes - 2 (for ": " separator)
+      const nameByteLen = senderName ? byteLen(senderName) : 10;
+      const hardLimit = Math.max(1, CHANNEL_HARD_LIMIT - nameByteLen - 2);
       return {
         warningAt: CHANNEL_WARNING_THRESHOLD,
         dangerAt: Math.max(1, hardLimit - CHANNEL_DANGER_BUFFER),
@@ -77,6 +84,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     return null; // Raw/other - no limits
   }, [conversationType, senderName]);
 
+  // UTF-8 byte length of the current text (LoRa packets are byte-constrained)
+  const textByteLen = useMemo(() => byteLen(text), [text]);
+
   // Determine current limit state
   const { limitState, warningMessage } = useMemo((): {
     limitState: LimitState;
@@ -84,20 +94,19 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   } => {
     if (!limits) return { limitState: 'normal', warningMessage: null };
 
-    const len = text.length;
-    if (len >= limits.hardLimit) {
+    if (textByteLen >= limits.hardLimit) {
       return { limitState: 'error', warningMessage: 'likely truncated by radio' };
     }
-    if (len >= limits.dangerAt) {
+    if (textByteLen >= limits.dangerAt) {
       return { limitState: 'danger', warningMessage: 'may impact multi-repeater hop delivery' };
     }
-    if (len >= limits.warningAt) {
+    if (textByteLen >= limits.warningAt) {
       return { limitState: 'warning', warningMessage: 'may impact multi-repeater hop delivery' };
     }
     return { limitState: 'normal', warningMessage: null };
-  }, [text.length, limits]);
+  }, [textByteLen, limits]);
 
-  const remaining = limits ? limits.hardLimit - text.length : 0;
+  const remaining = limits ? limits.hardLimit - textByteLen : 0;
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -205,7 +214,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                   : 'text-muted-foreground'
             )}
           >
-            {text.length}/{limits!.hardLimit}
+            {textByteLen}/{limits!.hardLimit}b
             {remaining < 0 && ` (${remaining})`}
           </span>
           {warningMessage && (
