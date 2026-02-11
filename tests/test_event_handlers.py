@@ -184,6 +184,38 @@ class TestContactMessageCLIFiltering:
             mock_contact_repo.update_last_contacted.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_normal_message_schedules_bot_in_background(self):
+        """Normal messages should schedule bot execution without blocking."""
+        from app.event_handlers import on_contact_message
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event"),
+            patch("app.event_handlers.asyncio.create_task", side_effect=_capture_task) as mock_task,
+            patch("app.bot.run_bot_for_message", new_callable=AsyncMock) as mock_bot,
+        ):
+            mock_repo.create = AsyncMock(return_value=42)
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(return_value=None)
+
+            class MockEvent:
+                payload = {
+                    "pubkey_prefix": "abc123def456",
+                    "text": "Hello, bot",
+                    "txt_type": 0,
+                    "sender_timestamp": 1700000000,
+                }
+
+            await on_contact_message(MockEvent())
+
+            mock_task.assert_called_once()
+            mock_bot.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_normal_message_still_processed(self):
         """Normal messages (txt_type=0) are still processed normally."""
         from app.event_handlers import on_contact_message

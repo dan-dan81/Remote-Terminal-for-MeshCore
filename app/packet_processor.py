@@ -192,16 +192,18 @@ async def create_message_from_decrypted(
     if trigger_bot:
         from app.bot import run_bot_for_message
 
-        await run_bot_for_message(
-            sender_name=sender,
-            sender_key=None,  # Channel messages don't have a sender public key
-            message_text=message_text,
-            is_dm=False,
-            channel_key=channel_key_normalized,
-            channel_name=channel_name,
-            sender_timestamp=timestamp,
-            path=path,
-            is_outgoing=False,
+        asyncio.create_task(
+            run_bot_for_message(
+                sender_name=sender,
+                sender_key=None,  # Channel messages don't have a sender public key
+                message_text=message_text,
+                is_dm=False,
+                channel_key=channel_key_normalized,
+                channel_name=channel_name,
+                sender_timestamp=timestamp,
+                path=path,
+                is_outgoing=False,
+            )
         )
 
     return msg_id
@@ -316,16 +318,18 @@ async def create_dm_message_from_decrypted(
         contact = await ContactRepository.get_by_key(their_public_key)
         sender_name = contact.name if contact else None
 
-        await run_bot_for_message(
-            sender_name=sender_name,
-            sender_key=their_public_key,
-            message_text=decrypted.message,
-            is_dm=True,
-            channel_key=None,
-            channel_name=None,
-            sender_timestamp=decrypted.timestamp,
-            path=path,
-            is_outgoing=outgoing,
+        asyncio.create_task(
+            run_bot_for_message(
+                sender_name=sender_name,
+                sender_key=their_public_key,
+                message_text=decrypted.message,
+                is_dm=True,
+                channel_key=None,
+                channel_name=None,
+                sender_timestamp=decrypted.timestamp,
+                path=path,
+                is_outgoing=outgoing,
+            )
         )
 
     return msg_id

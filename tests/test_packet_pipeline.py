@@ -496,6 +496,40 @@ class TestCreateMessageFromDecrypted:
     """Test the shared message creation function used by both real-time and historical decryption."""
 
     @pytest.mark.asyncio
+    async def test_schedules_bot_in_background(self, test_db, captured_broadcasts):
+        """Bot execution is scheduled and does not block channel message persistence."""
+        from app.packet_processor import create_message_from_decrypted
+
+        packet_id, _ = await RawPacketRepository.create(b"test_packet_bot_channel", 1700000000)
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.packet_processor.broadcast_event", mock_broadcast),
+            patch(
+                "app.packet_processor.asyncio.create_task", side_effect=_capture_task
+            ) as mock_task,
+            patch("app.bot.run_bot_for_message", new_callable=AsyncMock) as mock_bot,
+        ):
+            msg_id = await create_message_from_decrypted(
+                packet_id=packet_id,
+                channel_key="ABC123DEF456",
+                sender="BotTrigger",
+                message_text="Hello from channel",
+                timestamp=1700000000,
+                received_at=1700000001,
+                trigger_bot=True,
+            )
+
+        assert msg_id is not None
+        mock_task.assert_called_once()
+        mock_bot.assert_called_once()
+        assert mock_bot.await_count == 0
+
+    @pytest.mark.asyncio
     async def test_creates_message_and_broadcasts(self, test_db, captured_broadcasts):
         """create_message_from_decrypted creates message and broadcasts correctly."""
         from app.packet_processor import create_message_from_decrypted
@@ -711,6 +745,48 @@ class TestCreateDMMessageFromDecrypted:
     # The last 32 bytes (77AC...) are the signing prefix, not the public key.
     FACE12_PUB = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
     A1B2C3_PUB = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+
+    @pytest.mark.asyncio
+    async def test_schedules_bot_in_background(self, test_db, captured_broadcasts):
+        """Bot execution is scheduled and does not block DM persistence."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import create_dm_message_from_decrypted
+
+        packet_id, _ = await RawPacketRepository.create(b"test_packet_bot_dm", 1700000000)
+        decrypted = DecryptedDirectMessage(
+            timestamp=1700000000,
+            flags=0,
+            message="Hello from DM",
+            dest_hash="fa",
+            src_hash="a1",
+        )
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.packet_processor.broadcast_event", mock_broadcast),
+            patch(
+                "app.packet_processor.asyncio.create_task", side_effect=_capture_task
+            ) as mock_task,
+            patch("app.bot.run_bot_for_message", new_callable=AsyncMock) as mock_bot,
+        ):
+            msg_id = await create_dm_message_from_decrypted(
+                packet_id=packet_id,
+                decrypted=decrypted,
+                their_public_key=self.A1B2C3_PUB,
+                our_public_key=self.FACE12_PUB,
+                received_at=1700000001,
+                outgoing=False,
+                trigger_bot=True,
+            )
+
+        assert msg_id is not None
+        mock_task.assert_called_once()
+        mock_bot.assert_called_once()
+        assert mock_bot.await_count == 0
 
     @pytest.mark.asyncio
     async def test_creates_dm_message_and_broadcasts(self, test_db, captured_broadcasts):
