@@ -1,3 +1,12 @@
+## [1.9.1] - 2026-02-10
+
+Feature: Contacts and channels use keys, not names
+Bugfix: Fix falsy casting of 0 in lat lon and timing data
+Bugfix: Show message length in bytes, not chars
+Bugfix: Fix phantom unread badges on focused convos
+Misc: Bot invocation to async
+Misc: Use full key, not prefix, where we can
+
 ## [1.9.0] - 2026-02-10
 
 Feature: Favorited contacts are preferentially loaded onto the radio
