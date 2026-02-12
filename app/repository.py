@@ -580,7 +580,10 @@ class MessageRepository:
             SELECT m.conversation_key,
                    COUNT(*) as unread_count,
                    MAX(m.received_at) as last_message_time,
-                   SUM(CASE WHEN ? <> '' AND INSTR(m.text, ?) > 0 THEN 1 ELSE 0 END) > 0 as has_mention
+                   SUM(CASE
+                           WHEN ? <> '' AND INSTR(LOWER(m.text), LOWER(?)) > 0 THEN 1
+                           ELSE 0
+                       END) > 0 as has_mention
             FROM messages m
             JOIN channels c ON m.conversation_key = c.key
             WHERE m.type = 'CHAN' AND m.outgoing = 0
@@ -602,7 +605,10 @@ class MessageRepository:
             SELECT m.conversation_key,
                    COUNT(*) as unread_count,
                    MAX(m.received_at) as last_message_time,
-                   SUM(CASE WHEN ? <> '' AND INSTR(m.text, ?) > 0 THEN 1 ELSE 0 END) > 0 as has_mention
+                   SUM(CASE
+                           WHEN ? <> '' AND INSTR(LOWER(m.text), LOWER(?)) > 0 THEN 1
+                           ELSE 0
+                       END) > 0 as has_mention
             FROM messages m
             JOIN contacts ct ON m.conversation_key = ct.public_key
             WHERE m.type = 'PRIV' AND m.outgoing = 0

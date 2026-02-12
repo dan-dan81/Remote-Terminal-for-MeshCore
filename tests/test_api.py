@@ -663,7 +663,7 @@ class TestReadStateEndpoints:
         )
         await conn.execute(
             "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
-            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Bob: @[TestUser] hey", 1002, 0),
+            ("CHAN", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "Bob: @[testuser] hey", 1002, 0),
         )
         await conn.execute(
             "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
@@ -677,7 +677,7 @@ class TestReadStateEndpoints:
         # Insert 1 unread DM
         await conn.execute(
             "INSERT INTO messages (type, conversation_key, text, received_at, outgoing) VALUES (?, ?, ?, ?, ?)",
-            ("PRIV", "abcd" * 16, "hi there", 1005, 0),
+            ("PRIV", "abcd" * 16, "hi @[TeStUsEr] there", 1005, 0),
         )
         await conn.commit()
 
@@ -691,8 +691,9 @@ class TestReadStateEndpoints:
             assert result["counts"]["channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"] == 2
             assert result["mentions"]["channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"] is True
 
-            # Contact: 1 unread
+            # Contact: 1 unread with mention (also case-insensitive)
             assert result["counts"][f"contact-{'abcd' * 16}"] == 1
+            assert result["mentions"][f"contact-{'abcd' * 16}"] is True
 
             # Last message times should include all conversations
             assert "channel-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1" in result["last_message_times"]
