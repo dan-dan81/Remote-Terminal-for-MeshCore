@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RemoteTerm for MeshCore API",
     description="API for interacting with MeshCore mesh radio networks",
-    version="0.1.0",
+    version="1.9.2",
     lifespan=lifespan,
 )
 

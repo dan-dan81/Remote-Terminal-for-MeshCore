@@ -1,3 +1,16 @@
+## [1.9.2] - 2026-02-12
+
+Feature: Options dialog sucks less
+Bugix: Move tests to isolated memory DB
+Bugfix: Mention case sensitivity
+Bugfix: Stale header retention on settings page view
+Bugfix: Non-isolated path writing
+Bugfix: Nullable contact fields are now passed as real nulls
+Bugfix: Look at all fields on message reconcile, not just text
+Bugfix: Make mark-all-as-read atomic
+Misc: Purge unused WS handlers from back when we did chans and contacts over WS, not API
+Misc: Massive test and AGENTS.md overhauls and additions
+
 ## [1.9.1] - 2026-02-10
 
 Feature: Contacts and channels use keys, not names
