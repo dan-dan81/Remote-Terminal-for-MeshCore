@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.database import Database
+from app.decoder import DecryptedDirectMessage, PacketInfo, PayloadType
 from app.repository import (
     ChannelRepository,
     ContactRepository,
@@ -1193,3 +1194,794 @@ class TestRepeaterMessageFiltering:
             msg_type="PRIV", conversation_key=self.CLIENT_PUB.lower(), limit=10
         )
         assert len(messages) == 1
+
+
+class TestProcessDirectMessageDispatch:
+    """T1: Test _process_direct_message dispatch logic.
+
+    This tests the internal function that determines direction (incoming vs outgoing),
+    looks up candidate contacts by first-byte hash, and attempts DM decryption.
+    Uses real DB for contacts, mocks keystore and decoder functions.
+    """
+
+    # Our public key starts with 0xFA
+    OUR_PUB_HEX = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
+    OUR_PUB = bytes.fromhex(OUR_PUB_HEX)
+    OUR_PRIV = bytes(64)  # Dummy 64-byte private key (mocked, never actually used for crypto)
+
+    # Contact whose public key starts with 0xA1
+    CONTACT_PUB_HEX = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+    CONTACT_PUB = bytes.fromhex(CONTACT_PUB_HEX)
+
+    def _make_packet_info(
+        self, dest_byte: int, src_byte: int, payload_extra: bytes = b"\x00" * 32
+    ) -> PacketInfo:
+        """Build a PacketInfo with a TEXT_MESSAGE payload containing given dest/src hash bytes."""
+        # payload: [dest_hash:1][src_hash:1][mac:2][ciphertext...]
+        payload = bytes([dest_byte, src_byte]) + payload_extra
+        return PacketInfo(
+            route_type=1,  # FLOOD
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=payload,
+        )
+
+    def _keystore_patches(self, has_key=True):
+        """Return a context manager stack that patches keystore functions."""
+        from contextlib import ExitStack
+
+        stack = ExitStack()
+        stack.enter_context(patch("app.packet_processor.has_private_key", return_value=has_key))
+        stack.enter_context(
+            patch(
+                "app.packet_processor.get_private_key",
+                return_value=self.OUR_PRIV if has_key else None,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.packet_processor.get_public_key",
+                return_value=self.OUR_PUB if has_key else None,
+            )
+        )
+        return stack
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_private_key(self, test_db):
+        """Without a private key, _process_direct_message returns None immediately."""
+        from app.packet_processor import _process_direct_message
+
+        packet_info = self._make_packet_info(0xFA, 0xA1)
+        with self._keystore_patches(has_key=False):
+            result = await _process_direct_message(b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_packet_info_is_none(self, test_db):
+        """When packet_info is None and parse_packet also returns None, returns None."""
+        from app.packet_processor import _process_direct_message
+
+        with self._keystore_patches(has_key=True):
+            with patch("app.packet_processor.parse_packet", return_value=None):
+                result = await _process_direct_message(b"\x09\x00", 1, 1000, None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_payload_too_short(self, test_db):
+        """Payload shorter than 4 bytes causes early return."""
+        from app.packet_processor import _process_direct_message
+
+        short_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xfa\xa1\x00",  # Only 3 bytes
+        )
+        with self._keystore_patches(has_key=True):
+            result = await _process_direct_message(b"\x09\x00", 1, 1000, short_info)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_neither_hash_matches_us(self, test_db):
+        """If neither dest_hash nor src_hash matches our first byte, returns None."""
+        from app.packet_processor import _process_direct_message
+
+        # Our first byte is 0xFA; use 0xBB and 0xCC instead
+        packet_info = self._make_packet_info(0xBB, 0xCC)
+        with self._keystore_patches(has_key=True):
+            result = await _process_direct_message(b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_incoming_direction_dest_is_us(self, test_db, captured_broadcasts):
+        """When dest_hash matches us and src_hash does not, direction is incoming."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import _process_direct_message
+
+        # dest=0xFA (us), src=0xA1 (contact) -> incoming
+        packet_info = self._make_packet_info(0xFA, 0xA1)
+
+        # Create contact in DB so lookup succeeds
+        await ContactRepository.upsert(
+            {"public_key": self.CONTACT_PUB_HEX, "name": "Alice", "type": 1}
+        )
+
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=1000, flags=0, message="Hello", dest_hash="fa", src_hash="a1"
+        )
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with self._keystore_patches(has_key=True):
+            with patch(
+                "app.packet_processor.try_decrypt_dm", return_value=mock_decrypted
+            ) as mock_try:
+                with patch("app.packet_processor.broadcast_event", mock_broadcast):
+                    result = await _process_direct_message(
+                        b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info
+                    )
+
+        assert result is not None
+        assert result["decrypted"] is True
+        # Verify try_decrypt_dm was called with our_public_key (incoming => filter enabled)
+        call_kwargs = mock_try.call_args
+        assert (
+            call_kwargs[1].get("our_public_key") == self.OUR_PUB
+            or call_kwargs[0][3] == self.OUR_PUB
+        )
+
+    @pytest.mark.asyncio
+    async def test_outgoing_direction_src_is_us(self, test_db, captured_broadcasts):
+        """When src_hash matches us and dest_hash does not, direction is outgoing."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import _process_direct_message
+
+        # src=0xFA (us), dest=0xA1 (contact) -> outgoing
+        packet_info = self._make_packet_info(0xA1, 0xFA)
+
+        await ContactRepository.upsert(
+            {"public_key": self.CONTACT_PUB_HEX, "name": "Alice", "type": 1}
+        )
+
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=1000, flags=0, message="My outgoing", dest_hash="a1", src_hash="fa"
+        )
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with self._keystore_patches(has_key=True):
+            with patch(
+                "app.packet_processor.try_decrypt_dm", return_value=mock_decrypted
+            ) as mock_try:
+                with patch("app.packet_processor.broadcast_event", mock_broadcast):
+                    result = await _process_direct_message(
+                        b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info
+                    )
+
+        assert result is not None
+        assert result["decrypted"] is True
+        # Outgoing: our_public_key should be None (skip dest_hash filter)
+        call_kwargs = mock_try.call_args
+        assert call_kwargs[1].get("our_public_key") is None or call_kwargs[0][3] is None
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_both_hashes_match_defaults_incoming(
+        self, test_db, captured_broadcasts
+    ):
+        """When both dest_hash and src_hash match our first byte, defaults to incoming."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import _process_direct_message
+
+        # Both 0xFA -> ambiguous, should default to incoming
+        packet_info = self._make_packet_info(0xFA, 0xFA)
+
+        # Contact also starts with 0xFA
+        fa_contact_pub = "fa" + "bb" * 31
+        await ContactRepository.upsert(
+            {"public_key": fa_contact_pub, "name": "FaContact", "type": 1}
+        )
+
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=1000, flags=0, message="Ambiguous", dest_hash="fa", src_hash="fa"
+        )
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with self._keystore_patches(has_key=True):
+            with patch(
+                "app.packet_processor.try_decrypt_dm", return_value=mock_decrypted
+            ) as mock_try:
+                with patch("app.packet_processor.broadcast_event", mock_broadcast):
+                    result = await _process_direct_message(
+                        b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info
+                    )
+
+        assert result is not None
+        # For incoming, try_decrypt_dm should be called with our_public_key set
+        call_kwargs = mock_try.call_args
+        assert (
+            call_kwargs[1].get("our_public_key") == self.OUR_PUB
+            or call_kwargs[0][3] == self.OUR_PUB
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_candidate_contacts(self, test_db):
+        """If no contacts match the relevant hash byte, returns None."""
+        from app.packet_processor import _process_direct_message
+
+        # Incoming: dest=0xFA (us), src=0xA1 -> looks up contacts starting with "a1"
+        packet_info = self._make_packet_info(0xFA, 0xA1)
+
+        # Don't create any contacts -> no candidates
+        with self._keystore_patches(has_key=True):
+            result = await _process_direct_message(b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_decrypt_fails_all_candidates(self, test_db):
+        """When try_decrypt_dm returns None for all candidates, returns None."""
+        from app.packet_processor import _process_direct_message
+
+        packet_info = self._make_packet_info(0xFA, 0xA1)
+
+        await ContactRepository.upsert(
+            {"public_key": self.CONTACT_PUB_HEX, "name": "Alice", "type": 1}
+        )
+
+        with self._keystore_patches(has_key=True):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=None):
+                result = await _process_direct_message(
+                    b"\x09\x00" + b"\x00" * 30, 1, 1000, packet_info
+                )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_creates_message_on_successful_decrypt(self, test_db, captured_broadcasts):
+        """Successful decryption creates a DM message via create_dm_message_from_decrypted."""
+        from app.decoder import DecryptedDirectMessage
+        from app.packet_processor import _process_direct_message
+
+        # First, create a raw packet so create_dm_message_from_decrypted can link it
+        packet_id, _ = await RawPacketRepository.create(b"\x09\x00" + b"\x00" * 30, 1000)
+
+        packet_info = self._make_packet_info(0xFA, 0xA1)
+
+        await ContactRepository.upsert(
+            {"public_key": self.CONTACT_PUB_HEX, "name": "Alice", "type": 1}
+        )
+
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=1000, flags=0, message="Real message", dest_hash="fa", src_hash="a1"
+        )
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with self._keystore_patches(has_key=True):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=mock_decrypted):
+                with patch("app.packet_processor.broadcast_event", mock_broadcast):
+                    result = await _process_direct_message(
+                        b"\x09\x00" + b"\x00" * 30, packet_id, 1000, packet_info
+                    )
+
+        assert result is not None
+        assert result["decrypted"] is True
+        assert result["message_id"] is not None
+
+        # Verify message was stored in DB
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.CONTACT_PUB_HEX.lower(), limit=10
+        )
+        assert len(messages) == 1
+        assert messages[0].text == "Real message"
+        assert messages[0].outgoing is False
+
+
+class TestProcessRawPacketIntegration:
+    """T2: Test process_raw_packet dispatching to sub-processors.
+
+    Verifies that the main entry point correctly routes packets by payload type,
+    always broadcasts raw_packet events, and returns the expected result structure.
+    Uses real DB for packet storage, mocks parse_packet to control payload type.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dispatches_group_text(self, test_db, captured_broadcasts):
+        """GROUP_TEXT packets are dispatched to _process_group_text."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+        raw = b"\x15\x00" + b"\xaa" * 30  # Dummy bytes, parsing is mocked
+
+        group_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.GROUP_TEXT,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xab" + b"\x00" * 20,
+        )
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=group_info):
+                with patch(
+                    "app.packet_processor._process_group_text",
+                    new_callable=AsyncMock,
+                    return_value={
+                        "decrypted": True,
+                        "channel_name": "#test",
+                        "sender": "Bob",
+                        "message_id": 99,
+                    },
+                ) as mock_gt:
+                    result = await process_raw_packet(raw, timestamp=2000)
+
+        mock_gt.assert_awaited_once()
+        assert result["decrypted"] is True
+        assert result["channel_name"] == "#test"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_group_text_even_for_duplicates(self, test_db, captured_broadcasts):
+        """GROUP_TEXT always dispatches regardless of is_new_packet flag."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        group_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.GROUP_TEXT,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xab" + b"\x00" * 20,
+        )
+
+        raw = b"\x15\x00" + b"\xbb" * 30
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=group_info):
+                with patch(
+                    "app.packet_processor._process_group_text",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ) as mock_gt:
+                    # Process same packet twice
+                    await process_raw_packet(raw, timestamp=2000)
+                    await process_raw_packet(raw, timestamp=2001)
+
+        # _process_group_text should be called both times
+        assert mock_gt.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_dispatches_advert_only_for_new_packets(self, test_db, captured_broadcasts):
+        """ADVERT packets are dispatched only when is_new_packet is True."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        advert_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.ADVERT,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\x00" * 101,
+        )
+
+        raw = b"\x11\x00" + b"\xcc" * 30
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=advert_info):
+                with patch(
+                    "app.packet_processor._process_advertisement",
+                    new_callable=AsyncMock,
+                ) as mock_adv:
+                    # First call: new packet -> should dispatch
+                    await process_raw_packet(raw, timestamp=3000)
+                    # Second call: duplicate -> should NOT dispatch
+                    await process_raw_packet(raw, timestamp=3001)
+
+        assert mock_adv.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_dispatches_text_message(self, test_db, captured_broadcasts):
+        """TEXT_MESSAGE packets are dispatched to _process_direct_message."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        dm_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xfa\xa1" + b"\x00" * 30,
+        )
+
+        raw = b"\x09\x00" + b"\xdd" * 30
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=dm_info):
+                with patch(
+                    "app.packet_processor._process_direct_message",
+                    new_callable=AsyncMock,
+                    return_value={"decrypted": True, "sender": "Alice", "message_id": 42},
+                ) as mock_dm:
+                    result = await process_raw_packet(raw, timestamp=4000)
+
+        mock_dm.assert_awaited_once()
+        assert result["decrypted"] is True
+
+    @pytest.mark.asyncio
+    async def test_always_broadcasts_raw_packet(self, test_db, captured_broadcasts):
+        """Every call to process_raw_packet broadcasts a raw_packet event."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        # Use a packet type that does not trigger any sub-processor (e.g. ACK)
+        ack_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.ACK,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\x00" * 10,
+        )
+
+        raw = b"\x0d\x00" + b"\xee" * 20
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=ack_info):
+                await process_raw_packet(raw, timestamp=5000)
+
+        raw_broadcasts = [b for b in broadcasts if b["type"] == "raw_packet"]
+        assert len(raw_broadcasts) == 1
+        assert raw_broadcasts[0]["data"]["payload_type"] == "ACK"
+
+    @pytest.mark.asyncio
+    async def test_result_structure(self, test_db, captured_broadcasts):
+        """process_raw_packet returns a dict with all expected keys."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        raw = b"\x0d\x00" + b"\xff" * 20
+        ack_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.ACK,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\x00" * 10,
+        )
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=ack_info):
+                result = await process_raw_packet(raw, timestamp=6000, snr=5.5, rssi=-80)
+
+        assert "packet_id" in result
+        assert result["timestamp"] == 6000
+        assert result["snr"] == 5.5
+        assert result["rssi"] == -80
+        assert result["payload_type"] == "ACK"
+        assert result["decrypted"] is False
+        assert result["message_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_raw_packet_stored_in_db(self, test_db, captured_broadcasts):
+        """process_raw_packet stores the raw bytes in the database."""
+        from app.packet_processor import process_raw_packet
+
+        broadcasts, mock_broadcast = captured_broadcasts
+        raw = b"\x0d\x00" + b"\xab\xcd" * 10
+
+        ack_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.ACK,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\x00" * 10,
+        )
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.parse_packet", return_value=ack_info):
+                result = await process_raw_packet(raw, timestamp=7000)
+
+        # Verify packet is in undecrypted list
+        undecrypted = await RawPacketRepository.get_all_undecrypted()
+        packet_ids = [p[0] for p in undecrypted]
+        assert result["packet_id"] in packet_ids
+
+
+class TestRunHistoricalDmDecryption:
+    """T3: Test run_historical_dm_decryption background task.
+
+    Verifies iteration over undecrypted packets, decryption attempts,
+    message creation, and notification broadcasting.
+    Uses real DB for raw packet storage, mocks try_decrypt_dm and parse_packet.
+    """
+
+    OUR_PUB_HEX = "FACE123334789E2B81519AFDBC39A3C9EB7EA3457AD367D3243597A484847E46"
+    OUR_PUB = bytes.fromhex(OUR_PUB_HEX)
+    OUR_PRIV = bytes.fromhex(
+        "58BA1940E97099CBB4357C62CE9C7F4B245C94C90D722E67201B989F9FEACF7B"
+        "77ACADDB84438514022BDB0FC3140C2501859BE1772AC7B8C7E41DC0F40490A1"
+    )
+
+    CONTACT_PUB_HEX = "a1b2c3d3ba9f5fa8705b9845fe11cc6f01d1d49caaf4d122ac7121663c5beec7"
+    CONTACT_PUB = bytes.fromhex(CONTACT_PUB_HEX)
+
+    def _make_text_message_bytes(self, unique_suffix: bytes = b"") -> bytes:
+        """Build a minimal raw packet with TEXT_MESSAGE payload type.
+
+        Packet header byte: route_type=FLOOD(0x01), payload_type=TEXT_MESSAGE(0x02), version=0
+        header = (0x02 << 2) | 0x01 = 0x09
+        Then path_length=0, then payload with dest/src/mac/ciphertext.
+        """
+        header = 0x09
+        path_length = 0
+        # Payload: [dest:1][src:1][mac:2][ciphertext:16] = 20 bytes min
+        payload = bytes([0xFA, 0xA1]) + b"\x00\x00" + b"\xab" * 16 + unique_suffix
+        return bytes([header, path_length]) + payload
+
+    @pytest.mark.asyncio
+    async def test_returns_early_when_no_undecrypted_packets(self, test_db, captured_broadcasts):
+        """With no undecrypted TEXT_MESSAGE packets, returns immediately without broadcasting."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.websocket.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                await run_historical_dm_decryption(
+                    self.OUR_PRIV, self.CONTACT_PUB, self.CONTACT_PUB_HEX
+                )
+
+        # No success broadcast should have been sent
+        success_broadcasts = [b for b in broadcasts if b["type"] == "success"]
+        assert len(success_broadcasts) == 0
+
+    @pytest.mark.asyncio
+    async def test_iterates_and_decrypts_packets(self, test_db, captured_broadcasts):
+        """Successfully decrypts packets and creates messages in DB."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        # Store some TEXT_MESSAGE packets in DB
+        raw1 = self._make_text_message_bytes(b"\x01")
+        raw2 = self._make_text_message_bytes(b"\x02")
+        raw3 = self._make_text_message_bytes(b"\x03")
+        pkt_id1, _ = await RawPacketRepository.create(raw1, 1000)
+        pkt_id2, _ = await RawPacketRepository.create(raw2, 1001)
+        pkt_id3, _ = await RawPacketRepository.create(raw3, 1002)
+
+        mock_packet_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=2,
+            path=b"\xaa\xbb",
+            payload=b"\xfa\xa1" + b"\x00" * 18,
+        )
+
+        call_count = 0
+
+        def mock_decrypt(raw, priv, contact_pub, our_public_key=None):
+            nonlocal call_count
+            call_count += 1
+            # Decrypt packets 1 and 3, fail on packet 2
+            if call_count in (1, 3):
+                return DecryptedDirectMessage(
+                    timestamp=1000 + call_count,
+                    flags=0,
+                    message=f"Decrypted message {call_count}",
+                    dest_hash="fa",
+                    src_hash="a1",
+                )
+            return None
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", side_effect=mock_decrypt):
+                with patch("app.packet_processor.parse_packet", return_value=mock_packet_info):
+                    with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                        with patch("app.websocket.ws_manager") as mock_ws:
+                            mock_ws.broadcast = AsyncMock()
+                            await run_historical_dm_decryption(
+                                self.OUR_PRIV, self.CONTACT_PUB, self.CONTACT_PUB_HEX
+                            )
+
+        # 2 of 3 packets should have been decrypted
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.CONTACT_PUB_HEX.lower(), limit=10
+        )
+        assert len(messages) == 2
+
+    @pytest.mark.asyncio
+    async def test_does_not_create_message_on_decrypt_failure(self, test_db, captured_broadcasts):
+        """When try_decrypt_dm returns None for all packets, no messages are created."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        raw = self._make_text_message_bytes(b"\x10")
+        await RawPacketRepository.create(raw, 2000)
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=None):
+                with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                    with patch("app.websocket.ws_manager") as mock_ws:
+                        mock_ws.broadcast = AsyncMock()
+                        await run_historical_dm_decryption(
+                            self.OUR_PRIV, self.CONTACT_PUB, self.CONTACT_PUB_HEX
+                        )
+
+        messages = await MessageRepository.get_all(
+            msg_type="PRIV", conversation_key=self.CONTACT_PUB_HEX.lower(), limit=10
+        )
+        assert len(messages) == 0
+
+    @pytest.mark.asyncio
+    async def test_sets_trigger_bot_false(self, test_db, captured_broadcasts):
+        """Historical decryption calls create_dm_message_from_decrypted with trigger_bot=False."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        raw = self._make_text_message_bytes(b"\x20")
+        await RawPacketRepository.create(raw, 3000)
+
+        mock_packet_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xfa\xa1" + b"\x00" * 18,
+        )
+
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=3000, flags=0, message="Historical msg", dest_hash="fa", src_hash="a1"
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=mock_decrypted):
+                with patch("app.packet_processor.parse_packet", return_value=mock_packet_info):
+                    with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                        with patch(
+                            "app.packet_processor.create_dm_message_from_decrypted",
+                            new_callable=AsyncMock,
+                            return_value=42,
+                        ) as mock_create:
+                            with patch("app.websocket.ws_manager") as mock_ws:
+                                mock_ws.broadcast = AsyncMock()
+                                await run_historical_dm_decryption(
+                                    self.OUR_PRIV, self.CONTACT_PUB, self.CONTACT_PUB_HEX
+                                )
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["trigger_bot"] is False
+
+    @pytest.mark.asyncio
+    async def test_broadcasts_success_when_decrypted(self, test_db, captured_broadcasts):
+        """When at least one packet is decrypted, broadcasts a success notification."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        raw = self._make_text_message_bytes(b"\x30")
+        await RawPacketRepository.create(raw, 4000)
+
+        mock_packet_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xfa\xa1" + b"\x00" * 18,
+        )
+        mock_decrypted = DecryptedDirectMessage(
+            timestamp=4000, flags=0, message="Success msg", dest_hash="fa", src_hash="a1"
+        )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+        success_calls = []
+
+        def mock_success(message, details=None):
+            success_calls.append({"message": message, "details": details})
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=mock_decrypted):
+                with patch("app.packet_processor.parse_packet", return_value=mock_packet_info):
+                    with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                        with patch("app.websocket.broadcast_success", mock_success):
+                            await run_historical_dm_decryption(
+                                self.OUR_PRIV,
+                                self.CONTACT_PUB,
+                                self.CONTACT_PUB_HEX,
+                                display_name="Alice",
+                            )
+
+        assert len(success_calls) == 1
+        assert "Alice" in success_calls[0]["message"]
+        assert "1 message" in success_calls[0]["details"]
+
+    @pytest.mark.asyncio
+    async def test_no_broadcast_when_zero_decrypted(self, test_db, captured_broadcasts):
+        """When no packets are decrypted, no success notification is broadcast."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        raw = self._make_text_message_bytes(b"\x40")
+        await RawPacketRepository.create(raw, 5000)
+
+        broadcasts, mock_broadcast = captured_broadcasts
+        success_calls = []
+
+        def mock_success(message, details=None):
+            success_calls.append({"message": message, "details": details})
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", return_value=None):
+                with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                    with patch("app.websocket.broadcast_success", mock_success):
+                        await run_historical_dm_decryption(
+                            self.OUR_PRIV, self.CONTACT_PUB, self.CONTACT_PUB_HEX
+                        )
+
+        assert len(success_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_plural_message_in_success_broadcast(self, test_db, captured_broadcasts):
+        """Success notification uses plural 'messages' when count > 1."""
+        from app.packet_processor import run_historical_dm_decryption
+
+        # Create two distinct TEXT_MESSAGE packets
+        raw1 = self._make_text_message_bytes(b"\x50")
+        raw2 = self._make_text_message_bytes(b"\x51")
+        await RawPacketRepository.create(raw1, 6000)
+        await RawPacketRepository.create(raw2, 6001)
+
+        mock_packet_info = PacketInfo(
+            route_type=1,
+            payload_type=PayloadType.TEXT_MESSAGE,
+            payload_version=0,
+            path_length=0,
+            path=b"",
+            payload=b"\xfa\xa1" + b"\x00" * 18,
+        )
+
+        call_idx = 0
+
+        def mock_decrypt(raw, priv, contact_pub, our_public_key=None):
+            nonlocal call_idx
+            call_idx += 1
+            return DecryptedDirectMessage(
+                timestamp=6000 + call_idx,
+                flags=0,
+                message=f"Msg {call_idx}",
+                dest_hash="fa",
+                src_hash="a1",
+            )
+
+        broadcasts, mock_broadcast = captured_broadcasts
+        success_calls = []
+
+        def mock_success(message, details=None):
+            success_calls.append({"message": message, "details": details})
+
+        with patch("app.packet_processor.broadcast_event", mock_broadcast):
+            with patch("app.packet_processor.try_decrypt_dm", side_effect=mock_decrypt):
+                with patch("app.packet_processor.parse_packet", return_value=mock_packet_info):
+                    with patch("app.packet_processor.derive_public_key", return_value=self.OUR_PUB):
+                        with patch("app.websocket.broadcast_success", mock_success):
+                            await run_historical_dm_decryption(
+                                self.OUR_PRIV,
+                                self.CONTACT_PUB,
+                                self.CONTACT_PUB_HEX,
+                                display_name="Bob",
+                            )
+
+        assert len(success_calls) == 1
+        assert "2 messages" in success_calls[0]["details"]

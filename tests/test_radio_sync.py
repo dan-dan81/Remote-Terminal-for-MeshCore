@@ -528,3 +528,636 @@ class TestSyncRecentContactsToRadio:
 
         assert result["loaded"] == 0
         assert result["failed"] == 1
+
+
+class TestSyncAndOffloadContacts:
+    """Test sync_and_offload_contacts: pull contacts from radio, save to DB, remove from radio."""
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_not_connected(self):
+        """Returns error dict when radio is not connected."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        with patch("app.radio_sync.radio_manager") as mock_rm:
+            mock_rm.is_connected = False
+            mock_rm.meshcore = None
+
+            result = await sync_and_offload_contacts()
+
+        assert result["synced"] == 0
+        assert result["removed"] == 0
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_syncs_and_removes_contacts(self):
+        """Contacts are upserted to DB and removed from radio."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        contact_payload = {
+            KEY_A: {"adv_name": "Alice", "type": 1, "flags": 0},
+            KEY_B: {"adv_name": "Bob", "type": 1, "flags": 0},
+        }
+
+        mock_get_result = MagicMock()
+        mock_get_result.type = EventType.NEW_CONTACT  # Not ERROR
+        mock_get_result.payload = contact_payload
+
+        mock_remove_result = MagicMock()
+        mock_remove_result.type = EventType.OK
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_get_result)
+        mock_mc.commands.remove_contact = AsyncMock(return_value=mock_remove_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+            patch(
+                "app.radio_sync.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_contacts()
+
+        assert result["synced"] == 2
+        assert result["removed"] == 2
+        assert mock_upsert.call_count == 2
+        assert mock_mc.commands.remove_contact.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_claims_prefix_messages_for_each_contact(self):
+        """claim_prefix_messages is called for each synced contact."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        contact_payload = {KEY_A: {"adv_name": "Alice", "type": 1, "flags": 0}}
+
+        mock_get_result = MagicMock()
+        mock_get_result.type = EventType.NEW_CONTACT
+        mock_get_result.payload = contact_payload
+
+        mock_remove_result = MagicMock()
+        mock_remove_result.type = EventType.OK
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_get_result)
+        mock_mc.commands.remove_contact = AsyncMock(return_value=mock_remove_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.radio_sync.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=3,
+            ) as mock_claim,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            await sync_and_offload_contacts()
+
+        mock_claim.assert_called_once_with(KEY_A.lower())
+
+    @pytest.mark.asyncio
+    async def test_handles_remove_failure_gracefully(self):
+        """Failed remove_contact logs warning but continues to next contact."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        contact_payload = {
+            KEY_A: {"adv_name": "Alice", "type": 1, "flags": 0},
+            KEY_B: {"adv_name": "Bob", "type": 1, "flags": 0},
+        }
+
+        mock_get_result = MagicMock()
+        mock_get_result.type = EventType.NEW_CONTACT
+        mock_get_result.payload = contact_payload
+
+        mock_fail_result = MagicMock()
+        mock_fail_result.type = EventType.ERROR
+        mock_fail_result.payload = {"error": "busy"}
+
+        mock_ok_result = MagicMock()
+        mock_ok_result.type = EventType.OK
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_get_result)
+        # First remove fails, second succeeds
+        mock_mc.commands.remove_contact = AsyncMock(side_effect=[mock_fail_result, mock_ok_result])
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.radio_sync.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_contacts()
+
+        # Both contacts synced, but only one removed successfully
+        assert result["synced"] == 2
+        assert result["removed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_handles_remove_exception_gracefully(self):
+        """Exception during remove_contact is caught and processing continues."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        contact_payload = {KEY_A: {"adv_name": "Alice", "type": 1, "flags": 0}}
+
+        mock_get_result = MagicMock()
+        mock_get_result.type = EventType.NEW_CONTACT
+        mock_get_result.payload = contact_payload
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_get_result)
+        mock_mc.commands.remove_contact = AsyncMock(side_effect=Exception("Timeout"))
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.radio_sync.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_contacts()
+
+        assert result["synced"] == 1
+        assert result["removed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_get_contacts_fails(self):
+        """Error result from get_contacts returns error dict."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        mock_error_result = MagicMock()
+        mock_error_result.type = EventType.ERROR
+        mock_error_result.payload = {"error": "radio busy"}
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_error_result)
+
+        with patch("app.radio_sync.radio_manager") as mock_rm:
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_contacts()
+
+        assert result["synced"] == 0
+        assert result["removed"] == 0
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_upserts_with_on_radio_false(self):
+        """Contacts are upserted with on_radio=False (being removed from radio)."""
+        from app.radio_sync import sync_and_offload_contacts
+
+        contact_payload = {KEY_A: {"adv_name": "Alice", "type": 1, "flags": 0}}
+
+        mock_get_result = MagicMock()
+        mock_get_result.type = EventType.NEW_CONTACT
+        mock_get_result.payload = contact_payload
+
+        mock_remove_result = MagicMock()
+        mock_remove_result.type = EventType.OK
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_contacts = AsyncMock(return_value=mock_get_result)
+        mock_mc.commands.remove_contact = AsyncMock(return_value=mock_remove_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ContactRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+            patch(
+                "app.radio_sync.MessageRepository.claim_prefix_messages",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            await sync_and_offload_contacts()
+
+        upserted_data = mock_upsert.call_args[0][0]
+        assert upserted_data["on_radio"] is False
+
+
+class TestSyncAndOffloadChannels:
+    """Test sync_and_offload_channels: pull channels from radio, save to DB, clear from radio."""
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_not_connected(self):
+        """Returns error dict when radio is not connected."""
+        from app.radio_sync import sync_and_offload_channels
+
+        with patch("app.radio_sync.radio_manager") as mock_rm:
+            mock_rm.is_connected = False
+            mock_rm.meshcore = None
+
+            result = await sync_and_offload_channels()
+
+        assert result["synced"] == 0
+        assert result["cleared"] == 0
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_syncs_valid_channel_and_clears(self):
+        """Valid channel is upserted to DB and cleared from radio."""
+        from app.radio_sync import sync_and_offload_channels
+
+        channel_result = MagicMock()
+        channel_result.type = EventType.CHANNEL_INFO
+        channel_result.payload = {
+            "channel_name": "#general",
+            "channel_secret": bytes.fromhex("8B3387E9C5CDEA6AC9E5EDBAA115CD72"),
+        }
+
+        # All other slots return non-CHANNEL_INFO
+        empty_result = MagicMock()
+        empty_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(side_effect=[channel_result] + [empty_result] * 39)
+
+        clear_result = MagicMock()
+        clear_result.type = EventType.OK
+        mock_mc.commands.set_channel = AsyncMock(return_value=clear_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_channels()
+
+        assert result["synced"] == 1
+        assert result["cleared"] == 1
+        mock_upsert.assert_called_once_with(
+            key="8B3387E9C5CDEA6AC9E5EDBAA115CD72",
+            name="#general",
+            is_hashtag=True,
+            on_radio=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_skips_empty_channel_name(self):
+        """Channels with empty names are skipped."""
+        from app.radio_sync import sync_and_offload_channels
+
+        empty_name_result = MagicMock()
+        empty_name_result.type = EventType.CHANNEL_INFO
+        empty_name_result.payload = {
+            "channel_name": "",
+            "channel_secret": bytes(16),
+        }
+
+        other_result = MagicMock()
+        other_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(
+            side_effect=[empty_name_result] + [other_result] * 39
+        )
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_channels()
+
+        assert result["synced"] == 0
+        assert result["cleared"] == 0
+        mock_upsert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_channel_with_zero_key(self):
+        """Channels with all-zero secret key are skipped."""
+        from app.radio_sync import sync_and_offload_channels
+
+        zero_key_result = MagicMock()
+        zero_key_result.type = EventType.CHANNEL_INFO
+        zero_key_result.payload = {
+            "channel_name": "SomeChannel",
+            "channel_secret": bytes(16),  # All zeros
+        }
+
+        other_result = MagicMock()
+        other_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(
+            side_effect=[zero_key_result] + [other_result] * 39
+        )
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_channels()
+
+        assert result["synced"] == 0
+        mock_upsert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_hashtag_channel_detected(self):
+        """Channel without '#' prefix has is_hashtag=False."""
+        from app.radio_sync import sync_and_offload_channels
+
+        channel_result = MagicMock()
+        channel_result.type = EventType.CHANNEL_INFO
+        channel_result.payload = {
+            "channel_name": "Public",
+            "channel_secret": bytes.fromhex("8B3387E9C5CDEA6AC9E5EDBAA115CD72"),
+        }
+
+        other_result = MagicMock()
+        other_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(side_effect=[channel_result] + [other_result] * 39)
+
+        clear_result = MagicMock()
+        clear_result.type = EventType.OK
+        mock_mc.commands.set_channel = AsyncMock(return_value=clear_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            await sync_and_offload_channels()
+
+        mock_upsert.assert_called_once()
+        assert mock_upsert.call_args.kwargs["is_hashtag"] is False
+
+    @pytest.mark.asyncio
+    async def test_clears_channel_with_empty_name_and_zero_key(self):
+        """Cleared channels are set with empty name and 16 zero bytes."""
+        from app.radio_sync import sync_and_offload_channels
+
+        channel_result = MagicMock()
+        channel_result.type = EventType.CHANNEL_INFO
+        channel_result.payload = {
+            "channel_name": "#test",
+            "channel_secret": bytes.fromhex("AABBCCDD" * 4),
+        }
+
+        other_result = MagicMock()
+        other_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(side_effect=[channel_result] + [other_result] * 39)
+
+        clear_result = MagicMock()
+        clear_result.type = EventType.OK
+        mock_mc.commands.set_channel = AsyncMock(return_value=clear_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            await sync_and_offload_channels()
+
+        mock_mc.commands.set_channel.assert_called_once_with(
+            channel_idx=0,
+            channel_name="",
+            channel_secret=bytes(16),
+        )
+
+    @pytest.mark.asyncio
+    async def test_handles_clear_failure_gracefully(self):
+        """Failed set_channel logs warning but continues processing."""
+        from app.radio_sync import sync_and_offload_channels
+
+        channel_results = []
+        for i in range(2):
+            r = MagicMock()
+            r.type = EventType.CHANNEL_INFO
+            r.payload = {
+                "channel_name": f"#ch{i}",
+                "channel_secret": bytes([i + 1] * 16),
+            }
+            channel_results.append(r)
+
+        other_result = MagicMock()
+        other_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(side_effect=channel_results + [other_result] * 38)
+
+        fail_result = MagicMock()
+        fail_result.type = EventType.ERROR
+        fail_result.payload = {"error": "busy"}
+
+        ok_result = MagicMock()
+        ok_result.type = EventType.OK
+
+        mock_mc.commands.set_channel = AsyncMock(side_effect=[fail_result, ok_result])
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_channels()
+
+        assert result["synced"] == 2
+        assert result["cleared"] == 1
+
+    @pytest.mark.asyncio
+    async def test_iterates_all_40_channel_slots(self):
+        """All 40 channel slots are checked."""
+        from app.radio_sync import sync_and_offload_channels
+
+        empty_result = MagicMock()
+        empty_result.type = EventType.ERROR
+
+        mock_mc = MagicMock()
+        mock_mc.commands.get_channel = AsyncMock(return_value=empty_result)
+
+        with (
+            patch("app.radio_sync.radio_manager") as mock_rm,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ),
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            result = await sync_and_offload_channels()
+
+        assert mock_mc.commands.get_channel.call_count == 40
+        assert result["synced"] == 0
+        assert result["cleared"] == 0
+
+
+class TestEnsureDefaultChannels:
+    """Test ensure_default_channels: create/fix the Public channel."""
+
+    PUBLIC_KEY = "8B3387E9C5CDEA6AC9E5EDBAA115CD72"
+
+    @pytest.mark.asyncio
+    async def test_creates_public_channel_when_missing(self):
+        """Public channel is created when it does not exist."""
+        from app.radio_sync import ensure_default_channels
+
+        with (
+            patch(
+                "app.radio_sync.ChannelRepository.get_by_key",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_get,
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await ensure_default_channels()
+
+        mock_get.assert_called_once_with(self.PUBLIC_KEY)
+        mock_upsert.assert_called_once_with(
+            key=self.PUBLIC_KEY,
+            name="Public",
+            is_hashtag=False,
+            on_radio=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_fixes_public_channel_with_wrong_name(self):
+        """Public channel name is corrected when it exists with wrong name."""
+        from app.radio_sync import ensure_default_channels
+
+        existing = MagicMock()
+        existing.name = "public"  # Wrong case
+        existing.on_radio = True
+
+        with (
+            patch(
+                "app.radio_sync.ChannelRepository.get_by_key",
+                new_callable=AsyncMock,
+                return_value=existing,
+            ),
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await ensure_default_channels()
+
+        mock_upsert.assert_called_once_with(
+            key=self.PUBLIC_KEY,
+            name="Public",
+            is_hashtag=False,
+            on_radio=True,  # Preserves existing on_radio state
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_op_when_public_channel_exists_correctly(self):
+        """No upsert when Public channel already exists with correct name."""
+        from app.radio_sync import ensure_default_channels
+
+        existing = MagicMock()
+        existing.name = "Public"
+        existing.on_radio = False
+
+        with (
+            patch(
+                "app.radio_sync.ChannelRepository.get_by_key",
+                new_callable=AsyncMock,
+                return_value=existing,
+            ),
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await ensure_default_channels()
+
+        mock_upsert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_preserves_on_radio_state_when_fixing_name(self):
+        """existing.on_radio is passed through when fixing the channel name."""
+        from app.radio_sync import ensure_default_channels
+
+        existing = MagicMock()
+        existing.name = "Pub"
+        existing.on_radio = True
+
+        with (
+            patch(
+                "app.radio_sync.ChannelRepository.get_by_key",
+                new_callable=AsyncMock,
+                return_value=existing,
+            ),
+            patch(
+                "app.radio_sync.ChannelRepository.upsert",
+                new_callable=AsyncMock,
+            ) as mock_upsert,
+        ):
+            await ensure_default_channels()
+
+        assert mock_upsert.call_args.kwargs["on_radio"] is True

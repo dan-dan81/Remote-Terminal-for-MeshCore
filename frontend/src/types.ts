@@ -131,6 +131,7 @@ export interface AppSettings {
   last_message_times: Record<string, number>;
   preferences_migrated: boolean;
   advert_interval: number;
+  last_advert_time: number;
   bots: BotConfig[];
 }
 

@@ -431,3 +431,202 @@ class TestEventHandlerRegistration:
 
         # Should have exactly 5 fresh subscriptions
         assert len(_active_subscriptions) == 5
+
+
+class TestOnPathUpdate:
+    """Test the on_path_update event handler."""
+
+    @pytest.mark.asyncio
+    async def test_updates_path_for_existing_contact(self):
+        """Path is updated when the contact exists in the database."""
+        from app.event_handlers import on_path_update
+
+        mock_contact = MagicMock()
+        mock_contact.public_key = "aa" * 32
+
+        with patch("app.event_handlers.ContactRepository") as mock_repo:
+            mock_repo.get_by_key_prefix = AsyncMock(return_value=mock_contact)
+            mock_repo.update_path = AsyncMock()
+
+            class MockEvent:
+                payload = {
+                    "pubkey_prefix": "aaaaaa",
+                    "path": "0102",
+                    "path_len": 2,
+                }
+
+            await on_path_update(MockEvent())
+
+            mock_repo.get_by_key_prefix.assert_called_once_with("aaaaaa")
+            mock_repo.update_path.assert_called_once_with("aa" * 32, "0102", 2)
+
+    @pytest.mark.asyncio
+    async def test_does_nothing_when_contact_not_found(self):
+        """No update is attempted when the contact is not in the database."""
+        from app.event_handlers import on_path_update
+
+        with patch("app.event_handlers.ContactRepository") as mock_repo:
+            mock_repo.get_by_key_prefix = AsyncMock(return_value=None)
+            mock_repo.update_path = AsyncMock()
+
+            class MockEvent:
+                payload = {
+                    "pubkey_prefix": "unknown",
+                    "path": "0102",
+                    "path_len": 2,
+                }
+
+            await on_path_update(MockEvent())
+
+            mock_repo.get_by_key_prefix.assert_called_once_with("unknown")
+            mock_repo.update_path.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_uses_defaults_for_missing_payload_fields(self):
+        """Missing payload fields fall back to defaults (empty path, -1 length)."""
+        from app.event_handlers import on_path_update
+
+        mock_contact = MagicMock()
+        mock_contact.public_key = "bb" * 32
+
+        with patch("app.event_handlers.ContactRepository") as mock_repo:
+            mock_repo.get_by_key_prefix = AsyncMock(return_value=mock_contact)
+            mock_repo.update_path = AsyncMock()
+
+            class MockEvent:
+                payload = {}
+
+            await on_path_update(MockEvent())
+
+            mock_repo.get_by_key_prefix.assert_called_once_with("")
+            mock_repo.update_path.assert_called_once_with("bb" * 32, "", -1)
+
+
+class TestOnNewContact:
+    """Test the on_new_contact event handler."""
+
+    @pytest.mark.asyncio
+    async def test_creates_contact_and_broadcasts(self):
+        """Valid new contact is upserted and broadcast via WebSocket."""
+        from app.event_handlers import on_new_contact
+
+        with (
+            patch("app.event_handlers.ContactRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+            patch("app.event_handlers.time") as mock_time,
+        ):
+            mock_time.time.return_value = 1700000000
+            mock_repo.upsert = AsyncMock()
+
+            class MockEvent:
+                payload = {
+                    "public_key": "cc" * 32,
+                    "adv_name": "Charlie",
+                    "type": 1,
+                    "flags": 0,
+                }
+
+            await on_new_contact(MockEvent())
+
+            mock_repo.upsert.assert_called_once()
+            upserted_data = mock_repo.upsert.call_args[0][0]
+
+            assert upserted_data["public_key"] == "cc" * 32
+            assert upserted_data["name"] == "Charlie"
+            assert upserted_data["on_radio"] is True
+            assert upserted_data["last_seen"] == 1700000000
+
+            mock_broadcast.assert_called_once()
+            event_type, contact_data = mock_broadcast.call_args[0]
+            assert event_type == "contact"
+            assert contact_data["public_key"] == "cc" * 32
+
+    @pytest.mark.asyncio
+    async def test_returns_early_on_empty_public_key(self):
+        """Handler exits without upserting when public_key is empty."""
+        from app.event_handlers import on_new_contact
+
+        with (
+            patch("app.event_handlers.ContactRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
+            mock_repo.upsert = AsyncMock()
+
+            class MockEvent:
+                payload = {"public_key": "", "adv_name": "Ghost"}
+
+            await on_new_contact(MockEvent())
+
+            mock_repo.upsert.assert_not_called()
+            mock_broadcast.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_early_on_missing_public_key(self):
+        """Handler exits without upserting when public_key field is absent."""
+        from app.event_handlers import on_new_contact
+
+        with (
+            patch("app.event_handlers.ContactRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+        ):
+            mock_repo.upsert = AsyncMock()
+
+            class MockEvent:
+                payload = {"adv_name": "NoKey"}
+
+            await on_new_contact(MockEvent())
+
+            mock_repo.upsert.assert_not_called()
+            mock_broadcast.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sets_on_radio_true(self):
+        """Contact data passed to upsert has on_radio=True."""
+        from app.event_handlers import on_new_contact
+
+        with (
+            patch("app.event_handlers.ContactRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event"),
+            patch("app.event_handlers.time") as mock_time,
+        ):
+            mock_time.time.return_value = 1700000000
+            mock_repo.upsert = AsyncMock()
+
+            class MockEvent:
+                payload = {
+                    "public_key": "dd" * 32,
+                    "adv_name": "Delta",
+                    "type": 0,
+                    "flags": 0,
+                }
+
+            await on_new_contact(MockEvent())
+
+            upserted_data = mock_repo.upsert.call_args[0][0]
+            assert upserted_data["on_radio"] is True
+
+    @pytest.mark.asyncio
+    async def test_sets_last_seen_to_current_timestamp(self):
+        """Contact data includes last_seen set to current time."""
+        from app.event_handlers import on_new_contact
+
+        with (
+            patch("app.event_handlers.ContactRepository") as mock_repo,
+            patch("app.event_handlers.broadcast_event"),
+            patch("app.event_handlers.time") as mock_time,
+        ):
+            mock_time.time.return_value = 1700099999
+            mock_repo.upsert = AsyncMock()
+
+            class MockEvent:
+                payload = {
+                    "public_key": "ee" * 32,
+                    "adv_name": "Echo",
+                    "type": 0,
+                    "flags": 0,
+                }
+
+            await on_new_contact(MockEvent())
+
+            upserted_data = mock_repo.upsert.call_args[0][0]
+            assert upserted_data["last_seen"] == 1700099999

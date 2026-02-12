@@ -2,8 +2,8 @@
  * Tests for API utilities.
  */
 
-import { describe, it, expect } from 'vitest';
-import { isAbortError } from '../api';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { isAbortError, api } from '../api';
 
 describe('isAbortError', () => {
   it('returns true for AbortError', () => {
@@ -58,5 +58,290 @@ describe('isAbortError', () => {
     }
 
     expect(isAbortError(new CustomError())).toBe(false);
+  });
+});
+
+describe('fetchJson (via api methods)', () => {
+  const mockFetch = vi.fn();
+
+  // Replace global fetch before each test, restore after
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function installMockFetch() {
+    global.fetch = mockFetch;
+  }
+
+  describe('successful responses', () => {
+    it('returns parsed JSON on a successful response', async () => {
+      installMockFetch();
+      const healthData = {
+        status: 'connected',
+        radio_connected: true,
+        connection_info: 'Serial: /dev/ttyUSB0',
+        database_size_mb: 1.2,
+        oldest_undecrypted_timestamp: null,
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(healthData),
+      });
+
+      const result = await api.getHealth();
+
+      expect(result).toEqual(healthData);
+    });
+
+    it('calls fetch with /api prefix', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      await api.getContacts();
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/contacts?limit=100&offset=0');
+    });
+  });
+
+  describe('error handling', () => {
+    it('extracts detail from FastAPI JSON error response', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        text: () => Promise.resolve('{"detail": "Radio not connected"}'),
+      });
+
+      await expect(api.getHealth()).rejects.toThrow('Radio not connected');
+    });
+
+    it('uses raw text when error response is not JSON', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: () => Promise.resolve('Something broke on the server'),
+      });
+
+      await expect(api.getHealth()).rejects.toThrow('Something broke on the server');
+    });
+
+    it('uses statusText when error text is empty', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        statusText: 'Bad Gateway',
+        text: () => Promise.resolve(''),
+      });
+
+      await expect(api.getHealth()).rejects.toThrow('Bad Gateway');
+    });
+
+    it('uses raw text when JSON lacks detail field', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        statusText: 'Unprocessable Entity',
+        text: () => Promise.resolve('{"error": "validation failed"}'),
+      });
+
+      await expect(api.getHealth()).rejects.toThrow('{"error": "validation failed"}');
+    });
+  });
+
+  describe('Content-Type header', () => {
+    it('always sends Content-Type: application/json on GET requests', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: 'connected' }),
+      });
+
+      await api.getHealth();
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers).toEqual(
+        expect.objectContaining({ 'Content-Type': 'application/json' })
+      );
+    });
+
+    it('always sends Content-Type: application/json on POST requests', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 1, text: 'hello' }),
+      });
+
+      await api.sendDirectMessage('abc123', 'hello');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers).toEqual(
+        expect.objectContaining({ 'Content-Type': 'application/json' })
+      );
+    });
+  });
+
+  describe('HTTP methods and body', () => {
+    it('sends POST with JSON body for sendDirectMessage', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 1,
+            type: 'PRIV',
+            text: 'hello',
+            destination: 'abc123',
+          }),
+      });
+
+      await api.sendDirectMessage('abc123', 'hello');
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/messages/direct');
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(options.body)).toEqual({
+        destination: 'abc123',
+        text: 'hello',
+      });
+    });
+
+    it('sends PATCH with JSON body for updateRadioConfig', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ name: 'NewName' }),
+      });
+
+      await api.updateRadioConfig({ name: 'NewName' });
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/radio/config');
+      expect(options.method).toBe('PATCH');
+      expect(JSON.parse(options.body)).toEqual({ name: 'NewName' });
+    });
+
+    it('sends PUT with JSON body for setPrivateKey', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: 'ok' }),
+      });
+
+      await api.setPrivateKey('my-secret-key');
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/radio/private-key');
+      expect(options.method).toBe('PUT');
+      expect(JSON.parse(options.body)).toEqual({ private_key: 'my-secret-key' });
+    });
+
+    it('sends DELETE for deleteContact', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: 'ok' }),
+      });
+
+      await api.deleteContact('pubkey123');
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/contacts/pubkey123');
+      expect(options.method).toBe('DELETE');
+    });
+
+    it('sends POST without body for sendAdvertisement', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: 'ok' }),
+      });
+
+      await api.sendAdvertisement();
+
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/radio/advertise');
+      expect(options.method).toBe('POST');
+      expect(options.body).toBeUndefined();
+    });
+  });
+
+  describe('AbortSignal passthrough', () => {
+    it('passes signal option through to fetch for getMessages', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      const controller = new AbortController();
+      await api.getMessages({ limit: 10 }, controller.signal);
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.signal).toBe(controller.signal);
+    });
+
+    it('calls fetch without signal when none is provided', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      await api.getMessages({ limit: 10 });
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.signal).toBeUndefined();
+    });
+  });
+
+  describe('api.getMessages query parameter construction', () => {
+    it('builds query string with all parameters', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      await api.getMessages({
+        limit: 50,
+        offset: 10,
+        type: 'PRIV',
+        conversation_key: 'abc123',
+        before: 1700000000,
+        before_id: 99,
+      });
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain('/api/messages?');
+      expect(url).toContain('limit=50');
+      expect(url).toContain('offset=10');
+      expect(url).toContain('type=PRIV');
+      expect(url).toContain('conversation_key=abc123');
+      expect(url).toContain('before=1700000000');
+      expect(url).toContain('before_id=99');
+    });
+
+    it('builds URL without query string when no params given', async () => {
+      installMockFetch();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      await api.getMessages();
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/messages');
+    });
   });
 });

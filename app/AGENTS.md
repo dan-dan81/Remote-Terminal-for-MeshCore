@@ -29,6 +29,7 @@ app/
 ├── websocket.py         # WS manager + broadcast helpers
 ├── bot.py               # Bot execution and outbound bot sends
 ├── dependencies.py      # Shared FastAPI dependency providers
+├── keystore.py          # Ephemeral private/public key storage for DM decryption
 ├── frontend_static.py   # Mount/serve built frontend (production)
 └── routers/
     ├── health.py
@@ -142,8 +143,6 @@ app/
 ## WebSocket Events
 
 - `health`
-- `contacts`
-- `channels`
 - `contact`
 - `message`
 - `message_acked`
@@ -152,6 +151,7 @@ app/
 - `success`
 
 Initial WS connect sends `health` only. Contacts/channels are loaded by REST.
+Note: the frontend WS hook also registers handlers for `contacts` and `channels` events, but the backend never emits them.
 
 ## Data Model Notes
 

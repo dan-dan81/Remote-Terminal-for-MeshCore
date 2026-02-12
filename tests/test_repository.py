@@ -63,9 +63,7 @@ class TestMessageRepositoryAddPath:
         """Adding a path to a message with existing paths appends to the array."""
         msg_id = await _create_message(test_db)
 
-        await MessageRepository.add_path(
-            message_id=msg_id, path="1A", received_at=1699999999
-        )
+        await MessageRepository.add_path(message_id=msg_id, path="1A", received_at=1699999999)
         result = await MessageRepository.add_path(
             message_id=msg_id, path="2B3C", received_at=1700000000
         )
