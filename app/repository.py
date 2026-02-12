@@ -388,32 +388,29 @@ class MessageRepository:
         """
         ts = received_at if received_at is not None else int(time.time())
 
-        # Get current paths
-        cursor = await db.conn.execute("SELECT paths FROM messages WHERE id = ?", (message_id,))
-        row = await cursor.fetchone()
-        if not row:
-            return []
-
-        # Parse existing paths or start with empty list
-        existing_paths = []
-        if row["paths"]:
-            try:
-                existing_paths = json.loads(row["paths"])
-            except json.JSONDecodeError:
-                existing_paths = []
-
-        # Add new path
-        existing_paths.append({"path": path, "received_at": ts})
-
-        # Update database
-        paths_json = json.dumps(existing_paths)
+        # Atomic append: use json_insert to avoid read-modify-write race when
+        # multiple duplicate packets arrive concurrently for the same message.
+        new_entry = json.dumps({"path": path, "received_at": ts})
         await db.conn.execute(
-            "UPDATE messages SET paths = ? WHERE id = ?",
-            (paths_json, message_id),
+            """UPDATE messages SET paths = json_insert(
+                COALESCE(paths, '[]'), '$[#]', json(?)
+            ) WHERE id = ?""",
+            (new_entry, message_id),
         )
         await db.conn.commit()
 
-        return [MessagePath(**p) for p in existing_paths]
+        # Read back the full list for the return value
+        cursor = await db.conn.execute("SELECT paths FROM messages WHERE id = ?", (message_id,))
+        row = await cursor.fetchone()
+        if not row or not row["paths"]:
+            return []
+
+        try:
+            all_paths = json.loads(row["paths"])
+        except json.JSONDecodeError:
+            return []
+
+        return [MessagePath(**p) for p in all_paths]
 
     @staticmethod
     async def claim_prefix_messages(full_key: str) -> int:
