@@ -76,6 +76,7 @@ export function CrackerPanel({
   const [retryFailedAtNextLength, setRetryFailedAtNextLength] = useState(false);
   const [decryptHistorical, setDecryptHistorical] = useState(true);
   const [turboMode, setTurboMode] = useState(false);
+  const [twoWordMode, setTwoWordMode] = useState(false);
   const [progress, setProgress] = useState<ProgressReport | null>(null);
   const [queue, setQueue] = useState<Map<number, QueueItem>>(new Map());
   const [crackedRooms, setCrackedRooms] = useState<CrackedRoom[]>([]);
@@ -94,6 +95,7 @@ export function CrackerPanel({
   const maxLengthRef = useRef(6);
   const decryptHistoricalRef = useRef(true);
   const turboModeRef = useRef(false);
+  const twoWordModeRef = useRef(false);
   const undecryptedIdsRef = useRef<Set<number>>(new Set());
   const seenPayloadsRef = useRef<Set<string>>(new Set());
 
@@ -226,6 +228,10 @@ export function CrackerPanel({
     turboModeRef.current = turboMode;
   }, [turboMode]);
 
+  useEffect(() => {
+    twoWordModeRef.current = twoWordMode;
+  }, [twoWordMode]);
+
   // Keep undecrypted IDs ref in sync - used to skip packets already decrypted by other means
   useEffect(() => {
     undecryptedIdsRef.current = new Set(undecryptedGroupText.map((p) => p.id));
@@ -311,9 +317,14 @@ export function CrackerPanel({
           useSenderFilter: true,
           useTimestampFilter: true,
           useUtf8Filter: true,
+          useTwoWordCombinations: twoWordModeRef.current,
           ...(turboModeRef.current && { gpuDispatchMs: 10000 }),
           // For retries, skip dictionary and shorter lengths - we already checked those
-          ...(isRetry && { useDictionary: false, startingLength: targetLength }),
+          ...(isRetry && {
+            useDictionary: false,
+            useTwoWordCombinations: false,
+            startingLength: targetLength,
+          }),
         },
         (prog) => {
           setProgress(prog);
@@ -485,6 +496,16 @@ export function CrackerPanel({
         <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
           <input
             type="checkbox"
+            checked={twoWordMode}
+            onChange={(e) => setTwoWordMode(e.target.checked)}
+            className="rounded"
+          />
+          Try word pairs
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
             checked={turboMode}
             onChange={(e) => setTurboMode(e.target.checked)}
             className="rounded"
@@ -539,9 +560,11 @@ export function CrackerPanel({
             <span>
               {progress.phase === 'wordlist'
                 ? 'Dictionary'
-                : progress.phase === 'bruteforce'
-                  ? 'Bruteforce'
-                  : 'Public Key'}
+                : progress.phase === 'wordlist-pairs'
+                  ? 'Word Pairs'
+                  : progress.phase === 'bruteforce'
+                    ? 'Bruteforce'
+                    : 'Public Key'}
               {progress.phase === 'bruteforce' && ` - Length ${progress.currentLength}`}:{' '}
               {progress.currentPosition}
             </span>
@@ -576,7 +599,7 @@ export function CrackerPanel({
 
       {/* Cracked rooms list */}
       {crackedRooms.length > 0 && (
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div>
           <div className="text-xs text-muted-foreground mb-1">Cracked Rooms:</div>
           <div className="space-y-1">
             {crackedRooms.map((room, i) => (
@@ -603,6 +626,9 @@ export function CrackerPanel({
         way of knowing but try as if they are).
         <strong> Retry failed at n+1</strong> will let the cracker return to the failed queue and
         pick up messages it couldn't crack, attempting them at one longer length.
+        <strong> Try word pairs</strong> will also try every combination of two dictionary words
+        concatenated together (e.g. "hello" + "world" = "#helloworld") after the single-word
+        dictionary pass; this can substantially increase search time.
         <strong> Decrypt historical</strong> will run an async job on any room name it finds to see
         if any historically captured packets will decrypt with that key.
         <strong> Turbo mode</strong> will push your GPU to the max (target dispatch time of 10s) and
