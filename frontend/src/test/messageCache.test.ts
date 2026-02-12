@@ -363,6 +363,43 @@ describe('messageCache', () => {
       expect(merged).not.toBeNull();
       expect(merged!).toHaveLength(1);
     });
+
+    it('detects stale paths', () => {
+      const current = [
+        createMessage({ id: 1, acked: 1, paths: [{ path: '1A', received_at: 1700000000 }] }),
+      ];
+      const fetched = [
+        createMessage({
+          id: 1,
+          acked: 1,
+          paths: [
+            { path: '1A', received_at: 1700000000 },
+            { path: '2B', received_at: 1700000001 },
+          ],
+        }),
+      ];
+
+      const merged = messageCache.reconcile(current, fetched);
+      expect(merged).not.toBeNull();
+      expect(merged![0].paths).toHaveLength(2);
+    });
+
+    it('detects stale text (e.g. post-decryption)', () => {
+      const current = [createMessage({ id: 1, text: '[encrypted]' })];
+      const fetched = [createMessage({ id: 1, text: 'Hello world' })];
+
+      const merged = messageCache.reconcile(current, fetched);
+      expect(merged).not.toBeNull();
+      expect(merged![0].text).toBe('Hello world');
+    });
+
+    it('returns null when acked, paths length, and text all match', () => {
+      const paths = [{ path: '1A', received_at: 1700000000 }];
+      const current = [createMessage({ id: 1, acked: 2, paths, text: 'Hello' })];
+      const fetched = [createMessage({ id: 1, acked: 2, paths, text: 'Hello' })];
+
+      expect(messageCache.reconcile(current, fetched)).toBeNull();
+    });
   });
 
   describe('clear', () => {

@@ -89,15 +89,20 @@ export function updateAck(messageId: number, ackCount: number, paths?: MessagePa
  * Preserves any older paginated messages not present in the fetched page.
  */
 export function reconcile(current: Message[], fetched: Message[]): Message[] | null {
-  const currentById = new Map<number, number>();
+  const currentById = new Map<number, { acked: number; pathsLen: number; text: string }>();
   for (const m of current) {
-    currentById.set(m.id, m.acked);
+    currentById.set(m.id, { acked: m.acked, pathsLen: m.paths?.length ?? 0, text: m.text });
   }
 
   let needsUpdate = false;
   for (const m of fetched) {
-    const currentAck = currentById.get(m.id);
-    if (currentAck === undefined || currentAck !== m.acked) {
+    const cur = currentById.get(m.id);
+    if (
+      !cur ||
+      cur.acked !== m.acked ||
+      cur.pathsLen !== (m.paths?.length ?? 0) ||
+      cur.text !== m.text
+    ) {
       needsUpdate = true;
       break;
     }
