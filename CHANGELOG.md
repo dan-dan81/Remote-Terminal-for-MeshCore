@@ -1,3 +1,7 @@
+## [1.9.3] - 2026-02-12
+
+Feature: Upgrade the room finder to support two-word rooms
+
 ## [1.9.2] - 2026-02-12
 
 Feature: Options dialog sucks less
