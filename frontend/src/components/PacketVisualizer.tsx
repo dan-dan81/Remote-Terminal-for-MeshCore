@@ -1584,7 +1584,7 @@ export function PacketVisualizer({
                     title="Split ambiguous repeaters into separate nodes based on traffic patterns (prev→next). Helps identify colliding prefixes representing different physical nodes."
                     className={!showAmbiguousPaths ? 'text-muted-foreground' : ''}
                   >
-                    Hueristically group repeaters by traffic pattern
+                    Heuristically group repeaters by traffic pattern
                   </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">

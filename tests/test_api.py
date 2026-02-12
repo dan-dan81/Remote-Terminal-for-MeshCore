@@ -92,6 +92,112 @@ class TestMessagesEndpoint:
 
             assert response.status_code == 503
 
+    def test_send_direct_message_emits_websocket_message_event(self):
+        """POST /messages/direct should emit a WS message event for other clients."""
+        from fastapi.testclient import TestClient
+        from meshcore import EventType
+
+        mock_mc = MagicMock()
+        mock_mc.get_contact_by_key_prefix.return_value = {"public_key": "ab" * 32}
+        mock_mc.commands.add_contact = AsyncMock(
+            return_value=MagicMock(type=EventType.OK, payload={})
+        )
+        mock_mc.commands.send_msg = AsyncMock(
+            return_value=MagicMock(type=EventType.MSG_SENT, payload={})
+        )
+
+        mock_contact = MagicMock()
+        mock_contact.public_key = "ab" * 32
+        mock_contact.to_radio_dict.return_value = {"public_key": "ab" * 32}
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.dependencies.radio_manager") as mock_rm,
+            patch(
+                "app.repository.ContactRepository.get_by_key_or_prefix",
+                new=AsyncMock(return_value=mock_contact),
+            ),
+            patch("app.repository.ContactRepository.update_last_contacted", new=AsyncMock()),
+            patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=123)),
+            patch("app.bot.run_bot_for_message", new=AsyncMock()),
+            patch("app.routers.messages.asyncio.create_task", side_effect=_capture_task),
+            patch("app.routers.messages.broadcast_event", create=True) as mock_broadcast,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            from app.main import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/api/messages/direct",
+                json={"destination": mock_contact.public_key, "text": "Hello"},
+            )
+
+            assert response.status_code == 200
+            mock_broadcast.assert_called_once()
+            event_type, payload = mock_broadcast.call_args.args
+            assert event_type == "message"
+            assert payload["id"] == 123
+            assert payload["type"] == "PRIV"
+
+    def test_send_channel_message_emits_websocket_message_event(self):
+        """POST /messages/channel should emit a WS message event for other clients."""
+        from fastapi.testclient import TestClient
+        from meshcore import EventType
+
+        mock_mc = MagicMock()
+        mock_mc.self_info = {"name": "TestNode"}
+        ok_result = MagicMock(type=EventType.MSG_SENT, payload={})
+        mock_mc.commands.set_channel = AsyncMock(return_value=ok_result)
+        mock_mc.commands.send_chan_msg = AsyncMock(return_value=ok_result)
+
+        mock_channel = MagicMock()
+        mock_channel.name = "Public"
+        mock_channel.key = "AA" * 16
+
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("app.dependencies.radio_manager") as mock_rm,
+            patch(
+                "app.repository.ChannelRepository.get_by_key",
+                new=AsyncMock(return_value=mock_channel),
+            ),
+            patch(
+                "app.repository.AppSettingsRepository.get",
+                new=AsyncMock(return_value=MagicMock(experimental_channel_double_send=False)),
+            ),
+            patch("app.repository.MessageRepository.create", new=AsyncMock(return_value=456)),
+            patch("app.repository.MessageRepository.get_ack_count", new=AsyncMock(return_value=0)),
+            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
+            patch("app.bot.run_bot_for_message", new=AsyncMock()),
+            patch("app.routers.messages.asyncio.create_task", side_effect=_capture_task),
+            patch("app.routers.messages.broadcast_event", create=True) as mock_broadcast,
+        ):
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            from app.main import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/api/messages/channel",
+                json={"channel_key": mock_channel.key, "text": "Hello room"},
+            )
+
+            assert response.status_code == 200
+            mock_broadcast.assert_called_once()
+            event_type, payload = mock_broadcast.call_args.args
+            assert event_type == "message"
+            assert payload["id"] == 456
+            assert payload["type"] == "CHAN"
+
     def test_send_direct_message_contact_not_found(self):
         """Sending to unknown contact returns 404."""
         from fastapi.testclient import TestClient

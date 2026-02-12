@@ -10,6 +10,7 @@ from app.event_handlers import track_pending_ack
 from app.models import Message, SendChannelMessageRequest, SendDirectMessageRequest
 from app.radio import radio_manager
 from app.repository import AmbiguousPublicKeyPrefixError, MessageRepository
+from app.websocket import broadcast_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -131,6 +132,9 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
         outgoing=True,
         acked=0,
     )
+
+    # Broadcast so all connected clients (not just sender) see the outgoing message immediately.
+    broadcast_event("message", message.model_dump())
 
     # Trigger bots for outgoing DMs (runs in background, doesn't block response)
     from app.bot import run_bot_for_message
@@ -280,6 +284,9 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         outgoing=True,
         acked=acked_count,
     )
+
+    # Broadcast so all connected clients (not just sender) see the outgoing message immediately.
+    broadcast_event("message", message.model_dump())
 
     # Trigger bots for outgoing channel messages (runs in background, doesn't block response)
     from app.bot import run_bot_for_message

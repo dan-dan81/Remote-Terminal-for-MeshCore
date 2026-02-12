@@ -16,6 +16,7 @@ from app.event_handlers import (
     register_event_handlers,
     track_pending_ack,
 )
+from app.repository import AmbiguousPublicKeyPrefixError
 
 
 @pytest.fixture(autouse=True)
@@ -305,6 +306,45 @@ class TestContactMessageCLIFiltering:
 
             # SHOULD still be processed (defaults to txt_type=0)
             mock_repo.create.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_prefix_stores_dm_under_prefix(self):
+        """Ambiguous sender prefixes should still be stored under the prefix key."""
+        from app.event_handlers import on_contact_message
+
+        with (
+            patch("app.event_handlers.MessageRepository") as mock_repo,
+            patch("app.event_handlers.ContactRepository") as mock_contact_repo,
+            patch("app.event_handlers.broadcast_event") as mock_broadcast,
+            patch("app.bot.run_bot_for_message", new_callable=AsyncMock),
+        ):
+            mock_repo.create = AsyncMock(return_value=77)
+            mock_contact_repo.get_by_key_or_prefix = AsyncMock(
+                side_effect=AmbiguousPublicKeyPrefixError(
+                    "abc123",
+                    [
+                        "abc1230000000000000000000000000000000000000000000000000000000000",
+                        "abc123ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    ],
+                )
+            )
+
+            class MockEvent:
+                payload = {
+                    "pubkey_prefix": "abc123",
+                    "text": "hello from ambiguous prefix",
+                    "txt_type": 0,
+                    "sender_timestamp": 1700000000,
+                }
+
+            await on_contact_message(MockEvent())
+
+            mock_repo.create.assert_called_once()
+            assert mock_repo.create.await_args.kwargs["conversation_key"] == "abc123"
+
+            mock_broadcast.assert_called_once()
+            _, payload = mock_broadcast.call_args.args
+            assert payload["conversation_key"] == "abc123"
 
 
 class TestEventHandlerRegistration:

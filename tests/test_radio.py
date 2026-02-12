@@ -4,6 +4,7 @@ These tests verify that connect() routes to the correct transport method
 based on settings.connection_type, and that connection_info is set correctly.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -168,3 +169,58 @@ class TestRadioManagerConnect:
 
             old_mc.disconnect.assert_awaited_once()
             assert rm.meshcore is new_mc
+
+
+class TestConnectionMonitor:
+    """Tests for the background connection monitor loop."""
+
+    @pytest.mark.asyncio
+    async def test_monitor_does_not_mark_connected_when_setup_fails(self):
+        """A reconnect with failing post-connect setup should not broadcast healthy status."""
+        from app.radio import RadioManager
+
+        rm = RadioManager()
+        rm._connection_info = "Serial: /dev/ttyUSB0"
+        rm._last_connected = True
+        rm._meshcore = MagicMock()
+        rm._meshcore.is_connected = False
+
+        reconnect_calls = 0
+
+        async def _reconnect(*args, **kwargs):
+            nonlocal reconnect_calls
+            reconnect_calls += 1
+            if reconnect_calls == 1:
+                rm._meshcore = MagicMock()
+                rm._meshcore.is_connected = True
+                return True
+            return False
+
+        sleep_calls = 0
+
+        async def _sleep(_seconds: float):
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls >= 3:
+                raise asyncio.CancelledError()
+
+        rm.reconnect = AsyncMock(side_effect=_reconnect)
+        rm.post_connect_setup = AsyncMock(side_effect=RuntimeError("setup failed"))
+
+        with (
+            patch("app.radio.asyncio.sleep", side_effect=_sleep),
+            patch("app.websocket.broadcast_health") as mock_broadcast_health,
+        ):
+            await rm.start_connection_monitor()
+            try:
+                await rm._reconnect_task
+            finally:
+                await rm.stop_connection_monitor()
+
+        # Should report connection lost, but not report healthy until setup succeeds.
+        mock_broadcast_health.assert_any_call(False, "Serial: /dev/ttyUSB0")
+        healthy_calls = [
+            call for call in mock_broadcast_health.call_args_list if call.args[0] is True
+        ]
+        assert healthy_calls == []
+        assert rm._last_connected is False

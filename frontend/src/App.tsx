@@ -78,6 +78,7 @@ export function App() {
   const [config, setConfig] = useState<RadioConfig | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [rawPackets, setRawPackets] = useState<RawPacket[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -178,7 +179,10 @@ export function App() {
           description: success.details,
         });
       },
-      onContacts: (data: Contact[]) => setContacts(data),
+      onContacts: (data: Contact[]) => {
+        setContacts(data);
+        setContactsLoaded(true);
+      },
       onChannels: (data: Channel[]) => setChannels(data),
       onMessage: (msg: Message) => {
         const activeConv = activeConversationRef.current;
@@ -339,7 +343,15 @@ export function App() {
 
     // Fetch contacts and channels via REST (parallel, faster than WS serial push)
     api.getChannels().then(setChannels).catch(console.error);
-    fetchAllContacts().then(setContacts).catch(console.error);
+    fetchAllContacts()
+      .then((data) => {
+        setContacts(data);
+        setContactsLoaded(true);
+      })
+      .catch((err) => {
+        console.error(err);
+        setContactsLoaded(true);
+      });
   }, [fetchConfig, fetchAppSettings, fetchUndecryptedCount, fetchAllContacts]);
 
   // One-time migration of localStorage preferences to server
@@ -467,10 +479,12 @@ export function App() {
   // Phase 2: Resolve contact hash (only if phase 1 didn't set a conversation)
   useEffect(() => {
     if (hasSetDefaultConversation.current || activeConversation) return;
-    if (contacts.length === 0) return;
 
     const hashConv = parseHashConversation();
     if (hashConv?.type === 'contact') {
+      // Wait until the initial contacts load finishes so we don't fall back early.
+      if (!contactsLoaded) return;
+
       const contact = resolveContactFromHashToken(hashConv.name, contacts);
       if (contact) {
         setActiveConversation({
@@ -481,21 +495,21 @@ export function App() {
         hasSetDefaultConversation.current = true;
         return;
       }
-    }
 
-    // Contact hash didn't match — fall back to Public if channels loaded
-    if (channels.length > 0) {
-      const publicChannel = channels.find((c) => c.name === 'Public');
-      if (publicChannel) {
-        setActiveConversation({
-          type: 'channel',
-          id: publicChannel.key,
-          name: publicChannel.name,
-        });
-        hasSetDefaultConversation.current = true;
+      // Contact hash didn't match — fall back to Public if channels loaded.
+      if (channels.length > 0) {
+        const publicChannel = channels.find((c) => c.name === 'Public');
+        if (publicChannel) {
+          setActiveConversation({
+            type: 'channel',
+            id: publicChannel.key,
+            name: publicChannel.name,
+          });
+          hasSetDefaultConversation.current = true;
+        }
       }
     }
-  }, [contacts, channels, activeConversation]);
+  }, [contacts, channels, activeConversation, contactsLoaded]);
 
   // Keep ref in sync and update URL hash
   useEffect(() => {

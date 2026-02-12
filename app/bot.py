@@ -173,7 +173,6 @@ async def _send_single_bot_message(
 
     from app.models import SendChannelMessageRequest, SendDirectMessageRequest
     from app.routers.messages import send_channel_message, send_direct_message
-    from app.websocket import broadcast_event
 
     # Serialize bot sends and enforce minimum spacing
     async with _bot_send_lock:
@@ -190,15 +189,11 @@ async def _send_single_bot_message(
             if is_dm:
                 logger.info("Bot sending DM reply to %s", sender_key[:12])
                 request = SendDirectMessageRequest(destination=sender_key, text=message_text)
-                message = await send_direct_message(request)
-                # Broadcast to WebSocket (endpoint returns to HTTP caller, bot needs explicit broadcast)
-                broadcast_event("message", message.model_dump())
+                await send_direct_message(request)
             elif channel_key:
                 logger.info("Bot sending channel reply to %s", channel_key[:8])
                 request = SendChannelMessageRequest(channel_key=channel_key, text=message_text)
-                message = await send_channel_message(request)
-                # Broadcast to WebSocket
-                broadcast_event("message", message.model_dump())
+                await send_channel_message(request)
             else:
                 logger.warning("Cannot send bot response: no destination")
                 return  # Don't update timestamp if we didn't send

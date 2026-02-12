@@ -365,7 +365,7 @@ class RadioManager:
             self._meshcore = None
             logger.debug("Radio disconnected")
 
-    async def reconnect(self) -> bool:
+    async def reconnect(self, *, broadcast_on_success: bool = True) -> bool:
         """Attempt to reconnect to the radio.
 
         Returns True if reconnection was successful, False otherwise.
@@ -399,7 +399,8 @@ class RadioManager:
 
                 if self.is_connected:
                     logger.info("Radio reconnected successfully at %s", self._connection_info)
-                    broadcast_health(True, self._connection_info)
+                    if broadcast_on_success:
+                        broadcast_health(True, self._connection_info)
                     return True
                 else:
                     logger.warning("Reconnection failed: not connected after connect()")
@@ -435,13 +436,18 @@ class RadioManager:
 
                     if not current_connected:
                         # Attempt reconnection on every loop while disconnected
-                        if not self.is_reconnecting and await self.reconnect():
+                        if not self.is_reconnecting and await self.reconnect(
+                            broadcast_on_success=False
+                        ):
                             await self.post_connect_setup()
+                            broadcast_health(True, self._connection_info)
                             self._last_connected = True
 
                     elif not self._last_connected and current_connected:
-                        # Connection restored (might have reconnected automatically)
+                        # Connection restored (might have reconnected automatically).
+                        # Always run setup before reporting healthy.
                         logger.info("Radio connection restored")
+                        await self.post_connect_setup()
                         broadcast_health(True, self._connection_info)
                         self._last_connected = True
 

@@ -31,6 +31,7 @@ interface UseWebSocketOptions {
 export function useWebSocket(options: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const shouldReconnectRef = useRef(true);
   const [connected, setConnected] = useState(false);
 
   // Store options in ref to avoid stale closures in WebSocket handlers.
@@ -70,6 +71,10 @@ export function useWebSocket(options: UseWebSocketOptions) {
       console.log('WebSocket disconnected');
       setConnected(false);
       wsRef.current = null;
+
+      if (!shouldReconnectRef.current) {
+        return;
+      }
 
       // Reconnect after 3 seconds
       if (reconnectTimeoutRef.current) {
@@ -140,6 +145,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
   }, []); // No dependencies - handlers accessed through ref
 
   useEffect(() => {
+    shouldReconnectRef.current = true;
     connect();
 
     // Ping every 30 seconds to keep connection alive
@@ -150,6 +156,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
     }, 30000);
 
     return () => {
+      shouldReconnectRef.current = false;
       clearInterval(pingInterval);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
