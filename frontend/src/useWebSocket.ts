@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { HealthStatus, Contact, Channel, Message, MessagePath, RawPacket } from './types';
+import type { HealthStatus, Contact, Message, MessagePath, RawPacket } from './types';
 
 interface WebSocketMessage {
   type: string;
@@ -18,8 +18,6 @@ interface SuccessEvent {
 
 interface UseWebSocketOptions {
   onHealth?: (health: HealthStatus) => void;
-  onContacts?: (contacts: Contact[]) => void;
-  onChannels?: (channels: Channel[]) => void;
   onMessage?: (message: Message) => void;
   onContact?: (contact: Contact) => void;
   onRawPacket?: (packet: RawPacket) => void;
@@ -99,12 +97,6 @@ export function useWebSocket(options: UseWebSocketOptions) {
         switch (msg.type) {
           case 'health':
             handlers.onHealth?.(msg.data as HealthStatus);
-            break;
-          case 'contacts':
-            handlers.onContacts?.(msg.data as Contact[]);
-            break;
-          case 'channels':
-            handlers.onChannels?.(msg.data as Channel[]);
             break;
           case 'message':
             handlers.onMessage?.(msg.data as Message);

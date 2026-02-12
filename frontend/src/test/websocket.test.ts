@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { HealthStatus, Contact, Channel, Message, MessagePath, RawPacket } from '../types';
+import type { HealthStatus, Contact, Message, MessagePath, RawPacket } from '../types';
 
 /**
  * Parse and route a WebSocket message.
@@ -16,8 +16,6 @@ function parseWebSocketMessage(
   data: string,
   handlers: {
     onHealth?: (health: HealthStatus) => void;
-    onContacts?: (contacts: Contact[]) => void;
-    onChannels?: (channels: Channel[]) => void;
     onMessage?: (message: Message) => void;
     onContact?: (contact: Contact) => void;
     onRawPacket?: (packet: RawPacket) => void;
@@ -31,12 +29,6 @@ function parseWebSocketMessage(
       case 'health':
         handlers.onHealth?.(msg.data as HealthStatus);
         return { type: msg.type, handled: !!handlers.onHealth };
-      case 'contacts':
-        handlers.onContacts?.(msg.data as Contact[]);
-        return { type: msg.type, handled: !!handlers.onContacts };
-      case 'channels':
-        handlers.onChannels?.(msg.data as Channel[]);
-        return { type: msg.type, handled: !!handlers.onChannels };
       case 'message':
         handlers.onMessage?.(msg.data as Message);
         return { type: msg.type, handled: !!handlers.onMessage };

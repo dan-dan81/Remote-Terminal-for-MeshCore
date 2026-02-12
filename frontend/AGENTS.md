@@ -101,7 +101,7 @@ Specialized logic is delegated to hooks:
 
 - Auto reconnect (3s) with cleanup guard on unmount.
 - Heartbeat ping every 30s.
-- Event handlers: `health`, `contacts`, `channels`, `message`, `contact`, `raw_packet`, `message_acked`, `error`, `success`.
+- Event handlers: `health`, `message`, `contact`, `raw_packet`, `message_acked`, `error`, `success`, `pong` (ignored).
 
 ## URL Hash Navigation (`utils/urlHash.ts`)
 
@@ -156,9 +156,8 @@ LocalStorage migration helpers for favorites; canonical favorites are server-sid
 - `last_message_times`
 - `preferences_migrated`
 - `advert_interval`
+- `last_advert_time`
 - `bots`
-
-Backend also tracks `last_advert_time` in settings responses.
 
 ## Repeater Mode
 

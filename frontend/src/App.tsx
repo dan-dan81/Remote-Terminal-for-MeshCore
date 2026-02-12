@@ -179,11 +179,6 @@ export function App() {
           description: success.details,
         });
       },
-      onContacts: (data: Contact[]) => {
-        setContacts(data);
-        setContactsLoaded(true);
-      },
-      onChannels: (data: Channel[]) => setChannels(data),
       onMessage: (msg: Message) => {
         const activeConv = activeConversationRef.current;
 

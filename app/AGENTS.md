@@ -142,16 +142,16 @@ app/
 
 ## WebSocket Events
 
-- `health`
-- `contact`
-- `message`
-- `message_acked`
-- `raw_packet`
-- `error`
-- `success`
+- `health` — radio connection status (broadcast on change, personal on connect)
+- `contact` — single contact upsert (from advertisements and radio sync)
+- `message` — new message (channel or DM, from packet processor or send endpoints)
+- `message_acked` — ACK/echo update for existing message (ack count + paths)
+- `raw_packet` — every incoming RF packet (for real-time packet feed UI)
+- `error` — toast notification (reconnect failure, missing private key, etc.)
+- `success` — toast notification (historical decrypt complete, etc.)
 
 Initial WS connect sends `health` only. Contacts/channels are loaded by REST.
-Note: the frontend WS hook also registers handlers for `contacts` and `channels` events, but the backend never emits them.
+Client sends `"ping"` text; server replies `{"type":"pong"}`.
 
 ## Data Model Notes
 
