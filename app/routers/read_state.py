@@ -5,7 +5,6 @@ import time
 
 from fastapi import APIRouter, Query
 
-from app.database import db
 from app.models import UnreadCounts
 from app.repository import ChannelRepository, ContactRepository, MessageRepository
 
@@ -37,7 +36,6 @@ async def mark_all_read() -> dict:
 
     await ContactRepository.mark_all_read(now)
     await ChannelRepository.mark_all_read(now)
-    await db.conn.commit()
 
     logger.info("Marked all contacts and channels as read at %d", now)
     return {"status": "ok", "timestamp": now}

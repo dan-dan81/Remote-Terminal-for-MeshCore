@@ -223,6 +223,7 @@ class ContactRepository:
     async def mark_all_read(timestamp: int) -> None:
         """Mark all contacts as read at the given timestamp."""
         await db.conn.execute("UPDATE contacts SET last_read_at = ?", (timestamp,))
+        await db.conn.commit()
 
     @staticmethod
     async def get_by_pubkey_first_byte(hex_byte: str) -> list[Contact]:
@@ -314,6 +315,7 @@ class ChannelRepository:
     async def mark_all_read(timestamp: int) -> None:
         """Mark all channels as read at the given timestamp."""
         await db.conn.execute("UPDATE channels SET last_read_at = ?", (timestamp,))
+        await db.conn.commit()
 
 
 class MessageRepository:
