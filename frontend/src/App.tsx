@@ -254,10 +254,6 @@ export function App() {
             updated[idx] = {
               ...existing,
               ...contact,
-              name: contact.name ?? existing.name,
-              last_path: contact.last_path ?? existing.last_path,
-              lat: contact.lat ?? existing.lat,
-              lon: contact.lon ?? existing.lon,
             };
             return updated;
           }
