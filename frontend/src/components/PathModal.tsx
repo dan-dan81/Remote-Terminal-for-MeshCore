@@ -69,7 +69,7 @@ export function PathModal({ open, onClose, paths, senderInfo, contacts, config }
               return (
                 <div key={index}>
                   <span className="text-foreground/70 font-semibold">Path {index + 1}:</span>{' '}
-                  <span className="font-mono text-muted-foreground/70">{rawPath}</span>
+                  <span className="font-mono text-muted-foreground">{rawPath}</span>
                 </div>
               );
             })}
@@ -305,7 +305,7 @@ function HopNode({ hop, hopNumber, prevLocation }: HopNodeProps) {
         </div>
 
         {isUnknown ? (
-          <div className="font-medium text-muted-foreground/70">&lt;UNKNOWN&gt;</div>
+          <div className="font-medium text-muted-foreground">&lt;UNKNOWN&gt;</div>
         ) : isAmbiguous ? (
           <div>
             {hop.matches.map((contact) => {
@@ -366,7 +366,7 @@ function CoordinateLink({ lat, lon, publicKey }: { lat: number; lon: number; pub
 
   return (
     <span
-      className="text-xs text-muted-foreground/70 font-mono cursor-pointer hover:text-primary hover:underline ml-1"
+      className="text-xs text-muted-foreground font-mono cursor-pointer hover:text-primary hover:underline ml-1"
       onClick={handleClick}
       title="View on map"
     >

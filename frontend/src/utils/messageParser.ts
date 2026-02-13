@@ -26,7 +26,7 @@ export function formatTime(timestamp: number): string {
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
 
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
   if (isToday) {
     return time;

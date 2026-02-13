@@ -117,8 +117,8 @@ function HopCountBadge({ paths, onClick, variant }: HopCountBadgeProps) {
 
   const className =
     variant === 'header'
-      ? 'font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline'
-      : 'text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline';
+      ? 'font-normal text-muted-foreground ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline'
+      : 'text-[10px] text-muted-foreground ml-1 cursor-pointer hover:text-primary hover:underline';
 
   return (
     <span
@@ -420,7 +420,7 @@ export function MessageList({
                     ) : (
                       displaySender
                     )}
-                    <span className="font-normal text-muted-foreground/70 ml-2 text-[11px]">
+                    <span className="font-normal text-muted-foreground ml-2 text-[11px]">
                       {formatTime(msg.sender_timestamp || msg.received_at)}
                     </span>
                     {!msg.outgoing && msg.paths && msg.paths.length > 0 && (
@@ -446,7 +446,7 @@ export function MessageList({
                   ))}
                   {!showAvatar && (
                     <>
-                      <span className="text-[10px] text-muted-foreground/50 ml-2">
+                      <span className="text-[10px] text-muted-foreground ml-2">
                         {formatTime(msg.sender_timestamp || msg.received_at)}
                       </span>
                       {!msg.outgoing && msg.paths && msg.paths.length > 0 && (

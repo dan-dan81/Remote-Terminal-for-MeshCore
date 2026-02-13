@@ -39,12 +39,12 @@ export function StatusBar({
   };
 
   return (
-    <div className="flex items-center gap-4 px-4 py-2 bg-[#252525] border-b border-[#333] text-xs">
+    <div className="flex items-center gap-4 px-4 py-2 bg-card border-b border-border text-xs">
       {/* Mobile menu button - only visible on small screens */}
       {onMenuClick && (
         <button
           onClick={onMenuClick}
-          className="md:hidden p-1 bg-transparent border-none text-[#e0e0e0] cursor-pointer"
+          className="md:hidden p-1 bg-transparent border-none text-foreground cursor-pointer"
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
@@ -53,18 +53,20 @@ export function StatusBar({
 
       <h1 className="text-base font-semibold mr-auto">RemoteTerm</h1>
 
-      <div className="flex items-center gap-1 text-[#888]">
-        <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#4caf50]' : 'bg-[#666]'}`} />
-        <span className="hidden lg:inline text-[#e0e0e0]">
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <div
+          className={`w-2 h-2 rounded-full ${connected ? 'bg-primary' : 'bg-muted-foreground'}`}
+        />
+        <span className="hidden lg:inline text-foreground">
           {connected ? 'Connected' : 'Disconnected'}
         </span>
       </div>
 
       {config && (
-        <div className="hidden lg:flex items-center gap-2 text-[#888]">
-          <span className="text-[#e0e0e0]">{config.name || 'Unnamed'}</span>
+        <div className="hidden lg:flex items-center gap-2 text-muted-foreground">
+          <span className="text-foreground">{config.name || 'Unnamed'}</span>
           <span
-            className="font-mono text-[#888] cursor-pointer hover:text-[#4a9eff]"
+            className="font-mono text-muted-foreground cursor-pointer hover:text-primary"
             onClick={() => {
               navigator.clipboard.writeText(config.public_key);
               toast.success('Public key copied!');
@@ -80,14 +82,14 @@ export function StatusBar({
         <button
           onClick={handleReconnect}
           disabled={reconnecting}
-          className="px-3 py-1 bg-[#4a3000] border border-[#6b4500] text-[#ffa500] rounded text-xs cursor-pointer hover:bg-[#5a3a00] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1 bg-amber-950 border border-amber-800 text-amber-400 rounded text-xs cursor-pointer hover:bg-amber-900 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {reconnecting ? 'Reconnecting...' : 'Reconnect'}
         </button>
       )}
       <button
         onClick={onSettingsClick}
-        className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
+        className="px-3 py-1 bg-secondary border border-border text-foreground rounded text-xs cursor-pointer hover:bg-accent"
       >
         <span role="img" aria-label="Settings">
           &#128295;

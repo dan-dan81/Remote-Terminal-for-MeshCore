@@ -155,7 +155,7 @@ function getRouteTypeColor(routeType: string): string {
     case 'Transport Direct':
       return 'bg-orange-500/20 text-orange-400';
     default:
-      return 'bg-gray-500/20 text-gray-400';
+      return 'bg-muted text-muted-foreground';
   }
 }
 
@@ -238,7 +238,7 @@ export function RawPacketList({ packets }: RawPacketListProps) {
           )}
 
           {/* Raw hex data (always visible) */}
-          <div className="font-mono text-[10px] break-all text-muted-foreground/70 mt-1 p-1 bg-background/50 rounded">
+          <div className="font-mono text-[10px] break-all text-muted-foreground mt-1 p-1 bg-background/50 rounded">
             {packet.data.toUpperCase()}
           </div>
         </div>
