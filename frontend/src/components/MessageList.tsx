@@ -408,7 +408,7 @@ export function MessageList({
                 )}
               >
                 {showAvatar && (
-                  <div className="text-[13px] font-semibold text-muted-foreground mb-0.5">
+                  <div className="text-[13px] font-bold text-foreground mb-0.5">
                     {canClickSender ? (
                       <span
                         className="cursor-pointer hover:text-primary hover:underline"
