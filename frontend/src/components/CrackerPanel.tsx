@@ -455,8 +455,11 @@ export function CrackerPanel({
     <div className="flex flex-col h-full p-3 gap-3 bg-background border-t border-border overflow-auto">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Max Length:</label>
+          <label htmlFor="cracker-max-length" className="text-sm text-muted-foreground">
+            Max Length:
+          </label>
           <input
+            id="cracker-max-length"
             type="number"
             min={1}
             max={10}

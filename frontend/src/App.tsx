@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  startTransition,
+  lazy,
+  Suspense,
+} from 'react';
 import { api } from './api';
 import { useWebSocket } from './useWebSocket';
 import {
@@ -20,9 +29,13 @@ import {
   type SettingsSection,
 } from './components/SettingsModal';
 import { RawPacketList } from './components/RawPacketList';
-import { MapView } from './components/MapView';
-import { VisualizerView } from './components/VisualizerView';
 import { CrackerPanel } from './components/CrackerPanel';
+
+// Lazy-load heavy components (Leaflet, force-directed graph) to reduce initial bundle
+const MapView = lazy(() => import('./components/MapView').then((m) => ({ default: m.MapView })));
+const VisualizerView = lazy(() =>
+  import('./components/VisualizerView').then((m) => ({ default: m.VisualizerView }))
+);
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
 import {
@@ -947,7 +960,7 @@ export function App() {
           </SheetContent>
         </Sheet>
 
-        <div className="flex-1 flex flex-col bg-background min-w-0">
+        <main className="flex-1 flex flex-col bg-background min-w-0">
           <div className={cn('flex-1 flex flex-col min-h-0', showSettings && 'hidden')}>
             {activeConversation ? (
               activeConversation.type === 'map' ? (
@@ -956,16 +969,32 @@ export function App() {
                     Node Map
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <MapView contacts={contacts} focusedKey={activeConversation.mapFocusKey} />
+                    <Suspense
+                      fallback={
+                        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                          Loading map...
+                        </div>
+                      }
+                    >
+                      <MapView contacts={contacts} focusedKey={activeConversation.mapFocusKey} />
+                    </Suspense>
                   </div>
                 </>
               ) : activeConversation.type === 'visualizer' ? (
-                <VisualizerView
-                  packets={rawPackets}
-                  contacts={contacts}
-                  config={config}
-                  onClearPackets={() => setRawPackets([])}
-                />
+                <Suspense
+                  fallback={
+                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                      Loading visualizer...
+                    </div>
+                  }
+                >
+                  <VisualizerView
+                    packets={rawPackets}
+                    contacts={contacts}
+                    config={config}
+                    onClearPackets={() => setRawPackets([])}
+                  />
+                </Suspense>
               ) : activeConversation.type === 'raw' ? (
                 <>
                   <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
@@ -1208,7 +1237,7 @@ export function App() {
               </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
 
       {/* Global Cracker Panel - always rendered to maintain state */}
