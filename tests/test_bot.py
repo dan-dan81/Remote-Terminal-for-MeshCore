@@ -22,7 +22,7 @@ class TestExecuteBotCode:
     def test_valid_code_returning_string(self):
         """Bot code that returns a string works correctly."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return f"Hello, {sender_name}!"
 """
         result = execute_bot_code(
@@ -41,7 +41,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_valid_code_returning_none(self):
         """Bot code that returns None works correctly."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return None
 """
         result = execute_bot_code(
@@ -60,7 +60,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_empty_string_response_treated_as_none(self):
         """Bot returning empty/whitespace string is treated as None."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return "   "
 """
         result = execute_bot_code(
@@ -135,7 +135,7 @@ bot = "I'm a string, not a function"
     def test_bot_function_raises_exception(self):
         """Bot function that raises exception returns None."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     raise ValueError("oops!")
 """
         result = execute_bot_code(
@@ -154,7 +154,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_bot_returns_non_string(self):
         """Bot function returning non-string returns None."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return 42
 """
         result = execute_bot_code(
@@ -201,10 +201,9 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
         assert result is None
 
     def test_bot_receives_all_parameters(self):
-        """Bot function receives all expected parameters."""
+        """Bot function receives all expected parameters including is_outgoing."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
-    # Verify all params are accessible
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     parts = [
         f"name={sender_name}",
         f"key={sender_key}",
@@ -214,6 +213,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
         f"ch_name={channel_name}",
         f"ts={sender_timestamp}",
         f"path={path}",
+        f"outgoing={is_outgoing}",
     ]
     return "|".join(parts)
 """
@@ -227,16 +227,98 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
             channel_name="#test",
             sender_timestamp=12345,
             path="001122",
+            is_outgoing=True,
         )
         assert (
             result
-            == "name=Bob|key=def456|msg=Test|dm=False|ch_key=AABBCCDD|ch_name=#test|ts=12345|path=001122"
+            == "name=Bob|key=def456|msg=Test|dm=False|ch_key=AABBCCDD|ch_name=#test|ts=12345|path=001122|outgoing=True"
         )
+
+    def test_is_outgoing_defaults_to_false(self):
+        """is_outgoing defaults to False when not specified."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
+    return f"outgoing={is_outgoing}"
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+        )
+        assert result == "outgoing=False"
+
+    def test_is_outgoing_true_passed_correctly(self):
+        """is_outgoing=True is passed to bot function."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
+    if is_outgoing:
+        return None
+    return "reply"
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+            is_outgoing=True,
+        )
+        assert result is None
+
+    def test_legacy_8_param_bot_still_works(self):
+        """Legacy bot with 8 parameters (no is_outgoing) still works."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+    return f"Hello, {sender_name}!"
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+            is_outgoing=True,
+        )
+        assert result == "Hello, Alice!"
+
+    def test_legacy_bot_with_kwargs_receives_is_outgoing(self):
+        """Legacy bot using **kwargs receives is_outgoing."""
+        code = """
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, **kwargs):
+    return f"outgoing={kwargs.get('is_outgoing', 'missing')}"
+"""
+        result = execute_bot_code(
+            code=code,
+            sender_name="Alice",
+            sender_key="abc123",
+            message_text="Hi",
+            is_dm=True,
+            channel_key=None,
+            channel_name=None,
+            sender_timestamp=None,
+            path=None,
+            is_outgoing=True,
+        )
+        assert result == "outgoing=True"
 
     def test_channel_message_with_none_sender_key(self):
         """Channel messages correctly pass None for sender_key."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     if sender_key is None and not is_dm:
         return "channel message detected"
     return "unexpected"
@@ -257,7 +339,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_bot_returns_list_of_strings(self):
         """Bot function returning list of strings works correctly."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return ["First message", "Second message", "Third message"]
 """
         result = execute_bot_code(
@@ -276,7 +358,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_bot_returns_empty_list(self):
         """Bot function returning empty list is treated as None."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return []
 """
         result = execute_bot_code(
@@ -295,7 +377,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_bot_returns_list_with_empty_strings_filtered(self):
         """Bot function returning list filters out empty/whitespace strings."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return ["Valid", "", "  ", "Also valid", None, 42]
 """
         result = execute_bot_code(
@@ -315,7 +397,7 @@ def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name,
     def test_bot_returns_list_all_empty_treated_as_none(self):
         """Bot function returning list of all empty strings is treated as None."""
         code = """
-def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path):
+def bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing):
     return ["", "   ", ""]
 """
         result = execute_bot_code(

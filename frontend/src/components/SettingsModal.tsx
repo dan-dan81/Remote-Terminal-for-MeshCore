@@ -163,9 +163,10 @@ export function SettingsModal(props: SettingsModalProps) {
     channel_name: str | None,
     sender_timestamp: int | None,
     path: str | None,
+    is_outgoing: bool = False,
 ) -> str | list[str] | None:
     """
-    Process incoming messages and optionally return a reply.
+    Process messages and optionally return a reply.
 
     Args:
         sender_name: Display name of sender (may be None)
@@ -176,11 +177,16 @@ export function SettingsModal(props: SettingsModalProps) {
         channel_name: Channel name with hash (e.g. "#bot"), None for DMs
         sender_timestamp: Sender's timestamp (unix seconds, may be None)
         path: Hex-encoded routing path (may be None)
+        is_outgoing: True if this is our own outgoing message
 
     Returns:
         None for no reply, a string for a single reply,
         or a list of strings to send multiple messages in order
     """
+    # Don't reply to our own outgoing messages
+    if is_outgoing:
+        return None
+
     # Example: Only respond in #bot channel to "!pling" command
     if channel_name == "#bot" and "!pling" in message_text.lower():
         return "[BOT] Plong!"

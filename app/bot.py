@@ -11,6 +11,7 @@ the security implications.
 """
 
 import asyncio
+import inspect
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -48,14 +49,18 @@ def execute_bot_code(
     channel_name: str | None,
     sender_timestamp: int | None,
     path: str | None,
+    is_outgoing: bool = False,
 ) -> str | list[str] | None:
     """
     Execute user-provided bot code with message context.
 
     The code should define a function:
-    `bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path)`
+    `bot(sender_name, sender_key, message_text, is_dm, channel_key, channel_name, sender_timestamp, path, is_outgoing)`
     that returns either None (no response), a string (single response message),
     or a list of strings (multiple messages sent in order).
+
+    Legacy bot functions with 8 parameters (without is_outgoing) are detected
+    via inspect and called without the new parameter for backward compatibility.
 
     Args:
         code: Python code defining the bot function
@@ -67,6 +72,7 @@ def execute_bot_code(
         channel_name: Channel name (e.g. "#general" with hash), None for DMs
         sender_timestamp: Sender's timestamp from the message (may be None)
         path: Hex-encoded routing path (may be None)
+        is_outgoing: True if this is our own outgoing message
 
     Returns:
         Response string, list of strings, or None.
@@ -95,18 +101,63 @@ def execute_bot_code(
 
     bot_func = namespace["bot"]
 
+    # Detect whether the bot function accepts is_outgoing (new 9-param signature)
+    # or uses the legacy 8-param signature, for backward compatibility.
+    # Three cases: explicit is_outgoing param or 9+ params (positional),
+    # **kwargs (pass as keyword), or legacy 8-param (omit).
+    call_style = "legacy"  # "positional", "keyword", or "legacy"
     try:
-        # Call the bot function with message context
-        result = bot_func(
-            sender_name,
-            sender_key,
-            message_text,
-            is_dm,
-            channel_key,
-            channel_name,
-            sender_timestamp,
-            path,
-        )
+        sig = inspect.signature(bot_func)
+        params = sig.parameters
+        non_variadic = [
+            p
+            for p in params.values()
+            if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        ]
+        if "is_outgoing" in params or len(non_variadic) >= 9:
+            call_style = "positional"
+        elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            call_style = "keyword"
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        # Call the bot function with appropriate signature
+        if call_style == "positional":
+            result = bot_func(
+                sender_name,
+                sender_key,
+                message_text,
+                is_dm,
+                channel_key,
+                channel_name,
+                sender_timestamp,
+                path,
+                is_outgoing,
+            )
+        elif call_style == "keyword":
+            result = bot_func(
+                sender_name,
+                sender_key,
+                message_text,
+                is_dm,
+                channel_key,
+                channel_name,
+                sender_timestamp,
+                path,
+                is_outgoing=is_outgoing,
+            )
+        else:
+            result = bot_func(
+                sender_name,
+                sender_key,
+                message_text,
+                is_dm,
+                channel_key,
+                channel_name,
+                sender_timestamp,
+                path,
+            )
 
         # Validate result
         if result is None:
@@ -281,6 +332,7 @@ async def run_bot_for_message(
                         channel_name,
                         sender_timestamp,
                         path,
+                        is_outgoing,
                     ),
                     timeout=BOT_EXECUTION_TIMEOUT,
                 )
