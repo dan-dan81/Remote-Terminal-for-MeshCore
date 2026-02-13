@@ -6,7 +6,13 @@ import {
   getStateKey,
   type ConversationTimes,
 } from '../utils/conversationState';
-import type { Channel, Contact, Conversation, Message } from '../types';
+import type { Channel, Contact, Conversation, Message, UnreadCounts } from '../types';
+
+// Consume the prefetched unreads promise started in index.html (if available).
+// This lets the fetch run while React JS is still downloading/parsing.
+const prefetchedUnreads: Promise<UnreadCounts> | undefined = (
+  window as unknown as { __prefetch?: { unreads?: Promise<UnreadCounts> } }
+).__prefetch?.unreads;
 
 export interface UseUnreadCountsResult {
   unreadCounts: Record<string, number>;
@@ -21,47 +27,53 @@ export interface UseUnreadCountsResult {
 export function useUnreadCounts(
   channels: Channel[],
   contacts: Contact[],
-  activeConversation: Conversation | null,
-  myName: string | null = null
+  activeConversation: Conversation | null
 ): UseUnreadCountsResult {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [mentions, setMentions] = useState<Record<string, boolean>>({});
   const [lastMessageTimes, setLastMessageTimes] = useState<ConversationTimes>(getLastMessageTimes);
 
-  // Keep myName in a ref so callbacks always have current value
-  const myNameRef = useRef(myName);
-  useEffect(() => {
-    myNameRef.current = myName;
-  }, [myName]);
+  // Apply unreads data to state
+  const applyUnreads = useCallback((data: UnreadCounts) => {
+    setUnreadCounts(data.counts);
+    setMentions(data.mentions);
+
+    if (Object.keys(data.last_message_times).length > 0) {
+      for (const [key, ts] of Object.entries(data.last_message_times)) {
+        setLastMessageTime(key, ts);
+      }
+      setLastMessageTimes(getLastMessageTimes());
+    }
+  }, []);
 
   // Fetch unreads from the server-side endpoint
   const fetchUnreads = useCallback(async () => {
     try {
-      const data = await api.getUnreads(myNameRef.current ?? undefined);
-
-      // Replace (not merge) — server counts are authoritative
-      setUnreadCounts(data.counts);
-      setMentions(data.mentions);
-
-      if (Object.keys(data.last_message_times).length > 0) {
-        // Update in-memory cache and state
-        for (const [key, ts] of Object.entries(data.last_message_times)) {
-          setLastMessageTime(key, ts);
-        }
-        setLastMessageTimes(getLastMessageTimes());
-      }
+      applyUnreads(await api.getUnreads());
     } catch (err) {
       console.error('Failed to fetch unreads:', err);
     }
-  }, []);
+  }, [applyUnreads]);
 
-  // Fetch when the number of channels/contacts changes (e.g. initial load,
-  // sync, create/delete).  Using .length avoids refiring on every WebSocket
-  // contact-update that merely mutates an existing entry's fields.
+  // On mount, consume the prefetched promise (started in index.html before
+  // React loaded) or fall back to a fresh fetch.
+  // Re-fetch when channel/contact count changes mid-session (new sync, cracker
+  // channel created, etc.) but skip the initial 0→N load to avoid double calls.
   const channelsLen = channels.length;
   const contactsLen = contacts.length;
+  const prevLens = useRef({ channels: 0, contacts: 0 });
   useEffect(() => {
-    if (channelsLen === 0 && contactsLen === 0) return;
+    if (prefetchedUnreads) {
+      prefetchedUnreads.then(applyUnreads).catch(() => fetchUnreads());
+    } else {
+      fetchUnreads();
+    }
+  }, [fetchUnreads, applyUnreads]);
+  useEffect(() => {
+    const prev = prevLens.current;
+    prevLens.current = { channels: channelsLen, contacts: contactsLen };
+    // Skip the initial load (0→N); only refetch on mid-session count changes
+    if (prev.channels === 0 && prev.contacts === 0) return;
     fetchUnreads();
   }, [channelsLen, contactsLen, fetchUnreads]);
 

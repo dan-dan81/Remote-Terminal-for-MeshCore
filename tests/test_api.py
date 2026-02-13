@@ -500,7 +500,7 @@ class TestReadStateEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_unreads_no_name_skips_mentions(self, test_db):
-        """GET /unreads without name param returns counts but no mention flags."""
+        """Unreads without a radio name returns counts but no mention flags."""
         chan_key = "CHAN1KEY1CHAN1KEY1CHAN1KEY1CHAN1KEY1"
         await ChannelRepository.upsert(key=chan_key, name="Public")
         await ChannelRepository.update_last_read_at(chan_key, 0)
@@ -517,6 +517,58 @@ class TestReadStateEndpoints:
 
         assert result["counts"][f"channel-{chan_key}"] == 1
         assert len(result["mentions"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_unreads_endpoint_sources_name_from_radio(self, test_db, client):
+        """GET /unreads sources the user's name from the radio for mention detection."""
+        chan_key = "MENTIONENDPOINT1MENTIONENDPOINT1"
+        await ChannelRepository.upsert(key=chan_key, name="Public")
+        await ChannelRepository.update_last_read_at(chan_key, 0)
+
+        await MessageRepository.create(
+            msg_type="CHAN",
+            text="hey @[RadioUser] check this",
+            received_at=1001,
+            conversation_key=chan_key,
+            sender_timestamp=1001,
+        )
+
+        # Mock radio_manager.meshcore to return a name
+        mock_mc = MagicMock()
+        mock_mc.self_info = {"name": "RadioUser"}
+        with patch("app.routers.read_state.radio_manager") as mock_rm:
+            mock_rm.meshcore = mock_mc
+            response = await client.get("/api/read-state/unreads")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["counts"][f"channel-{chan_key}"] == 1
+        assert data["mentions"][f"channel-{chan_key}"] is True
+
+    @pytest.mark.asyncio
+    async def test_unreads_endpoint_no_radio_skips_mentions(self, test_db, client):
+        """GET /unreads with no radio connected still returns counts without mentions."""
+        chan_key = "NORADIOENDPOINT1NORADIOENDPOINT1"
+        await ChannelRepository.upsert(key=chan_key, name="Public")
+        await ChannelRepository.update_last_read_at(chan_key, 0)
+
+        await MessageRepository.create(
+            msg_type="CHAN",
+            text="hey @[Someone] check this",
+            received_at=1001,
+            conversation_key=chan_key,
+            sender_timestamp=1001,
+        )
+
+        # Mock radio_manager.meshcore as None (disconnected)
+        with patch("app.routers.read_state.radio_manager") as mock_rm:
+            mock_rm.meshcore = None
+            response = await client.get("/api/read-state/unreads")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["counts"][f"channel-{chan_key}"] == 1
+        assert len(data["mentions"]) == 0
 
     @pytest.mark.asyncio
     async def test_unreads_reset_after_mark_read(self, test_db):

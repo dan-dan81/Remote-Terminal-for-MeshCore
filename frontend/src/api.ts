@@ -185,10 +185,7 @@ export const api = {
     }),
 
   // Read State
-  getUnreads: (name?: string) => {
-    const params = name ? `?name=${encodeURIComponent(name)}` : '';
-    return fetchJson<UnreadCounts>(`/read-state/unreads${params}`);
-  },
+  getUnreads: () => fetchJson<UnreadCounts>('/read-state/unreads'),
   markAllRead: () =>
     fetchJson<{ status: string; timestamp: number }>('/read-state/mark-all-read', {
       method: 'POST',

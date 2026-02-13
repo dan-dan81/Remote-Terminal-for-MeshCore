@@ -3,9 +3,10 @@
 import logging
 import time
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.models import UnreadCounts
+from app.radio import radio_manager
 from app.repository import ChannelRepository, ContactRepository, MessageRepository
 
 logger = logging.getLogger(__name__)
@@ -13,14 +14,18 @@ router = APIRouter(prefix="/read-state", tags=["read-state"])
 
 
 @router.get("/unreads", response_model=UnreadCounts)
-async def get_unreads(
-    name: str | None = Query(default=None, description="User's name for @mention detection"),
-) -> UnreadCounts:
+async def get_unreads() -> UnreadCounts:
     """Get unread counts, mention flags, and last message times for all conversations.
 
     Computes unread counts server-side using last_read_at timestamps on
     channels and contacts, avoiding the need to fetch bulk messages.
+    The radio's own name is sourced directly from the connected radio
+    for @mention detection.
     """
+    name: str | None = None
+    mc = radio_manager.meshcore
+    if mc and mc.self_info:
+        name = mc.self_info.get("name") or None
     data = await MessageRepository.get_unread_counts(name)
     return UnreadCounts(**data)
 

@@ -46,23 +46,13 @@ const RADIO_PRESETS: RadioPreset[] = [
   { name: 'Vietnam', freq: 920.25, bw: 250, sf: 11, cr: 5 },
 ];
 
-export type SettingsSection = 'radio' | 'identity' | 'connectivity' | 'database' | 'bot';
-
-export const SETTINGS_SECTION_ORDER: SettingsSection[] = [
-  'radio',
-  'identity',
-  'connectivity',
-  'database',
-  'bot',
-];
-
-export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
-  radio: '📻 Radio',
-  identity: '🪪 Identity',
-  connectivity: '📡 Connectivity',
-  database: '🗄️ Database',
-  bot: '🤖 Bot',
-};
+// Import for local use + re-export so existing imports from this file still work
+import {
+  SETTINGS_SECTION_ORDER,
+  SETTINGS_SECTION_LABELS,
+  type SettingsSection,
+} from './settingsConstants';
+export { SETTINGS_SECTION_ORDER, SETTINGS_SECTION_LABELS, type SettingsSection };
 
 interface SettingsModalBaseProps {
   open: boolean;

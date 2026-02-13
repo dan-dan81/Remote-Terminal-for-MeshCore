@@ -1598,12 +1598,14 @@ export function PacketVisualizer({
                 </label>
                 <div className="flex items-center gap-2">
                   <label
+                    htmlFor="observation-window"
                     className="text-muted-foreground"
                     title="How long to wait for duplicate packets via different paths before animating"
                   >
                     Observation window:
                   </label>
                   <input
+                    id="observation-window"
                     type="number"
                     min="1"
                     max="60"

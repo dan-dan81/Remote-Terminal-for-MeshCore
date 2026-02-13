@@ -23,18 +23,22 @@ import { MessageList } from './components/MessageList';
 import { MessageInput, type MessageInputHandle } from './components/MessageInput';
 import { NewMessageModal } from './components/NewMessageModal';
 import {
-  SettingsModal,
   SETTINGS_SECTION_LABELS,
   SETTINGS_SECTION_ORDER,
   type SettingsSection,
-} from './components/SettingsModal';
+} from './components/settingsConstants';
 import { RawPacketList } from './components/RawPacketList';
-import { CrackerPanel } from './components/CrackerPanel';
 
-// Lazy-load heavy components (Leaflet, force-directed graph) to reduce initial bundle
+// Lazy-load heavy components to reduce initial bundle
 const MapView = lazy(() => import('./components/MapView').then((m) => ({ default: m.MapView })));
 const VisualizerView = lazy(() =>
   import('./components/VisualizerView').then((m) => ({ default: m.VisualizerView }))
+);
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
+const CrackerPanel = lazy(() =>
+  import('./components/CrackerPanel').then((m) => ({ default: m.CrackerPanel }))
 );
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './components/ui/sheet';
 import { Toaster, toast } from './components/ui/sonner';
@@ -103,6 +107,10 @@ export function App() {
   const [showCracker, setShowCracker] = useState(false);
   const [crackerRunning, setCrackerRunning] = useState(false);
 
+  // Defer CrackerPanel mount until first opened (lazy-loaded, but keep mounted after for state)
+  const crackerMounted = useRef(false);
+  if (showCracker) crackerMounted.current = true;
+
   // Favorites are now stored server-side in appSettings.
   // Stable empty array prevents a new reference every render when there are none.
   const emptyFavorites = useRef<Favorite[]>([]).current;
@@ -150,7 +158,7 @@ export function App() {
     incrementUnread,
     markAllRead,
     trackNewMessage,
-  } = useUnreadCounts(channels, contacts, activeConversation, config?.name);
+  } = useUnreadCounts(channels, contacts, activeConversation);
 
   const {
     repeaterLoggedIn,
@@ -1217,52 +1225,70 @@ export function App() {
                 </span>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
-                <SettingsModal
-                  open={showSettings}
-                  pageMode
-                  externalSidebarNav
-                  desktopSection={settingsSection}
-                  config={config}
-                  health={health}
-                  appSettings={appSettings}
-                  onClose={handleCloseSettingsView}
-                  onSave={handleSaveConfig}
-                  onSaveAppSettings={handleSaveAppSettings}
-                  onSetPrivateKey={handleSetPrivateKey}
-                  onReboot={handleReboot}
-                  onAdvertise={handleAdvertise}
-                  onHealthRefresh={handleHealthRefresh}
-                  onRefreshAppSettings={fetchAppSettings}
-                />
+                <Suspense
+                  fallback={
+                    <div className="flex-1 flex items-center justify-center p-8 text-muted-foreground">
+                      Loading settings...
+                    </div>
+                  }
+                >
+                  <SettingsModal
+                    open={showSettings}
+                    pageMode
+                    externalSidebarNav
+                    desktopSection={settingsSection}
+                    config={config}
+                    health={health}
+                    appSettings={appSettings}
+                    onClose={handleCloseSettingsView}
+                    onSave={handleSaveConfig}
+                    onSaveAppSettings={handleSaveAppSettings}
+                    onSetPrivateKey={handleSetPrivateKey}
+                    onReboot={handleReboot}
+                    onAdvertise={handleAdvertise}
+                    onHealthRefresh={handleHealthRefresh}
+                    onRefreshAppSettings={fetchAppSettings}
+                  />
+                </Suspense>
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* Global Cracker Panel - always rendered to maintain state */}
+      {/* Global Cracker Panel - deferred until first opened, then kept mounted for state */}
       <div
         className={cn(
           'border-t border-border bg-background transition-all duration-200 overflow-hidden',
           showCracker ? 'h-[275px]' : 'h-0'
         )}
       >
-        <CrackerPanel
-          packets={rawPackets}
-          channels={channels}
-          visible={showCracker}
-          onChannelCreate={async (name, key) => {
-            const created = await api.createChannel(name, key);
-            const data = await api.getChannels();
-            setChannels(data);
-            await api.decryptHistoricalPackets({
-              key_type: 'channel',
-              channel_key: created.key,
-            });
-            fetchUndecryptedCount();
-          }}
-          onRunningChange={setCrackerRunning}
-        />
+        {crackerMounted.current && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                Loading cracker...
+              </div>
+            }
+          >
+            <CrackerPanel
+              packets={rawPackets}
+              channels={channels}
+              visible={showCracker}
+              onChannelCreate={async (name, key) => {
+                const created = await api.createChannel(name, key);
+                const data = await api.getChannels();
+                setChannels(data);
+                await api.decryptHistoricalPackets({
+                  key_type: 'channel',
+                  channel_key: created.key,
+                });
+                fetchUndecryptedCount();
+              }}
+              onRunningChange={setCrackerRunning}
+            />
+          </Suspense>
+        )}
       </div>
 
       <NewMessageModal
