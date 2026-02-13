@@ -9,6 +9,7 @@ import {
   Suspense,
 } from 'react';
 import { api } from './api';
+import { takePrefetch } from './prefetch';
 import { useWebSocket } from './useWebSocket';
 import {
   useRepeaterMode,
@@ -308,7 +309,7 @@ export function App() {
   // Fetch radio config (not sent via WebSocket)
   const fetchConfig = useCallback(async () => {
     try {
-      const data = await api.getRadioConfig();
+      const data = await (takePrefetch('config') ?? api.getRadioConfig());
       setConfig(data);
     } catch (err) {
       console.error('Failed to fetch config:', err);
@@ -318,7 +319,7 @@ export function App() {
   // Fetch app settings
   const fetchAppSettings = useCallback(async () => {
     try {
-      const data = await api.getSettings();
+      const data = await (takePrefetch('settings') ?? api.getSettings());
       setAppSettings(data);
       // Initialize in-memory cache with server data
       initLastMessageTimes(data.last_message_times ?? {});
@@ -330,7 +331,7 @@ export function App() {
   // Fetch undecrypted packet count
   const fetchUndecryptedCount = useCallback(async () => {
     try {
-      const data = await api.getUndecryptedPacketCount();
+      const data = await (takePrefetch('undecryptedCount') ?? api.getUndecryptedPacketCount());
       setUndecryptedCount(data.count);
     } catch (err) {
       console.error('Failed to fetch undecrypted count:', err);
@@ -340,7 +341,7 @@ export function App() {
   // Fetch all contacts, paginating if >1000
   const fetchAllContacts = useCallback(async (): Promise<Contact[]> => {
     const pageSize = 1000;
-    const first = await api.getContacts(pageSize, 0);
+    const first = await (takePrefetch('contacts') ?? api.getContacts(pageSize, 0));
     if (first.length < pageSize) return first;
     let all = [...first];
     let offset = pageSize;
@@ -360,7 +361,7 @@ export function App() {
     fetchUndecryptedCount();
 
     // Fetch contacts and channels via REST (parallel, faster than WS serial push)
-    api.getChannels().then(setChannels).catch(console.error);
+    (takePrefetch('channels') ?? api.getChannels()).then(setChannels).catch(console.error);
     fetchAllContacts()
       .then((data) => {
         setContacts(data);

@@ -7,12 +7,7 @@ import {
   type ConversationTimes,
 } from '../utils/conversationState';
 import type { Channel, Contact, Conversation, Message, UnreadCounts } from '../types';
-
-// Consume the prefetched unreads promise started in index.html (if available).
-// This lets the fetch run while React JS is still downloading/parsing.
-const prefetchedUnreads: Promise<UnreadCounts> | undefined = (
-  window as unknown as { __prefetch?: { unreads?: Promise<UnreadCounts> } }
-).__prefetch?.unreads;
+import { takePrefetch } from '../prefetch';
 
 export interface UseUnreadCountsResult {
   unreadCounts: Record<string, number>;
@@ -63,8 +58,9 @@ export function useUnreadCounts(
   const contactsLen = contacts.length;
   const prevLens = useRef({ channels: 0, contacts: 0 });
   useEffect(() => {
-    if (prefetchedUnreads) {
-      prefetchedUnreads.then(applyUnreads).catch(() => fetchUnreads());
+    const prefetched = takePrefetch('unreads');
+    if (prefetched) {
+      prefetched.then(applyUnreads).catch(() => fetchUnreads());
     } else {
       fetchUnreads();
     }

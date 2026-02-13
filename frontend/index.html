@@ -20,8 +20,14 @@
     <script>
       // Start critical data fetches before React loads — shaves ~1-2s off startup.
       // React hooks consume the promises via window.__prefetch.
+      var j = function(r) { return r.json(); };
       window.__prefetch = {
-        unreads: fetch('/api/read-state/unreads').then(function(r) { return r.json(); }),
+        config: fetch('/api/radio/config').then(j),
+        settings: fetch('/api/settings').then(j),
+        channels: fetch('/api/channels').then(j),
+        contacts: fetch('/api/contacts?limit=1000&offset=0').then(j),
+        unreads: fetch('/api/read-state/unreads').then(j),
+        undecryptedCount: fetch('/api/packets/undecrypted/count').then(j),
       };
     </script>
     <script type="module" src="/src/main.tsx"></script>
