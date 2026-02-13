@@ -90,8 +90,10 @@ export function App() {
   const [showCracker, setShowCracker] = useState(false);
   const [crackerRunning, setCrackerRunning] = useState(false);
 
-  // Favorites are now stored server-side in appSettings
-  const favorites: Favorite[] = appSettings?.favorites ?? [];
+  // Favorites are now stored server-side in appSettings.
+  // Stable empty array prevents a new reference every render when there are none.
+  const emptyFavorites = useRef<Favorite[]>([]).current;
+  const favorites: Favorite[] = appSettings?.favorites ?? emptyFavorites;
 
   // Track previous health status to detect changes
   const prevHealthRef = useRef<HealthStatus | null>(null);
@@ -244,12 +246,16 @@ export function App() {
         setContacts((prev) => {
           const idx = prev.findIndex((c) => c.public_key === contact.public_key);
           if (idx >= 0) {
-            const updated = [...prev];
             const existing = prev[idx];
-            updated[idx] = {
-              ...existing,
-              ...contact,
-            };
+            // Skip update if all incoming fields are identical — avoids a new
+            // array reference (and Sidebar re-render) on every advertisement.
+            const merged = { ...existing, ...contact };
+            const unchanged = (Object.keys(merged) as (keyof Contact)[]).every(
+              (k) => existing[k] === merged[k]
+            );
+            if (unchanged) return prev;
+            const updated = [...prev];
+            updated[idx] = merged;
             return updated;
           }
           return [...prev, contact as Contact];
@@ -853,6 +859,15 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleNewMessage = useCallback(() => {
+    setShowNewMessage(true);
+    setSidebarOpen(false);
+  }, []);
+
+  const handleToggleCracker = useCallback(() => {
+    setShowCracker((prev) => !prev);
+  }, []);
+
   // Sidebar content (shared between desktop and mobile)
   const sidebarContent = (
     <Sidebar
@@ -860,16 +875,13 @@ export function App() {
       channels={channels}
       activeConversation={activeConversation}
       onSelectConversation={handleSelectConversation}
-      onNewMessage={() => {
-        setShowNewMessage(true);
-        setSidebarOpen(false);
-      }}
+      onNewMessage={handleNewMessage}
       lastMessageTimes={lastMessageTimes}
       unreadCounts={unreadCounts}
       mentions={mentions}
       showCracker={showCracker}
       crackerRunning={crackerRunning}
-      onToggleCracker={() => setShowCracker((prev) => !prev)}
+      onToggleCracker={handleToggleCracker}
       onMarkAllRead={markAllRead}
       favorites={favorites}
       sortOrder={appSettings?.sidebar_sort_order ?? 'recent'}

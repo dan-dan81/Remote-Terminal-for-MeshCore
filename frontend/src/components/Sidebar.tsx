@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   CONTACT_TYPE_REPEATER,
   type Contact,
@@ -82,132 +82,154 @@ export function Sidebar({
     return mentions[key] || false;
   };
 
-  const getLastMessageTime = (type: 'channel' | 'contact', id: string) => {
-    const key = getStateKey(type, id);
-    return lastMessageTimes[key] || 0;
-  };
+  const getLastMessageTime = useCallback(
+    (type: 'channel' | 'contact', id: string) => {
+      const key = getStateKey(type, id);
+      return lastMessageTimes[key] || 0;
+    },
+    [lastMessageTimes]
+  );
 
   // Deduplicate channels by name, keeping the first (lowest index)
-  const uniqueChannels = channels.reduce<Channel[]>((acc, channel) => {
-    if (!acc.some((c) => c.name === channel.name)) {
-      acc.push(channel);
-    }
-    return acc;
-  }, []);
+  const uniqueChannels = useMemo(
+    () =>
+      channels.reduce<Channel[]>((acc, channel) => {
+        if (!acc.some((c) => c.name === channel.name)) {
+          acc.push(channel);
+        }
+        return acc;
+      }, []),
+    [channels]
+  );
 
   // Deduplicate contacts by public key, preferring ones with names
   // Also filter out any contacts with empty public keys
-  const uniqueContacts = contacts
-    .filter((c) => c.public_key && c.public_key.length > 0)
-    .sort((a, b) => {
-      // Sort contacts with names first
-      if (a.name && !b.name) return -1;
-      if (!a.name && b.name) return 1;
-      return (a.name || '').localeCompare(b.name || '');
-    })
-    .reduce<Contact[]>((acc, contact) => {
-      if (!acc.some((c) => c.public_key === contact.public_key)) {
-        acc.push(contact);
-      }
-      return acc;
-    }, []);
+  const uniqueContacts = useMemo(
+    () =>
+      contacts
+        .filter((c) => c.public_key && c.public_key.length > 0)
+        .sort((a, b) => {
+          // Sort contacts with names first
+          if (a.name && !b.name) return -1;
+          if (!a.name && b.name) return 1;
+          return (a.name || '').localeCompare(b.name || '');
+        })
+        .reduce<Contact[]>((acc, contact) => {
+          if (!acc.some((c) => c.public_key === contact.public_key)) {
+            acc.push(contact);
+          }
+          return acc;
+        }, []),
+    [contacts]
+  );
 
   // Sort channels based on sort order, with Public always first
-  const sortedChannels = [...uniqueChannels].sort((a, b) => {
-    // Public channel always sorts to the top
-    if (a.name === 'Public') return -1;
-    if (b.name === 'Public') return 1;
+  const sortedChannels = useMemo(
+    () =>
+      [...uniqueChannels].sort((a, b) => {
+        // Public channel always sorts to the top
+        if (a.name === 'Public') return -1;
+        if (b.name === 'Public') return 1;
 
-    if (sortOrder === 'recent') {
-      const timeA = getLastMessageTime('channel', a.key);
-      const timeB = getLastMessageTime('channel', b.key);
-      // If both have messages, sort by most recent first
-      if (timeA && timeB) return timeB - timeA;
-      // Items with messages come before items without
-      if (timeA && !timeB) return -1;
-      if (!timeA && timeB) return 1;
-      // Fall back to alpha for items without messages
-    }
-    return a.name.localeCompare(b.name);
-  });
+        if (sortOrder === 'recent') {
+          const timeA = getLastMessageTime('channel', a.key);
+          const timeB = getLastMessageTime('channel', b.key);
+          if (timeA && timeB) return timeB - timeA;
+          if (timeA && !timeB) return -1;
+          if (!timeA && timeB) return 1;
+        }
+        return a.name.localeCompare(b.name);
+      }),
+    [uniqueChannels, sortOrder, getLastMessageTime]
+  );
 
   // Sort contacts: non-repeaters first (by recent or alpha), then repeaters (always alpha)
-  const sortedContacts = [...uniqueContacts].sort((a, b) => {
-    const aIsRepeater = a.type === CONTACT_TYPE_REPEATER;
-    const bIsRepeater = b.type === CONTACT_TYPE_REPEATER;
+  const sortedContacts = useMemo(
+    () =>
+      [...uniqueContacts].sort((a, b) => {
+        const aIsRepeater = a.type === CONTACT_TYPE_REPEATER;
+        const bIsRepeater = b.type === CONTACT_TYPE_REPEATER;
 
-    // Repeaters always go to the bottom
-    if (aIsRepeater && !bIsRepeater) return 1;
-    if (!aIsRepeater && bIsRepeater) return -1;
+        if (aIsRepeater && !bIsRepeater) return 1;
+        if (!aIsRepeater && bIsRepeater) return -1;
 
-    // Both repeaters: always sort alphabetically
-    if (aIsRepeater && bIsRepeater) {
-      return (a.name || a.public_key).localeCompare(b.name || b.public_key);
-    }
+        if (aIsRepeater && bIsRepeater) {
+          return (a.name || a.public_key).localeCompare(b.name || b.public_key);
+        }
 
-    // Both non-repeaters: use selected sort order
-    if (sortOrder === 'recent') {
-      const timeA = getLastMessageTime('contact', a.public_key);
-      const timeB = getLastMessageTime('contact', b.public_key);
-      // If both have messages, sort by most recent first
-      if (timeA && timeB) return timeB - timeA;
-      // Items with messages come before items without
-      if (timeA && !timeB) return -1;
-      if (!timeA && timeB) return 1;
-      // Fall back to alpha for items without messages
-    }
-    return (a.name || a.public_key).localeCompare(b.name || b.public_key);
-  });
+        if (sortOrder === 'recent') {
+          const timeA = getLastMessageTime('contact', a.public_key);
+          const timeB = getLastMessageTime('contact', b.public_key);
+          if (timeA && timeB) return timeB - timeA;
+          if (timeA && !timeB) return -1;
+          if (!timeA && timeB) return 1;
+        }
+        return (a.name || a.public_key).localeCompare(b.name || b.public_key);
+      }),
+    [uniqueContacts, sortOrder, getLastMessageTime]
+  );
 
   // Filter by search query
   const query = searchQuery.toLowerCase().trim();
-  const filteredChannels = query
-    ? sortedChannels.filter(
-        (c) => c.name.toLowerCase().includes(query) || c.key.toLowerCase().includes(query)
-      )
-    : sortedChannels;
-  const filteredContacts = query
-    ? sortedContacts.filter(
-        (c) => c.name?.toLowerCase().includes(query) || c.public_key.toLowerCase().includes(query)
-      )
-    : sortedContacts;
-
-  // Separate favorites from regular items
-  const favoriteChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
-  const favoriteContacts = filteredContacts.filter((c) =>
-    isFavorite(favorites, 'contact', c.public_key)
+  const filteredChannels = useMemo(
+    () =>
+      query
+        ? sortedChannels.filter(
+            (c) => c.name.toLowerCase().includes(query) || c.key.toLowerCase().includes(query)
+          )
+        : sortedChannels,
+    [sortedChannels, query]
   );
-  const nonFavoriteChannels = filteredChannels.filter(
-    (c) => !isFavorite(favorites, 'channel', c.key)
-  );
-  const nonFavoriteContacts = filteredContacts.filter(
-    (c) => !isFavorite(favorites, 'contact', c.public_key)
+  const filteredContacts = useMemo(
+    () =>
+      query
+        ? sortedContacts.filter(
+            (c) =>
+              c.name?.toLowerCase().includes(query) || c.public_key.toLowerCase().includes(query)
+          )
+        : sortedContacts,
+    [sortedContacts, query]
   );
 
-  // Combine and sort favorites by most recent message (always recent order)
+  // Separate favorites from regular items, and build combined favorites list
   type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
 
-  const favoriteItems: FavoriteItem[] = [
-    ...favoriteChannels.map((channel) => ({ type: 'channel' as const, channel })),
-    ...favoriteContacts.map((contact) => ({ type: 'contact' as const, contact })),
-  ].sort((a, b) => {
-    const timeA =
-      a.type === 'channel'
-        ? getLastMessageTime('channel', a.channel.key)
-        : getLastMessageTime('contact', a.contact.public_key);
-    const timeB =
-      b.type === 'channel'
-        ? getLastMessageTime('channel', b.channel.key)
-        : getLastMessageTime('contact', b.contact.public_key);
-    // Sort by most recent first
-    if (timeA && timeB) return timeB - timeA;
-    if (timeA && !timeB) return -1;
-    if (!timeA && timeB) return 1;
-    // Fall back to name comparison
-    const nameA = a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
-    const nameB = b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
-    return nameA.localeCompare(nameB);
-  });
+  const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts } = useMemo(() => {
+    const favChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
+    const favContacts = filteredContacts.filter((c) =>
+      isFavorite(favorites, 'contact', c.public_key)
+    );
+    const nonFavChannels = filteredChannels.filter((c) => !isFavorite(favorites, 'channel', c.key));
+    const nonFavContacts = filteredContacts.filter(
+      (c) => !isFavorite(favorites, 'contact', c.public_key)
+    );
+
+    const items: FavoriteItem[] = [
+      ...favChannels.map((channel) => ({ type: 'channel' as const, channel })),
+      ...favContacts.map((contact) => ({ type: 'contact' as const, contact })),
+    ].sort((a, b) => {
+      const timeA =
+        a.type === 'channel'
+          ? getLastMessageTime('channel', a.channel.key)
+          : getLastMessageTime('contact', a.contact.public_key);
+      const timeB =
+        b.type === 'channel'
+          ? getLastMessageTime('channel', b.channel.key)
+          : getLastMessageTime('contact', b.contact.public_key);
+      if (timeA && timeB) return timeB - timeA;
+      if (timeA && !timeB) return -1;
+      if (!timeA && timeB) return 1;
+      const nameA = a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
+      const nameB = b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
+      return nameA.localeCompare(nameB);
+    });
+
+    return {
+      favoriteItems: items,
+      nonFavoriteChannels: nonFavChannels,
+      nonFavoriteContacts: nonFavContacts,
+    };
+  }, [filteredChannels, filteredContacts, favorites, getLastMessageTime]);
 
   return (
     <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">

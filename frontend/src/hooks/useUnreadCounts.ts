@@ -55,11 +55,15 @@ export function useUnreadCounts(
     }
   }, []);
 
-  // Fetch when channels or contacts arrive/change
+  // Fetch when the number of channels/contacts changes (e.g. initial load,
+  // sync, create/delete).  Using .length avoids refiring on every WebSocket
+  // contact-update that merely mutates an existing entry's fields.
+  const channelsLen = channels.length;
+  const contactsLen = contacts.length;
   useEffect(() => {
-    if (channels.length === 0 && contacts.length === 0) return;
+    if (channelsLen === 0 && contactsLen === 0) return;
     fetchUnreads();
-  }, [channels, contacts, fetchUnreads]);
+  }, [channelsLen, contactsLen, fetchUnreads]);
 
   // Mark conversation as read when user views it
   // Calls server API to persist read state across devices
