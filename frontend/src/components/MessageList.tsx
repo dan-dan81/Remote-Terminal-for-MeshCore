@@ -23,6 +23,7 @@ interface MessageListProps {
   hasOlderMessages?: boolean;
   onSenderClick?: (sender: string) => void;
   onLoadOlder?: () => void;
+  onResendChannelMessage?: (messageId: number) => void;
   radioName?: string;
   config?: RadioConfig | null;
 }
@@ -134,6 +135,8 @@ function HopCountBadge({ paths, onClick, variant }: HopCountBadgeProps) {
   );
 }
 
+const RESEND_WINDOW_SECONDS = 30;
+
 export function MessageList({
   messages,
   contacts,
@@ -142,6 +145,7 @@ export function MessageList({
   hasOlderMessages = false,
   onSenderClick,
   onLoadOlder,
+  onResendChannelMessage,
   radioName,
   config,
 }: MessageListProps) {
@@ -153,6 +157,8 @@ export function MessageList({
     paths: MessagePath[];
     senderInfo: SenderInfo;
   } | null>(null);
+  const [resendableIds, setResendableIds] = useState<Set<number>>(new Set());
+  const resendTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   // Capture scroll state in the scroll handler BEFORE any state updates
   const scrollStateRef = useRef({
@@ -215,6 +221,43 @@ export function MessageList({
       };
     }
   }, [messages.length]);
+
+  // Track resendable outgoing CHAN messages (within 30s window)
+  useEffect(() => {
+    if (!onResendChannelMessage) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const newResendable = new Set<number>();
+    const timers = resendTimersRef.current;
+
+    for (const msg of messages) {
+      if (!msg.outgoing || msg.type !== 'CHAN' || msg.sender_timestamp === null) continue;
+      const remaining = RESEND_WINDOW_SECONDS - (now - msg.sender_timestamp);
+      if (remaining <= 0) continue;
+
+      newResendable.add(msg.id);
+
+      // Schedule removal if not already tracked
+      if (!timers.has(msg.id)) {
+        const timer = setTimeout(() => {
+          setResendableIds((prev) => {
+            const next = new Set(prev);
+            next.delete(msg.id);
+            return next;
+          });
+          timers.delete(msg.id);
+        }, remaining * 1000);
+        timers.set(msg.id, timer);
+      }
+    }
+
+    setResendableIds(newResendable);
+
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, [messages, onResendChannelMessage]);
 
   // Handle scroll - capture state and detect when user is near top/bottom
   const handleScroll = useCallback(() => {
@@ -463,11 +506,23 @@ export function MessageList({
                       )}
                     </>
                   )}
+                  {msg.outgoing && onResendChannelMessage && resendableIds.has(msg.id) && (
+                    <button
+                      className="text-muted-foreground hover:text-primary ml-1 text-xs cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResendChannelMessage(msg.id);
+                      }}
+                      title="Resend message"
+                    >
+                      ↻
+                    </button>
+                  )}
                   {msg.outgoing &&
                     (msg.acked > 0 ? (
                       msg.paths && msg.paths.length > 0 ? (
                         <span
-                          className="cursor-pointer hover:text-primary"
+                          className="text-muted-foreground cursor-pointer hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedPath({
@@ -483,10 +538,13 @@ export function MessageList({
                           title="View echo paths"
                         >{` ✓${msg.acked > 1 ? msg.acked : ''}`}</span>
                       ) : (
-                        ` ✓${msg.acked > 1 ? msg.acked : ''}`
+                        <span className="text-muted-foreground">{` ✓${msg.acked > 1 ? msg.acked : ''}`}</span>
                       )
                     ) : (
-                      <span title="No repeats heard yet"> ?</span>
+                      <span className="text-muted-foreground" title="No repeats heard yet">
+                        {' '}
+                        ?
+                      </span>
                     ))}
                 </div>
               </div>

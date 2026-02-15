@@ -41,13 +41,11 @@ class TestUpdateSettings:
             AppSettingsUpdate(
                 max_radio_contacts=321,
                 advert_interval=3600,
-                experimental_channel_double_send=True,
             )
         )
 
         assert result.max_radio_contacts == 321
         assert result.advert_interval == 3600
-        assert result.experimental_channel_double_send is True
 
     @pytest.mark.asyncio
     async def test_empty_patch_returns_current_settings(self, test_db):

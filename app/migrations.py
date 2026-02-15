@@ -149,6 +149,13 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 16)
         applied += 1
 
+    # Migration 17: Drop experimental_channel_double_send column (replaced by user-triggered resend)
+    if version < 17:
+        logger.info("Applying migration 17: drop experimental_channel_double_send column")
+        await _migrate_017_drop_experimental_channel_double_send(conn)
+        await set_version(conn, 17)
+        applied += 1
+
     if applied > 0:
         logger.info(
             "Applied %d migration(s), schema now at version %d", applied, await get_version(conn)
@@ -1017,6 +1024,32 @@ async def _migrate_016_add_experimental_channel_double_send(conn: aiosqlite.Conn
     except aiosqlite.OperationalError as e:
         if "duplicate column" in str(e).lower():
             logger.debug("experimental_channel_double_send column already exists, skipping")
+        else:
+            raise
+
+    await conn.commit()
+
+
+async def _migrate_017_drop_experimental_channel_double_send(conn: aiosqlite.Connection) -> None:
+    """
+    Drop experimental_channel_double_send column from app_settings.
+
+    This feature is replaced by a user-triggered resend button.
+    SQLite 3.35.0+ supports ALTER TABLE DROP COLUMN. For older versions,
+    we silently skip (the column will remain but is unused).
+    """
+    try:
+        await conn.execute("ALTER TABLE app_settings DROP COLUMN experimental_channel_double_send")
+        logger.debug("Dropped experimental_channel_double_send from app_settings")
+    except aiosqlite.OperationalError as e:
+        error_msg = str(e).lower()
+        if "no such column" in error_msg:
+            logger.debug("app_settings.experimental_channel_double_send already dropped, skipping")
+        elif "syntax error" in error_msg or "drop column" in error_msg:
+            logger.debug(
+                "SQLite doesn't support DROP COLUMN, "
+                "experimental_channel_double_send column will remain"
+            )
         else:
             raise
 

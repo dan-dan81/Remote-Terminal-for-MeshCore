@@ -523,6 +523,36 @@ class MessageRepository:
         return row["acked"], MessageRepository._parse_paths(row["paths"])
 
     @staticmethod
+    async def get_by_id(message_id: int) -> "Message | None":
+        """Look up a message by its ID."""
+        cursor = await db.conn.execute(
+            """
+            SELECT id, type, conversation_key, text, sender_timestamp, received_at,
+                   paths, txt_type, signature, outgoing, acked
+            FROM messages
+            WHERE id = ?
+            """,
+            (message_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        return Message(
+            id=row["id"],
+            type=row["type"],
+            conversation_key=row["conversation_key"],
+            text=row["text"],
+            sender_timestamp=row["sender_timestamp"],
+            received_at=row["received_at"],
+            paths=MessageRepository._parse_paths(row["paths"]),
+            txt_type=row["txt_type"],
+            signature=row["signature"],
+            outgoing=bool(row["outgoing"]),
+            acked=row["acked"],
+        )
+
+    @staticmethod
     async def get_by_content(
         msg_type: str,
         conversation_key: str,
@@ -800,8 +830,7 @@ class AppSettingsRepository:
         """
         cursor = await db.conn.execute(
             """
-            SELECT max_radio_contacts, experimental_channel_double_send,
-                   favorites, auto_decrypt_dm_on_advert,
+            SELECT max_radio_contacts, favorites, auto_decrypt_dm_on_advert,
                    sidebar_sort_order, last_message_times, preferences_migrated,
                    advert_interval, last_advert_time, bots
             FROM app_settings WHERE id = 1
@@ -860,7 +889,6 @@ class AppSettingsRepository:
 
         return AppSettings(
             max_radio_contacts=row["max_radio_contacts"],
-            experimental_channel_double_send=bool(row["experimental_channel_double_send"]),
             favorites=favorites,
             auto_decrypt_dm_on_advert=bool(row["auto_decrypt_dm_on_advert"]),
             sidebar_sort_order=sort_order,
@@ -874,7 +902,6 @@ class AppSettingsRepository:
     @staticmethod
     async def update(
         max_radio_contacts: int | None = None,
-        experimental_channel_double_send: bool | None = None,
         favorites: list[Favorite] | None = None,
         auto_decrypt_dm_on_advert: bool | None = None,
         sidebar_sort_order: str | None = None,
@@ -891,10 +918,6 @@ class AppSettingsRepository:
         if max_radio_contacts is not None:
             updates.append("max_radio_contacts = ?")
             params.append(max_radio_contacts)
-
-        if experimental_channel_double_send is not None:
-            updates.append("experimental_channel_double_send = ?")
-            params.append(1 if experimental_channel_double_send else 0)
 
         if favorites is not None:
             updates.append("favorites = ?")

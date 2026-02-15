@@ -124,7 +124,6 @@ export interface BotConfig {
 
 export interface AppSettings {
   max_radio_contacts: number;
-  experimental_channel_double_send: boolean;
   favorites: Favorite[];
   auto_decrypt_dm_on_advert: boolean;
   sidebar_sort_order: 'recent' | 'alpha';
@@ -137,7 +136,6 @@ export interface AppSettings {
 
 export interface AppSettingsUpdate {
   max_radio_contacts?: number;
-  experimental_channel_double_send?: boolean;
   auto_decrypt_dm_on_advert?: boolean;
   sidebar_sort_order?: 'recent' | 'alpha';
   advert_interval?: number;

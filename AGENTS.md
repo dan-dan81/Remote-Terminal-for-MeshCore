@@ -268,6 +268,7 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | GET | `/api/messages` | List with filters |
 | POST | `/api/messages/direct` | Send direct message |
 | POST | `/api/messages/channel` | Send channel message |
+| POST | `/api/messages/channel/{message_id}/resend` | Resend an outgoing channel message (within 30 seconds) |
 | GET | `/api/packets/undecrypted/count` | Count of undecrypted packets |
 | POST | `/api/packets/decrypt/historical` | Decrypt stored packets |
 | POST | `/api/packets/maintenance` | Delete old packets and vacuum |
@@ -359,8 +360,8 @@ mc.subscribe(EventType.ACK, handler)
 | `MESHCORE_BLE_PIN` | *(required with BLE)* | BLE PIN code |
 | `MESHCORE_DATABASE_PATH` | `data/meshcore.db` | SQLite database location |
 
-**Note:** Runtime app settings are stored in the database (`app_settings` table), not environment variables. These include `max_radio_contacts`, `experimental_channel_double_send`, `auto_decrypt_dm_on_advert`, `sidebar_sort_order`, `advert_interval`, `last_advert_time`, `favorites`, `last_message_times`, and `bots`. They are configured via `GET/PATCH /api/settings` (and related settings endpoints).
+**Note:** Runtime app settings are stored in the database (`app_settings` table), not environment variables. These include `max_radio_contacts`, `auto_decrypt_dm_on_advert`, `sidebar_sort_order`, `advert_interval`, `last_advert_time`, `favorites`, `last_message_times`, and `bots`. They are configured via `GET/PATCH /api/settings` (and related settings endpoints).
 
-`experimental_channel_double_send` is an opt-in experimental setting: when enabled, channel sends perform a second byte-perfect resend after a 3-second delay.
+Byte-perfect channel retries are user-triggered via `POST /api/messages/channel/{message_id}/resend` and are allowed for 30 seconds after the original send.
 
 **Transport mutual exclusivity:** Only one of `MESHCORE_SERIAL_PORT`, `MESHCORE_TCP_HOST`, or `MESHCORE_BLE_ADDRESS` may be set. If none are set, serial auto-detection is used.

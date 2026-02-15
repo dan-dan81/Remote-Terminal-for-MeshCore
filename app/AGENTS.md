@@ -121,6 +121,7 @@ app/
 - `GET /messages`
 - `POST /messages/direct`
 - `POST /messages/channel`
+- `POST /messages/channel/{message_id}/resend`
 
 ### Packets
 - `GET /packets/undecrypted/count`
@@ -164,7 +165,6 @@ Main tables:
 
 `app_settings` fields in active model:
 - `max_radio_contacts`
-- `experimental_channel_double_send`
 - `favorites`
 - `auto_decrypt_dm_on_advert`
 - `sidebar_sort_order`

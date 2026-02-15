@@ -158,7 +158,6 @@ describe('App startup hash resolution', () => {
     });
     mocks.api.getSettings.mockResolvedValue({
       max_radio_contacts: 200,
-      experimental_channel_double_send: false,
       favorites: [],
       auto_decrypt_dm_on_advert: false,
       sidebar_sort_order: 'recent',

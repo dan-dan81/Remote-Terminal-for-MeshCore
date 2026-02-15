@@ -315,6 +315,118 @@ class TestMessagesEndpoint:
             assert exc_info.value.status_code == 500
             assert "unexpected duplicate" in exc_info.value.detail.lower()
 
+    @pytest.mark.asyncio
+    async def test_resend_channel_message_requires_connection(self, test_db, client):
+        """Resend endpoint returns 503 when radio is disconnected."""
+        with patch("app.dependencies.radio_manager") as mock_rm:
+            mock_rm.is_connected = False
+            mock_rm.meshcore = None
+
+            response = await client.post("/api/messages/channel/1/resend")
+
+            assert response.status_code == 503
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_resend_channel_message_success(self, test_db, client):
+        """Resend endpoint reuses timestamp bytes and strips sender prefix."""
+        from meshcore import EventType
+
+        chan_key = "AB" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#resend")
+        sent_at = int(time.time()) - 5
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="TestNode: hello world",
+            conversation_key=chan_key,
+            sender_timestamp=sent_at,
+            received_at=sent_at,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        mock_mc = MagicMock()
+        mock_mc.self_info = {"name": "TestNode"}
+        mock_mc.commands = MagicMock()
+        mock_mc.commands.set_channel = AsyncMock(
+            return_value=MagicMock(type=EventType.OK, payload={})
+        )
+        mock_mc.commands.send_chan_msg = AsyncMock(
+            return_value=MagicMock(type=EventType.MSG_SENT, payload={})
+        )
+
+        with patch("app.dependencies.radio_manager") as mock_rm:
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            response = await client.post(f"/api/messages/channel/{msg_id}/resend")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "message_id": msg_id}
+
+        set_kwargs = mock_mc.commands.set_channel.await_args.kwargs
+        assert set_kwargs["channel_idx"] == 0
+        assert set_kwargs["channel_name"] == "#resend"
+        assert set_kwargs["channel_secret"] == bytes.fromhex(chan_key)
+
+        send_kwargs = mock_mc.commands.send_chan_msg.await_args.kwargs
+        assert send_kwargs["chan"] == 0
+        assert send_kwargs["msg"] == "hello world"
+        assert send_kwargs["timestamp"] == sent_at.to_bytes(4, "little")
+
+    @pytest.mark.asyncio
+    async def test_resend_channel_message_window_expired(self, test_db, client):
+        """Resend endpoint rejects channel messages older than 30 seconds."""
+        chan_key = "CD" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#old")
+        sent_at = int(time.time()) - 60
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="TestNode: too old",
+            conversation_key=chan_key,
+            sender_timestamp=sent_at,
+            received_at=sent_at,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        mock_mc = MagicMock()
+        mock_mc.self_info = {"name": "TestNode"}
+        mock_mc.commands = MagicMock()
+        mock_mc.commands.set_channel = AsyncMock()
+        mock_mc.commands.send_chan_msg = AsyncMock()
+
+        with patch("app.dependencies.radio_manager") as mock_rm:
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            response = await client.post(f"/api/messages/channel/{msg_id}/resend")
+
+        assert response.status_code == 400
+        assert "expired" in response.json()["detail"].lower()
+        assert mock_mc.commands.set_channel.await_count == 0
+        assert mock_mc.commands.send_chan_msg.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_resend_channel_message_returns_404_for_missing(self, test_db, client):
+        """Resend endpoint returns 404 for nonexistent message ID."""
+        mock_mc = MagicMock()
+        mock_mc.self_info = {"name": "TestNode"}
+        mock_mc.commands = MagicMock()
+        mock_mc.commands.set_channel = AsyncMock()
+        mock_mc.commands.send_chan_msg = AsyncMock()
+
+        with patch("app.dependencies.radio_manager") as mock_rm:
+            mock_rm.is_connected = True
+            mock_rm.meshcore = mock_mc
+
+            response = await client.post("/api/messages/channel/999999/resend")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+        assert mock_mc.commands.set_channel.await_count == 0
+        assert mock_mc.commands.send_chan_msg.await_count == 0
+
 
 class TestChannelsEndpoint:
     """Test channel-related endpoints."""

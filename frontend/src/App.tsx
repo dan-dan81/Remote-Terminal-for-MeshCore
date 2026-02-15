@@ -666,6 +666,18 @@ export function App() {
     }
   }, []);
 
+  // Handle resend channel message
+  const handleResendChannelMessage = useCallback(async (messageId: number) => {
+    try {
+      await api.resendChannelMessage(messageId);
+      toast.success('Message resent');
+    } catch (err) {
+      toast.error('Failed to resend', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }, []);
+
   // Handle sender click to add mention
   const handleSenderClick = useCallback((sender: string) => {
     messageInputRef.current?.appendText(`@[${sender}] `);
@@ -1182,6 +1194,9 @@ export function App() {
                       activeConversation.type === 'channel' ? handleSenderClick : undefined
                     }
                     onLoadOlder={fetchOlderMessages}
+                    onResendChannelMessage={
+                      activeConversation.type === 'channel' ? handleResendChannelMessage : undefined
+                    }
                     radioName={config?.name}
                     config={config}
                   />

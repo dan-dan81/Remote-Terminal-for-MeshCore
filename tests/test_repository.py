@@ -385,7 +385,6 @@ class TestAppSettingsRepository:
         mock_cursor.fetchone = AsyncMock(
             return_value={
                 "max_radio_contacts": 250,
-                "experimental_channel_double_send": 1,
                 "favorites": "{not-json",
                 "auto_decrypt_dm_on_advert": 1,
                 "sidebar_sort_order": "invalid",
@@ -406,7 +405,6 @@ class TestAppSettingsRepository:
             settings = await AppSettingsRepository.get()
 
         assert settings.max_radio_contacts == 250
-        assert settings.experimental_channel_double_send is True
         assert settings.favorites == []
         assert settings.last_message_times == {}
         assert settings.sidebar_sort_order == "recent"
@@ -471,3 +469,26 @@ class TestAppSettingsRepository:
         assert result.preferences_migrated is True
         assert mock_update.call_args.kwargs["sidebar_sort_order"] == "recent"
         assert mock_update.call_args.kwargs["preferences_migrated"] is True
+
+
+class TestMessageRepositoryGetById:
+    """Test MessageRepository.get_by_id method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_message_when_exists(self, test_db):
+        """Returns message for valid ID."""
+        msg_id = await _create_message(test_db, text="Find me", outgoing=True)
+
+        result = await MessageRepository.get_by_id(msg_id)
+
+        assert result is not None
+        assert result.id == msg_id
+        assert result.text == "Find me"
+        assert result.outgoing is True
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self, test_db):
+        """Returns None for nonexistent ID."""
+        result = await MessageRepository.get_by_id(999999)
+
+        assert result is None

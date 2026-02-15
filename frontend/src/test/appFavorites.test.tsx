@@ -182,7 +182,6 @@ const baseConfig = {
 
 const baseSettings = {
   max_radio_contacts: 200,
-  experimental_channel_double_send: false,
   favorites: [] as Array<{ type: 'channel' | 'contact'; id: string }>,
   auto_decrypt_dm_on_advert: false,
   sidebar_sort_order: 'recent' as const,

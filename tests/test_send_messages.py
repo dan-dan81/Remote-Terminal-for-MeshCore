@@ -1,6 +1,7 @@
 """Tests for bot triggering on outgoing messages sent via the messages router."""
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,11 +14,15 @@ from app.models import (
     SendDirectMessageRequest,
 )
 from app.repository import (
-    AppSettingsRepository,
     ChannelRepository,
     ContactRepository,
+    MessageRepository,
 )
-from app.routers.messages import send_channel_message, send_direct_message
+from app.routers.messages import (
+    resend_channel_message,
+    send_channel_message,
+    send_direct_message,
+)
 
 
 @pytest.fixture
@@ -237,48 +242,6 @@ class TestOutgoingChannelBotTrigger:
             assert message.outgoing is True
 
     @pytest.mark.asyncio
-    async def test_send_channel_msg_double_send_when_experimental_enabled(self, test_db):
-        """Experimental setting triggers an immediate byte-perfect duplicate send."""
-        mc = _make_mc(name="MyNode")
-        chan_key = "dd" * 16
-        await ChannelRepository.upsert(key=chan_key, name="#double")
-        await AppSettingsRepository.update(experimental_channel_double_send=True)
-
-        with (
-            patch("app.routers.messages.require_connected", return_value=mc),
-            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
-            patch("app.bot.run_bot_for_message", new=AsyncMock()),
-            patch("app.routers.messages.asyncio.sleep", new=AsyncMock()) as mock_sleep,
-        ):
-            request = SendChannelMessageRequest(channel_key=chan_key, text="same bytes")
-            await send_channel_message(request)
-
-        assert mc.commands.send_chan_msg.await_count == 2
-        mock_sleep.assert_awaited_once_with(3)
-        first_call = mc.commands.send_chan_msg.await_args_list[0].kwargs
-        second_call = mc.commands.send_chan_msg.await_args_list[1].kwargs
-        assert first_call["chan"] == second_call["chan"]
-        assert first_call["msg"] == second_call["msg"]
-        assert first_call["timestamp"] == second_call["timestamp"]
-
-    @pytest.mark.asyncio
-    async def test_send_channel_msg_single_send_when_experimental_disabled(self, test_db):
-        """Default setting keeps channel sends to a single radio command."""
-        mc = _make_mc(name="MyNode")
-        chan_key = "ee" * 16
-        await ChannelRepository.upsert(key=chan_key, name="#single")
-
-        with (
-            patch("app.routers.messages.require_connected", return_value=mc),
-            patch("app.decoder.calculate_channel_hash", return_value="abcd"),
-            patch("app.bot.run_bot_for_message", new=AsyncMock()),
-        ):
-            request = SendChannelMessageRequest(channel_key=chan_key, text="single send")
-            await send_channel_message(request)
-
-        assert mc.commands.send_chan_msg.await_count == 1
-
-    @pytest.mark.asyncio
     async def test_send_channel_msg_response_includes_current_ack_count(self, test_db):
         """Send response reflects latest DB ack count at response time."""
         mc = _make_mc(name="MyNode")
@@ -296,3 +259,154 @@ class TestOutgoingChannelBotTrigger:
         # Fresh message has acked=0
         assert message.id is not None
         assert message.acked == 0
+
+
+class TestResendChannelMessage:
+    """Test the user-triggered resend endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_resend_within_window_succeeds(self, test_db):
+        """Resend within 30-second window sends with same timestamp bytes."""
+        mc = _make_mc(name="MyNode")
+        chan_key = "aa" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#resend")
+
+        now = int(time.time()) - 10  # 10 seconds ago
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="MyNode: hello",
+            conversation_key=chan_key.upper(),
+            sender_timestamp=now,
+            received_at=now,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        with patch("app.routers.messages.require_connected", return_value=mc):
+            result = await resend_channel_message(msg_id)
+
+        assert result["status"] == "ok"
+        assert result["message_id"] == msg_id
+
+        # Verify radio was called with correct timestamp bytes
+        mc.commands.send_chan_msg.assert_awaited_once()
+        call_kwargs = mc.commands.send_chan_msg.await_args.kwargs
+        assert call_kwargs["timestamp"] == now.to_bytes(4, "little")
+        assert call_kwargs["msg"] == "hello"  # Sender prefix stripped
+
+    @pytest.mark.asyncio
+    async def test_resend_outside_window_returns_400(self, test_db):
+        """Resend after 30-second window fails."""
+        mc = _make_mc(name="MyNode")
+        chan_key = "bb" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#old")
+
+        old_ts = int(time.time()) - 60  # 60 seconds ago
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="MyNode: old message",
+            conversation_key=chan_key.upper(),
+            sender_timestamp=old_ts,
+            received_at=old_ts,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await resend_channel_message(msg_id)
+
+        assert exc_info.value.status_code == 400
+        assert "expired" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_resend_non_outgoing_returns_400(self, test_db):
+        """Resend of incoming message fails."""
+        mc = _make_mc(name="MyNode")
+        chan_key = "cc" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#incoming")
+
+        now = int(time.time())
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="SomeUser: incoming",
+            conversation_key=chan_key.upper(),
+            sender_timestamp=now,
+            received_at=now,
+            outgoing=False,
+        )
+        assert msg_id is not None
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await resend_channel_message(msg_id)
+
+        assert exc_info.value.status_code == 400
+        assert "outgoing" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_resend_dm_returns_400(self, test_db):
+        """Resend of DM message fails."""
+        mc = _make_mc(name="MyNode")
+        pub_key = "dd" * 32
+
+        now = int(time.time())
+        msg_id = await MessageRepository.create(
+            msg_type="PRIV",
+            text="hello dm",
+            conversation_key=pub_key,
+            sender_timestamp=now,
+            received_at=now,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await resend_channel_message(msg_id)
+
+        assert exc_info.value.status_code == 400
+        assert "channel" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_resend_nonexistent_returns_404(self, test_db):
+        """Resend of nonexistent message fails."""
+        mc = _make_mc(name="MyNode")
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await resend_channel_message(999999)
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_resend_strips_sender_prefix(self, test_db):
+        """Resend strips the sender prefix before sending to radio."""
+        mc = _make_mc(name="MyNode")
+        chan_key = "ee" * 16
+        await ChannelRepository.upsert(key=chan_key, name="#strip")
+
+        now = int(time.time()) - 5
+        msg_id = await MessageRepository.create(
+            msg_type="CHAN",
+            text="MyNode: hello world",
+            conversation_key=chan_key.upper(),
+            sender_timestamp=now,
+            received_at=now,
+            outgoing=True,
+        )
+        assert msg_id is not None
+
+        with patch("app.routers.messages.require_connected", return_value=mc):
+            await resend_channel_message(msg_id)
+
+        call_kwargs = mc.commands.send_chan_msg.await_args.kwargs
+        assert call_kwargs["msg"] == "hello world"

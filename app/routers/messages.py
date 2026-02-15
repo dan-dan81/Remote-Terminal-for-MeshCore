@@ -158,7 +158,6 @@ async def send_direct_message(request: SendDirectMessageRequest) -> Message:
 
 # Temporary radio slot used for sending channel messages
 TEMP_RADIO_SLOT = 0
-EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS = 3
 
 
 @router.post("/channel", response_model=Message)
@@ -168,14 +167,13 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
 
     # Get channel info from our database
     from app.decoder import calculate_channel_hash
-    from app.repository import AppSettingsRepository, ChannelRepository
+    from app.repository import ChannelRepository
 
     db_channel = await ChannelRepository.get_by_key(request.channel_key)
     if not db_channel:
         raise HTTPException(
             status_code=404, detail=f"Channel {request.channel_key} not found in database"
         )
-    app_settings = await AppSettingsRepository.get()
 
     # Convert channel key hex to bytes
     try:
@@ -234,8 +232,8 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         if result.type == EventType.ERROR:
             raise HTTPException(status_code=500, detail=f"Failed to send message: {result.payload}")
 
-        # Store outgoing immediately after the first successful send to avoid a race where
-        # our own echo lands before persistence (especially with delayed duplicate sends).
+        # Store outgoing immediately after send to avoid a race where
+        # our own echo lands before persistence.
         message_id = await MessageRepository.create(
             msg_type="CHAN",
             text=text_with_sender,
@@ -250,9 +248,9 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
                 detail="Failed to store outgoing message - unexpected duplicate",
             )
 
-        # Broadcast immediately so all connected clients see the message before any
-        # double-send delay.  This also ensures the message is in the frontend's state
-        # when echo-driven `message_acked` events arrive during the sleep below.
+        # Broadcast immediately so all connected clients see the message promptly.
+        # This ensures the message exists in frontend state when echo-driven
+        # `message_acked` events arrive.
         broadcast_event(
             "message",
             Message(
@@ -266,25 +264,6 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
                 acked=0,
             ).model_dump(),
         )
-
-        # Experimental: byte-perfect resend after a delay to improve delivery reliability.
-        # This intentionally holds the radio operation lock for the full delay — it is an
-        # opt-in experimental feature where blocking other radio operations is acceptable.
-        if app_settings.experimental_channel_double_send:
-            logger.debug(
-                "Experimental channel double-send enabled; waiting %ds before byte-perfect duplicate",
-                EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS,
-            )
-            await asyncio.sleep(EXPERIMENTAL_CHANNEL_DOUBLE_SEND_DELAY_SECONDS)
-            duplicate_result = await mc.commands.send_chan_msg(
-                chan=TEMP_RADIO_SLOT,
-                msg=request.text,
-                timestamp=timestamp_bytes,
-            )
-            if duplicate_result.type == EventType.ERROR:
-                logger.warning(
-                    "Experimental duplicate channel send failed: %s", duplicate_result.payload
-                )
 
     if message_id is None or now is None:
         raise HTTPException(status_code=500, detail="Failed to store outgoing message")
@@ -321,3 +300,79 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
     )
 
     return message
+
+
+RESEND_WINDOW_SECONDS = 30
+
+
+@router.post("/channel/{message_id}/resend")
+async def resend_channel_message(message_id: int) -> dict:
+    """Resend a channel message within 30 seconds of original send.
+
+    Performs a byte-perfect resend using the same timestamp bytes as the original.
+    """
+    mc = require_connected()
+
+    from app.repository import ChannelRepository
+
+    msg = await MessageRepository.get_by_id(message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if not msg.outgoing:
+        raise HTTPException(status_code=400, detail="Can only resend outgoing messages")
+
+    if msg.type != "CHAN":
+        raise HTTPException(status_code=400, detail="Can only resend channel messages")
+
+    if msg.sender_timestamp is None:
+        raise HTTPException(status_code=400, detail="Message has no timestamp")
+
+    elapsed = int(time.time()) - msg.sender_timestamp
+    if elapsed > RESEND_WINDOW_SECONDS:
+        raise HTTPException(status_code=400, detail="Resend window has expired (30 seconds)")
+
+    db_channel = await ChannelRepository.get_by_key(msg.conversation_key)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail=f"Channel {msg.conversation_key} not found")
+
+    # Reconstruct timestamp bytes
+    timestamp_bytes = msg.sender_timestamp.to_bytes(4, "little")
+
+    # Strip sender prefix: DB stores "RadioName: message" but radio needs "message"
+    radio_name = mc.self_info.get("name", "") if mc.self_info else ""
+    text_to_send = msg.text
+    if radio_name and text_to_send.startswith(f"{radio_name}: "):
+        text_to_send = text_to_send[len(f"{radio_name}: ") :]
+
+    try:
+        key_bytes = bytes.fromhex(msg.conversation_key)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid channel key format: {msg.conversation_key}"
+        ) from None
+
+    async with radio_manager.radio_operation("resend_channel_message"):
+        set_result = await mc.commands.set_channel(
+            channel_idx=TEMP_RADIO_SLOT,
+            channel_name=db_channel.name,
+            channel_secret=key_bytes,
+        )
+        if set_result.type == EventType.ERROR:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to configure channel on radio before resending",
+            )
+
+        result = await mc.commands.send_chan_msg(
+            chan=TEMP_RADIO_SLOT,
+            msg=text_to_send,
+            timestamp=timestamp_bytes,
+        )
+        if result.type == EventType.ERROR:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to resend message: {result.payload}"
+            )
+
+    logger.info("Resent channel message %d to %s", message_id, db_channel.name)
+    return {"status": "ok", "message_id": message_id}

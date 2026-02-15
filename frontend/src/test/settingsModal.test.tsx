@@ -36,7 +36,6 @@ const baseHealth: HealthStatus = {
 
 const baseSettings: AppSettings = {
   max_radio_contacts: 200,
-  experimental_channel_double_send: false,
   favorites: [],
   auto_decrypt_dm_on_advert: false,
   sidebar_sort_order: 'recent',
@@ -191,24 +190,6 @@ describe('SettingsModal', () => {
 
     await waitFor(() => {
       expect(onSaveAppSettings).not.toHaveBeenCalled();
-    });
-  });
-
-  it('saves experimental channel double-send toggle through onSaveAppSettings', async () => {
-    const { onSaveAppSettings } = renderModal({
-      appSettings: { ...baseSettings, experimental_channel_double_send: false },
-    });
-
-    openConnectivitySection();
-
-    const toggle = screen.getByLabelText('Always send channel messages twice');
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
-
-    await waitFor(() => {
-      expect(onSaveAppSettings).toHaveBeenCalledWith({
-        experimental_channel_double_send: true,
-      });
     });
   });
 

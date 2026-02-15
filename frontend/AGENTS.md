@@ -96,6 +96,7 @@ Specialized logic is delegated to hooks:
 - Outgoing sends are optimistic in UI and persisted server-side.
 - Backend also emits WS `message` for outgoing sends so other clients stay in sync.
 - ACK/repeat updates arrive as `message_acked` events.
+- Outgoing channel messages show a 30-second resend control; resend calls `POST /api/messages/channel/{message_id}/resend`.
 
 ## WebSocket (`useWebSocket.ts`)
 
@@ -149,7 +150,6 @@ LocalStorage migration helpers for favorites; canonical favorites are server-sid
 
 `AppSettings` currently includes:
 - `max_radio_contacts`
-- `experimental_channel_double_send`
 - `favorites`
 - `auto_decrypt_dm_on_advert`
 - `sidebar_sort_order`
