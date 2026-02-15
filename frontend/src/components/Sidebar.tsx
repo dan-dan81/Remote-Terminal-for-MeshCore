@@ -258,61 +258,60 @@ export function Sidebar({
       setContactsCollapsed(prev.contacts);
       setRepeatersCollapsed(prev.repeaters);
     }
-  }, [
-    isSearching,
-    favoritesCollapsed,
-    channelsCollapsed,
-    contactsCollapsed,
-    repeatersCollapsed,
-  ]);
+  }, [isSearching, favoritesCollapsed, channelsCollapsed, contactsCollapsed, repeatersCollapsed]);
 
   // Separate favorites from regular items, and build combined favorites list
-  const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts, nonFavoriteRepeaters } = useMemo(() => {
-    const favChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
-    const favContacts = [...filteredNonRepeaterContacts, ...filteredRepeaters].filter((c) =>
-      isFavorite(favorites, 'contact', c.public_key)
-    );
-    const nonFavChannels = filteredChannels.filter((c) => !isFavorite(favorites, 'channel', c.key));
-    const nonFavContacts = filteredNonRepeaterContacts.filter(
-      (c) => !isFavorite(favorites, 'contact', c.public_key)
-    );
-    const nonFavRepeaters = filteredRepeaters.filter(
-      (c) => !isFavorite(favorites, 'contact', c.public_key)
-    );
+  const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts, nonFavoriteRepeaters } =
+    useMemo(() => {
+      const favChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
+      const favContacts = [...filteredNonRepeaterContacts, ...filteredRepeaters].filter((c) =>
+        isFavorite(favorites, 'contact', c.public_key)
+      );
+      const nonFavChannels = filteredChannels.filter(
+        (c) => !isFavorite(favorites, 'channel', c.key)
+      );
+      const nonFavContacts = filteredNonRepeaterContacts.filter(
+        (c) => !isFavorite(favorites, 'contact', c.public_key)
+      );
+      const nonFavRepeaters = filteredRepeaters.filter(
+        (c) => !isFavorite(favorites, 'contact', c.public_key)
+      );
 
-    const items: FavoriteItem[] = [
-      ...favChannels.map((channel) => ({ type: 'channel' as const, channel })),
-      ...favContacts.map((contact) => ({ type: 'contact' as const, contact })),
-    ].sort((a, b) => {
-      const timeA =
-        a.type === 'channel'
-          ? getLastMessageTime('channel', a.channel.key)
-          : getLastMessageTime('contact', a.contact.public_key);
-      const timeB =
-        b.type === 'channel'
-          ? getLastMessageTime('channel', b.channel.key)
-          : getLastMessageTime('contact', b.contact.public_key);
-      if (timeA && timeB) return timeB - timeA;
-      if (timeA && !timeB) return -1;
-      if (!timeA && timeB) return 1;
-      const nameA = a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
-      const nameB = b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
-      return nameA.localeCompare(nameB);
-    });
+      const items: FavoriteItem[] = [
+        ...favChannels.map((channel) => ({ type: 'channel' as const, channel })),
+        ...favContacts.map((contact) => ({ type: 'contact' as const, contact })),
+      ].sort((a, b) => {
+        const timeA =
+          a.type === 'channel'
+            ? getLastMessageTime('channel', a.channel.key)
+            : getLastMessageTime('contact', a.contact.public_key);
+        const timeB =
+          b.type === 'channel'
+            ? getLastMessageTime('channel', b.channel.key)
+            : getLastMessageTime('contact', b.contact.public_key);
+        if (timeA && timeB) return timeB - timeA;
+        if (timeA && !timeB) return -1;
+        if (!timeA && timeB) return 1;
+        const nameA =
+          a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
+        const nameB =
+          b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
+        return nameA.localeCompare(nameB);
+      });
 
-    return {
-      favoriteItems: items,
-      nonFavoriteChannels: nonFavChannels,
-      nonFavoriteContacts: nonFavContacts,
-      nonFavoriteRepeaters: nonFavRepeaters,
-    };
-  }, [
-    filteredChannels,
-    filteredNonRepeaterContacts,
-    filteredRepeaters,
-    favorites,
-    getLastMessageTime,
-  ]);
+      return {
+        favoriteItems: items,
+        nonFavoriteChannels: nonFavChannels,
+        nonFavoriteContacts: nonFavContacts,
+        nonFavoriteRepeaters: nonFavRepeaters,
+      };
+    }, [
+      filteredChannels,
+      filteredNonRepeaterContacts,
+      filteredRepeaters,
+      favorites,
+      getLastMessageTime,
+    ]);
 
   const buildChannelRow = (channel: Channel, keyPrefix: string): ConversationRow => ({
     key: `${keyPrefix}-${channel.key}`,

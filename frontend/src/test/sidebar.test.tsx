@@ -38,10 +38,11 @@ function renderSidebar(overrides?: {
   favorites?: Favorite[];
   lastMessageTimes?: ConversationTimes;
 }) {
+  const aliceName = 'Alice';
   const publicChannel = makeChannel('AA'.repeat(16), 'Public');
   const flightChannel = makeChannel('BB'.repeat(16), '#flight');
   const opsChannel = makeChannel('CC'.repeat(16), '#ops');
-  const alice = makeContact('11'.repeat(32), 'Alice');
+  const alice = makeContact('11'.repeat(32), aliceName);
   const relay = makeContact('22'.repeat(32), 'Relay', CONTACT_TYPE_REPEATER);
 
   const unreadCounts = overrides?.unreadCounts ?? {
@@ -73,7 +74,7 @@ function renderSidebar(overrides?: {
     />
   );
 
-  return { flightChannel, opsChannel, alice };
+  return { flightChannel, opsChannel, aliceName };
 }
 
 function getSectionHeaderContainer(title: string): HTMLElement {
@@ -94,27 +95,26 @@ describe('Sidebar section summaries', () => {
   });
 
   it('expands collapsed sections during search and restores collapse state after clearing search', async () => {
-    const { opsChannel, alice } = renderSidebar();
+    const { opsChannel, aliceName } = renderSidebar();
 
     fireEvent.click(screen.getByRole('button', { name: /Channels/i }));
     fireEvent.click(screen.getByRole('button', { name: /Contacts/i }));
 
     expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
-    expect(screen.queryByText(alice.name)).not.toBeInTheDocument();
+    expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
 
     const search = screen.getByPlaceholderText('Search...');
     fireEvent.change(search, { target: { value: 'alice' } });
 
     await waitFor(() => {
-      expect(screen.getByText(alice.name)).toBeInTheDocument();
+      expect(screen.getByText(aliceName)).toBeInTheDocument();
     });
 
     fireEvent.change(search, { target: { value: '' } });
 
     await waitFor(() => {
       expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
-      expect(screen.queryByText(alice.name)).not.toBeInTheDocument();
+      expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
     });
   });
 });
-
