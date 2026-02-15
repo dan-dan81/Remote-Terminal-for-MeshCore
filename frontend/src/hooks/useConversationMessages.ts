@@ -100,21 +100,24 @@ export function useConversationMessages(
     hasOlderMessagesRef.current = hasOlderMessages;
   }, [hasOlderMessages]);
 
-  const setPendingAck = useCallback((messageId: number, ackCount: number, paths?: MessagePath[]) => {
-    const existing = pendingAcksRef.current.get(messageId);
-    const merged = mergePendingAck(existing, ackCount, paths);
+  const setPendingAck = useCallback(
+    (messageId: number, ackCount: number, paths?: MessagePath[]) => {
+      const existing = pendingAcksRef.current.get(messageId);
+      const merged = mergePendingAck(existing, ackCount, paths);
 
-    // Update insertion order so most recent updates remain in the buffer longest.
-    pendingAcksRef.current.delete(messageId);
-    pendingAcksRef.current.set(messageId, merged);
+      // Update insertion order so most recent updates remain in the buffer longest.
+      pendingAcksRef.current.delete(messageId);
+      pendingAcksRef.current.set(messageId, merged);
 
-    if (pendingAcksRef.current.size > MAX_PENDING_ACKS) {
-      const oldestMessageId = pendingAcksRef.current.keys().next().value as number | undefined;
-      if (oldestMessageId !== undefined) {
-        pendingAcksRef.current.delete(oldestMessageId);
+      if (pendingAcksRef.current.size > MAX_PENDING_ACKS) {
+        const oldestMessageId = pendingAcksRef.current.keys().next().value as number | undefined;
+        if (oldestMessageId !== undefined) {
+          pendingAcksRef.current.delete(oldestMessageId);
+        }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
   const applyPendingAck = useCallback((msg: Message): Message => {
     const pending = pendingAcksRef.current.get(msg.id);
@@ -345,30 +348,33 @@ export function useConversationMessages(
 
   // Add a message if it's new (deduplication)
   // Returns true if the message was added, false if it was a duplicate
-  const addMessageIfNew = useCallback((msg: Message): boolean => {
-    const msgWithPendingAck = applyPendingAck(msg);
-    const contentKey = getMessageContentKey(msgWithPendingAck);
-    if (seenMessageContent.current.has(contentKey)) {
-      console.debug('Duplicate message content ignored:', contentKey.slice(0, 50));
-      return false;
-    }
-    seenMessageContent.current.add(contentKey);
-
-    // Limit set size to prevent memory issues (keep last 500)
-    if (seenMessageContent.current.size > 1000) {
-      const entries = Array.from(seenMessageContent.current);
-      seenMessageContent.current = new Set(entries.slice(-500));
-    }
-
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === msgWithPendingAck.id)) {
-        return prev;
+  const addMessageIfNew = useCallback(
+    (msg: Message): boolean => {
+      const msgWithPendingAck = applyPendingAck(msg);
+      const contentKey = getMessageContentKey(msgWithPendingAck);
+      if (seenMessageContent.current.has(contentKey)) {
+        console.debug('Duplicate message content ignored:', contentKey.slice(0, 50));
+        return false;
       }
-      return [...prev, msgWithPendingAck];
-    });
+      seenMessageContent.current.add(contentKey);
 
-    return true;
-  }, [applyPendingAck]);
+      // Limit set size to prevent memory issues (keep last 500)
+      if (seenMessageContent.current.size > 1000) {
+        const entries = Array.from(seenMessageContent.current);
+        seenMessageContent.current = new Set(entries.slice(-500));
+      }
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msgWithPendingAck.id)) {
+          return prev;
+        }
+        return [...prev, msgWithPendingAck];
+      });
+
+      return true;
+    },
+    [applyPendingAck]
+  );
 
   // Update a message's ack count and paths
   const updateMessageAck = useCallback(
@@ -388,7 +394,9 @@ export function useConversationMessages(
           const current = prev[idx];
           const nextAck = Math.max(current.acked, ackCount);
           const nextPaths =
-            paths !== undefined && paths.length >= (current.paths?.length ?? 0) ? paths : current.paths;
+            paths !== undefined && paths.length >= (current.paths?.length ?? 0)
+              ? paths
+              : current.paths;
 
           const updated = [...prev];
           updated[idx] = {

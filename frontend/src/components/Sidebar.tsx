@@ -140,11 +140,12 @@ export function Sidebar({
     [lastMessageTimes]
   );
 
-  // Deduplicate channels by name, keeping the first (lowest index)
+  // Deduplicate channels by key only.
+  // Channel names are not unique; distinct keys must remain visible.
   const uniqueChannels = useMemo(
     () =>
       channels.reduce<Channel[]>((acc, channel) => {
-        if (!acc.some((c) => c.name === channel.name)) {
+        if (!acc.some((c) => c.key === channel.key)) {
           acc.push(channel);
         }
         return acc;

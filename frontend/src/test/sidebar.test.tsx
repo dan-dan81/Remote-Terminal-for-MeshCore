@@ -37,6 +37,7 @@ function renderSidebar(overrides?: {
   unreadCounts?: Record<string, number>;
   favorites?: Favorite[];
   lastMessageTimes?: ConversationTimes;
+  channels?: Channel[];
 }) {
   const aliceName = 'Alice';
   const publicChannel = makeChannel('AA'.repeat(16), 'Public');
@@ -53,11 +54,12 @@ function renderSidebar(overrides?: {
   };
 
   const favorites = overrides?.favorites ?? [{ type: 'channel', id: flightChannel.key }];
+  const channels = overrides?.channels ?? [publicChannel, flightChannel, opsChannel];
 
   const view = render(
     <Sidebar
       contacts={[alice, relay]}
-      channels={[publicChannel, flightChannel, opsChannel]}
+      channels={channels}
       activeConversation={null}
       onSelectConversation={vi.fn()}
       onNewMessage={vi.fn()}
@@ -136,5 +138,41 @@ describe('Sidebar section summaries', () => {
 
     expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
     expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
+  });
+
+  it('renders same-name channels when keys differ and allows selecting both', () => {
+    const publicChannel = makeChannel('AA'.repeat(16), 'Public');
+    const channelA = makeChannel('DD'.repeat(16), '#shared');
+    const channelB = makeChannel('EE'.repeat(16), '#shared');
+    const onSelectConversation = vi.fn();
+
+    render(
+      <Sidebar
+        contacts={[]}
+        channels={[publicChannel, channelA, channelB]}
+        activeConversation={null}
+        onSelectConversation={onSelectConversation}
+        onNewMessage={vi.fn()}
+        lastMessageTimes={{}}
+        unreadCounts={{}}
+        mentions={{}}
+        showCracker={false}
+        crackerRunning={false}
+        onToggleCracker={vi.fn()}
+        onMarkAllRead={vi.fn()}
+        favorites={[]}
+        sortOrder="recent"
+        onSortOrderChange={vi.fn()}
+      />
+    );
+
+    const sharedRows = screen.getAllByText('#shared');
+    expect(sharedRows).toHaveLength(2);
+
+    fireEvent.click(sharedRows[0]);
+    fireEvent.click(sharedRows[1]);
+
+    const selectedIds = onSelectConversation.mock.calls.map(([conv]) => conv.id);
+    expect(new Set(selectedIds)).toEqual(new Set([channelA.key, channelB.key]));
   });
 });

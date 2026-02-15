@@ -67,7 +67,9 @@ describe('useConversationMessages ACK ordering', () => {
     });
 
     act(() => {
-      const added = result.current.addMessageIfNew(createMessage({ id: 42, acked: 0, paths: null }));
+      const added = result.current.addMessageIfNew(
+        createMessage({ id: 42, acked: 0, paths: null })
+      );
       expect(added).toBe(true);
     });
 
