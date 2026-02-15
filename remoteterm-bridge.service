@@ -1,0 +1,15 @@
+[Unit]
+Description=MeshCore to MQTT Bridge
+After=remoteterm.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/remoteterm
+# Points to the virtual environment created by uv
+ExecStart=/opt/remoteterm/.venv/bin/python mqtt_bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
