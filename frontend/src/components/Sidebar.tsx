@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CONTACT_TYPE_REPEATER,
   type Contact,
@@ -15,6 +15,25 @@ import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
 type SortOrder = 'alpha' | 'recent';
+
+type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
+
+type ConversationRow = {
+  key: string;
+  type: 'channel' | 'contact';
+  id: string;
+  name: string;
+  unreadCount: number;
+  isMention: boolean;
+  contact?: Contact;
+};
+
+type CollapseState = {
+  favorites: boolean;
+  channels: boolean;
+  contacts: boolean;
+  repeaters: boolean;
+};
 
 interface SidebarProps {
   contacts: Contact[];
@@ -56,6 +75,11 @@ export function Sidebar({
 }: SidebarProps) {
   const sortOrder = sortOrderProp;
   const [searchQuery, setSearchQuery] = useState('');
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
+  const [channelsCollapsed, setChannelsCollapsed] = useState(false);
+  const [contactsCollapsed, setContactsCollapsed] = useState(false);
+  const [repeatersCollapsed, setRepeatersCollapsed] = useState(false);
+  const collapseSnapshotRef = useRef<CollapseState | null>(null);
 
   const handleSortToggle = () => {
     const newOrder = sortOrder === 'alpha' ? 'recent' : 'alpha';
@@ -143,20 +167,9 @@ export function Sidebar({
     [uniqueChannels, sortOrder, getLastMessageTime]
   );
 
-  // Sort contacts: non-repeaters first (by recent or alpha), then repeaters (always alpha)
-  const sortedContacts = useMemo(
-    () =>
-      [...uniqueContacts].sort((a, b) => {
-        const aIsRepeater = a.type === CONTACT_TYPE_REPEATER;
-        const bIsRepeater = b.type === CONTACT_TYPE_REPEATER;
-
-        if (aIsRepeater && !bIsRepeater) return 1;
-        if (!aIsRepeater && bIsRepeater) return -1;
-
-        if (aIsRepeater && bIsRepeater) {
-          return (a.name || a.public_key).localeCompare(b.name || b.public_key);
-        }
-
+  const sortContactsByOrder = useCallback(
+    (items: Contact[]) =>
+      [...items].sort((a, b) => {
         if (sortOrder === 'recent') {
           const timeA = getLastMessageTime('contact', a.public_key);
           const timeB = getLastMessageTime('contact', b.public_key);
@@ -166,11 +179,24 @@ export function Sidebar({
         }
         return (a.name || a.public_key).localeCompare(b.name || b.public_key);
       }),
-    [uniqueContacts, sortOrder, getLastMessageTime]
+    [sortOrder, getLastMessageTime]
+  );
+
+  // Split non-repeater contacts and repeater contacts into separate sorted lists
+  const sortedNonRepeaterContacts = useMemo(
+    () => sortContactsByOrder(uniqueContacts.filter((c) => c.type !== CONTACT_TYPE_REPEATER)),
+    [uniqueContacts, sortContactsByOrder]
+  );
+
+  const sortedRepeaters = useMemo(
+    () => sortContactsByOrder(uniqueContacts.filter((c) => c.type === CONTACT_TYPE_REPEATER)),
+    [uniqueContacts, sortContactsByOrder]
   );
 
   // Filter by search query
   const query = searchQuery.toLowerCase().trim();
+  const isSearching = query.length > 0;
+
   const filteredChannels = useMemo(
     () =>
       query
@@ -180,27 +206,77 @@ export function Sidebar({
         : sortedChannels,
     [sortedChannels, query]
   );
-  const filteredContacts = useMemo(
+
+  const filteredNonRepeaterContacts = useMemo(
     () =>
       query
-        ? sortedContacts.filter(
+        ? sortedNonRepeaterContacts.filter(
             (c) =>
               c.name?.toLowerCase().includes(query) || c.public_key.toLowerCase().includes(query)
           )
-        : sortedContacts,
-    [sortedContacts, query]
+        : sortedNonRepeaterContacts,
+    [sortedNonRepeaterContacts, query]
   );
 
-  // Separate favorites from regular items, and build combined favorites list
-  type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
+  const filteredRepeaters = useMemo(
+    () =>
+      query
+        ? sortedRepeaters.filter(
+            (c) =>
+              c.name?.toLowerCase().includes(query) || c.public_key.toLowerCase().includes(query)
+          )
+        : sortedRepeaters,
+    [sortedRepeaters, query]
+  );
 
-  const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts } = useMemo(() => {
+  // Expand sections while searching; restore prior collapse state when search ends.
+  useEffect(() => {
+    if (isSearching) {
+      if (!collapseSnapshotRef.current) {
+        collapseSnapshotRef.current = {
+          favorites: favoritesCollapsed,
+          channels: channelsCollapsed,
+          contacts: contactsCollapsed,
+          repeaters: repeatersCollapsed,
+        };
+      }
+
+      if (favoritesCollapsed || channelsCollapsed || contactsCollapsed || repeatersCollapsed) {
+        setFavoritesCollapsed(false);
+        setChannelsCollapsed(false);
+        setContactsCollapsed(false);
+        setRepeatersCollapsed(false);
+      }
+      return;
+    }
+
+    if (collapseSnapshotRef.current) {
+      const prev = collapseSnapshotRef.current;
+      collapseSnapshotRef.current = null;
+      setFavoritesCollapsed(prev.favorites);
+      setChannelsCollapsed(prev.channels);
+      setContactsCollapsed(prev.contacts);
+      setRepeatersCollapsed(prev.repeaters);
+    }
+  }, [
+    isSearching,
+    favoritesCollapsed,
+    channelsCollapsed,
+    contactsCollapsed,
+    repeatersCollapsed,
+  ]);
+
+  // Separate favorites from regular items, and build combined favorites list
+  const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts, nonFavoriteRepeaters } = useMemo(() => {
     const favChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
-    const favContacts = filteredContacts.filter((c) =>
+    const favContacts = [...filteredNonRepeaterContacts, ...filteredRepeaters].filter((c) =>
       isFavorite(favorites, 'contact', c.public_key)
     );
     const nonFavChannels = filteredChannels.filter((c) => !isFavorite(favorites, 'channel', c.key));
-    const nonFavContacts = filteredContacts.filter(
+    const nonFavContacts = filteredNonRepeaterContacts.filter(
+      (c) => !isFavorite(favorites, 'contact', c.public_key)
+    );
+    const nonFavRepeaters = filteredRepeaters.filter(
       (c) => !isFavorite(favorites, 'contact', c.public_key)
     );
 
@@ -228,8 +304,137 @@ export function Sidebar({
       favoriteItems: items,
       nonFavoriteChannels: nonFavChannels,
       nonFavoriteContacts: nonFavContacts,
+      nonFavoriteRepeaters: nonFavRepeaters,
     };
-  }, [filteredChannels, filteredContacts, favorites, getLastMessageTime]);
+  }, [
+    filteredChannels,
+    filteredNonRepeaterContacts,
+    filteredRepeaters,
+    favorites,
+    getLastMessageTime,
+  ]);
+
+  const buildChannelRow = (channel: Channel, keyPrefix: string): ConversationRow => ({
+    key: `${keyPrefix}-${channel.key}`,
+    type: 'channel',
+    id: channel.key,
+    name: channel.name,
+    unreadCount: getUnreadCount('channel', channel.key),
+    isMention: hasMention('channel', channel.key),
+  });
+
+  const buildContactRow = (contact: Contact, keyPrefix: string): ConversationRow => ({
+    key: `${keyPrefix}-${contact.public_key}`,
+    type: 'contact',
+    id: contact.public_key,
+    name: getContactDisplayName(contact.name, contact.public_key),
+    unreadCount: getUnreadCount('contact', contact.public_key),
+    isMention: hasMention('contact', contact.public_key),
+    contact,
+  });
+
+  const renderConversationRow = (row: ConversationRow) => (
+    <div
+      key={row.key}
+      className={cn(
+        'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+        isActive(row.type, row.id) && 'bg-accent border-l-primary',
+        row.unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
+      )}
+      onClick={() =>
+        handleSelectConversation({
+          type: row.type,
+          id: row.id,
+          name: row.name,
+        })
+      }
+    >
+      {row.type === 'contact' && row.contact && (
+        <ContactAvatar
+          name={row.contact.name}
+          publicKey={row.contact.public_key}
+          size={24}
+          contactType={row.contact.type}
+        />
+      )}
+      <span className="name flex-1 truncate">{row.name}</span>
+      {row.unreadCount > 0 && (
+        <span
+          className={cn(
+            'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+            row.isMention
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-primary text-primary-foreground'
+          )}
+        >
+          {row.unreadCount}
+        </span>
+      )}
+    </div>
+  );
+
+  const getSectionUnreadCount = (rows: ConversationRow[]): number =>
+    rows.reduce((total, row) => total + row.unreadCount, 0);
+
+  const favoriteRows = favoriteItems.map((item) =>
+    item.type === 'channel'
+      ? buildChannelRow(item.channel, 'fav-chan')
+      : buildContactRow(item.contact, 'fav-contact')
+  );
+  const channelRows = nonFavoriteChannels.map((channel) => buildChannelRow(channel, 'chan'));
+  const contactRows = nonFavoriteContacts.map((contact) => buildContactRow(contact, 'contact'));
+  const repeaterRows = nonFavoriteRepeaters.map((contact) => buildContactRow(contact, 'repeater'));
+
+  const favoritesUnreadCount = getSectionUnreadCount(favoriteRows);
+  const channelsUnreadCount = getSectionUnreadCount(channelRows);
+  const contactsUnreadCount = getSectionUnreadCount(contactRows);
+  const repeatersUnreadCount = getSectionUnreadCount(repeaterRows);
+
+  const renderSectionHeader = (
+    title: string,
+    collapsed: boolean,
+    onToggle: () => void,
+    showSortToggle = false,
+    unreadCount = 0
+  ) => {
+    const effectiveCollapsed = isSearching ? false : collapsed;
+
+    return (
+      <div className="flex justify-between items-center px-3 py-2 pt-3">
+        <button
+          className={cn(
+            'flex items-center gap-1 text-[11px] uppercase text-muted-foreground hover:text-foreground',
+            isSearching && 'cursor-default'
+          )}
+          onClick={() => {
+            if (!isSearching) onToggle();
+          }}
+          title={effectiveCollapsed ? `Expand ${title}` : `Collapse ${title}`}
+        >
+          <span className="text-[10px]">{effectiveCollapsed ? '▸' : '▾'}</span>
+          <span>{title}</span>
+        </button>
+        {(showSortToggle || unreadCount > 0) && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {showSortToggle && (
+              <button
+                className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground mr-0.5"
+                onClick={handleSortToggle}
+                title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
+              >
+                {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+              </button>
+            )}
+            {unreadCount > 0 && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {unreadCount}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">
@@ -367,208 +572,67 @@ export function Sidebar({
         {/* Favorites */}
         {favoriteItems.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Favorites</span>
-            </div>
-            {favoriteItems.map((item) => {
-              if (item.type === 'channel') {
-                const channel = item.channel;
-                const unreadCount = getUnreadCount('channel', channel.key);
-                const isMention = hasMention('channel', channel.key);
-                return (
-                  <div
-                    key={`fav-chan-${channel.key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
-                    onClick={() =>
-                      handleSelectConversation({
-                        type: 'channel',
-                        id: channel.key,
-                        name: channel.name,
-                      })
-                    }
-                  >
-                    <span className="name flex-1 truncate">{channel.name}</span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              } else {
-                const contact = item.contact;
-                const unreadCount = getUnreadCount('contact', contact.public_key);
-                const isMention = hasMention('contact', contact.public_key);
-                return (
-                  <div
-                    key={`fav-contact-${contact.public_key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
-                    onClick={() =>
-                      handleSelectConversation({
-                        type: 'contact',
-                        id: contact.public_key,
-                        name: getContactDisplayName(contact.name, contact.public_key),
-                      })
-                    }
-                  >
-                    <ContactAvatar
-                      name={contact.name}
-                      publicKey={contact.public_key}
-                      size={24}
-                      contactType={contact.type}
-                    />
-                    <span className="name flex-1 truncate">
-                      {getContactDisplayName(contact.name, contact.public_key)}
-                    </span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              }
-            })}
+            {renderSectionHeader(
+              'Favorites',
+              favoritesCollapsed,
+              () => setFavoritesCollapsed((prev) => !prev),
+              false,
+              favoritesUnreadCount
+            )}
+            {(isSearching || !favoritesCollapsed) &&
+              favoriteRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
         {/* Channels */}
         {nonFavoriteChannels.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Channels</span>
-              <button
-                className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
-                onClick={handleSortToggle}
-                title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
-              >
-                {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
-              </button>
-            </div>
-            {nonFavoriteChannels.map((channel) => {
-              const unreadCount = getUnreadCount('channel', channel.key);
-              const isMention = hasMention('channel', channel.key);
-              return (
-                <div
-                  key={`chan-${channel.key}`}
-                  className={cn(
-                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                    isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                  )}
-                  onClick={() =>
-                    handleSelectConversation({
-                      type: 'channel',
-                      id: channel.key,
-                      name: channel.name,
-                    })
-                  }
-                >
-                  <span className="name flex-1 truncate">{channel.name}</span>
-                  {unreadCount > 0 && (
-                    <span
-                      className={cn(
-                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                        isMention
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'bg-primary text-primary-foreground'
-                      )}
-                    >
-                      {unreadCount}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {renderSectionHeader(
+              'Channels',
+              channelsCollapsed,
+              () => setChannelsCollapsed((prev) => !prev),
+              true,
+              channelsUnreadCount
+            )}
+            {(isSearching || !channelsCollapsed) &&
+              channelRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
         {/* Contacts */}
         {nonFavoriteContacts.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Contacts</span>
-              {nonFavoriteChannels.length === 0 && (
-                <button
-                  className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
-                  onClick={handleSortToggle}
-                  title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
-                >
-                  {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
-                </button>
-              )}
-            </div>
-            {nonFavoriteContacts.map((contact) => {
-              const unreadCount = getUnreadCount('contact', contact.public_key);
-              const isMention = hasMention('contact', contact.public_key);
-              return (
-                <div
-                  key={contact.public_key}
-                  className={cn(
-                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                    isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                  )}
-                  onClick={() =>
-                    handleSelectConversation({
-                      type: 'contact',
-                      id: contact.public_key,
-                      name: getContactDisplayName(contact.name, contact.public_key),
-                    })
-                  }
-                >
-                  <ContactAvatar
-                    name={contact.name}
-                    publicKey={contact.public_key}
-                    size={24}
-                    contactType={contact.type}
-                  />
-                  <span className="name flex-1 truncate">
-                    {getContactDisplayName(contact.name, contact.public_key)}
-                  </span>
-                  {unreadCount > 0 && (
-                    <span
-                      className={cn(
-                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                        isMention
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'bg-primary text-primary-foreground'
-                      )}
-                    >
-                      {unreadCount}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {renderSectionHeader(
+              'Contacts',
+              contactsCollapsed,
+              () => setContactsCollapsed((prev) => !prev),
+              true,
+              contactsUnreadCount
+            )}
+            {(isSearching || !contactsCollapsed) &&
+              contactRows.map((row) => renderConversationRow(row))}
+          </>
+        )}
+
+        {/* Repeaters */}
+        {nonFavoriteRepeaters.length > 0 && (
+          <>
+            {renderSectionHeader(
+              'Repeaters',
+              repeatersCollapsed,
+              () => setRepeatersCollapsed((prev) => !prev),
+              true,
+              repeatersUnreadCount
+            )}
+            {(isSearching || !repeatersCollapsed) &&
+              repeaterRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
         {/* Empty state */}
         {nonFavoriteContacts.length === 0 &&
           nonFavoriteChannels.length === 0 &&
+          nonFavoriteRepeaters.length === 0 &&
           favoriteItems.length === 0 && (
             <div className="p-5 text-center text-muted-foreground">
               {query ? 'No matches found' : 'No conversations yet'}
