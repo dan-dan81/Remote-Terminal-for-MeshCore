@@ -35,6 +35,31 @@ type CollapseState = {
   repeaters: boolean;
 };
 
+const SIDEBAR_COLLAPSE_STATE_KEY = 'remoteterm-sidebar-collapse-state';
+
+const DEFAULT_COLLAPSE_STATE: CollapseState = {
+  favorites: false,
+  channels: false,
+  contacts: false,
+  repeaters: false,
+};
+
+function loadCollapsedState(): CollapseState {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_COLLAPSE_STATE_KEY);
+    if (!raw) return DEFAULT_COLLAPSE_STATE;
+    const parsed = JSON.parse(raw) as Partial<CollapseState>;
+    return {
+      favorites: parsed.favorites ?? DEFAULT_COLLAPSE_STATE.favorites,
+      channels: parsed.channels ?? DEFAULT_COLLAPSE_STATE.channels,
+      contacts: parsed.contacts ?? DEFAULT_COLLAPSE_STATE.contacts,
+      repeaters: parsed.repeaters ?? DEFAULT_COLLAPSE_STATE.repeaters,
+    };
+  } catch {
+    return DEFAULT_COLLAPSE_STATE;
+  }
+}
+
 interface SidebarProps {
   contacts: Contact[];
   channels: Channel[];
@@ -75,10 +100,11 @@ export function Sidebar({
 }: SidebarProps) {
   const sortOrder = sortOrderProp;
   const [searchQuery, setSearchQuery] = useState('');
-  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
-  const [channelsCollapsed, setChannelsCollapsed] = useState(false);
-  const [contactsCollapsed, setContactsCollapsed] = useState(false);
-  const [repeatersCollapsed, setRepeatersCollapsed] = useState(false);
+  const initialCollapsedState = useMemo(loadCollapsedState, []);
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(initialCollapsedState.favorites);
+  const [channelsCollapsed, setChannelsCollapsed] = useState(initialCollapsedState.channels);
+  const [contactsCollapsed, setContactsCollapsed] = useState(initialCollapsedState.contacts);
+  const [repeatersCollapsed, setRepeatersCollapsed] = useState(initialCollapsedState.repeaters);
   const collapseSnapshotRef = useRef<CollapseState | null>(null);
 
   const handleSortToggle = () => {
@@ -257,6 +283,23 @@ export function Sidebar({
       setChannelsCollapsed(prev.channels);
       setContactsCollapsed(prev.contacts);
       setRepeatersCollapsed(prev.repeaters);
+    }
+  }, [isSearching, favoritesCollapsed, channelsCollapsed, contactsCollapsed, repeatersCollapsed]);
+
+  useEffect(() => {
+    if (isSearching) return;
+
+    const state: CollapseState = {
+      favorites: favoritesCollapsed,
+      channels: channelsCollapsed,
+      contacts: contactsCollapsed,
+      repeaters: repeatersCollapsed,
+    };
+
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSE_STATE_KEY, JSON.stringify(state));
+    } catch {
+      // Ignore localStorage write failures (e.g., disabled storage)
     }
   }, [isSearching, favoritesCollapsed, channelsCollapsed, contactsCollapsed, repeatersCollapsed]);
 

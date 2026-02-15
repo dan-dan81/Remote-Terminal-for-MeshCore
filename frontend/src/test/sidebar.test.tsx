@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Sidebar } from '../components/Sidebar';
 import { CONTACT_TYPE_REPEATER, type Channel, type Contact, type Favorite } from '../types';
@@ -54,7 +54,7 @@ function renderSidebar(overrides?: {
 
   const favorites = overrides?.favorites ?? [{ type: 'channel', id: flightChannel.key }];
 
-  render(
+  const view = render(
     <Sidebar
       contacts={[alice, relay]}
       channels={[publicChannel, flightChannel, opsChannel]}
@@ -74,7 +74,7 @@ function renderSidebar(overrides?: {
     />
   );
 
-  return { flightChannel, opsChannel, aliceName };
+  return { ...view, flightChannel, opsChannel, aliceName };
 }
 
 function getSectionHeaderContainer(title: string): HTMLElement {
@@ -85,6 +85,10 @@ function getSectionHeaderContainer(title: string): HTMLElement {
 }
 
 describe('Sidebar section summaries', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('shows muted section unread totals in each visible section header', () => {
     renderSidebar();
 
@@ -116,5 +120,21 @@ describe('Sidebar section summaries', () => {
       expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
       expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
     });
+  });
+
+  it('persists collapsed section state across unmount and remount', () => {
+    const { opsChannel, aliceName, unmount } = renderSidebar();
+
+    fireEvent.click(screen.getByRole('button', { name: /Channels/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Contacts/i }));
+
+    expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
+    expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
+
+    unmount();
+    renderSidebar();
+
+    expect(screen.queryByText(opsChannel.name)).not.toBeInTheDocument();
+    expect(screen.queryByText(aliceName)).not.toBeInTheDocument();
   });
 });
