@@ -373,11 +373,29 @@ export function Sidebar({
     </div>
   );
 
+  const getSectionUnreadCount = (rows: ConversationRow[]): number =>
+    rows.reduce((total, row) => total + row.unreadCount, 0);
+
+  const favoriteRows = favoriteItems.map((item) =>
+    item.type === 'channel'
+      ? buildChannelRow(item.channel, 'fav-chan')
+      : buildContactRow(item.contact, 'fav-contact')
+  );
+  const channelRows = nonFavoriteChannels.map((channel) => buildChannelRow(channel, 'chan'));
+  const contactRows = nonFavoriteContacts.map((contact) => buildContactRow(contact, 'contact'));
+  const repeaterRows = nonFavoriteRepeaters.map((contact) => buildContactRow(contact, 'repeater'));
+
+  const favoritesUnreadCount = getSectionUnreadCount(favoriteRows);
+  const channelsUnreadCount = getSectionUnreadCount(channelRows);
+  const contactsUnreadCount = getSectionUnreadCount(contactRows);
+  const repeatersUnreadCount = getSectionUnreadCount(repeaterRows);
+
   const renderSectionHeader = (
     title: string,
     collapsed: boolean,
     onToggle: () => void,
-    showSortToggle = false
+    showSortToggle = false,
+    unreadCount = 0
   ) => {
     const effectiveCollapsed = isSearching ? false : collapsed;
 
@@ -396,14 +414,23 @@ export function Sidebar({
           <span className="text-[10px]">{effectiveCollapsed ? '▸' : '▾'}</span>
           <span>{title}</span>
         </button>
-        {showSortToggle && (
-          <button
-            className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
-            onClick={handleSortToggle}
-            title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
-          >
-            {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
-          </button>
+        {(showSortToggle || unreadCount > 0) && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {showSortToggle && (
+              <button
+                className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground mr-0.5"
+                onClick={handleSortToggle}
+                title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
+              >
+                {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+              </button>
+            )}
+            {unreadCount > 0 && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {unreadCount}
+              </span>
+            )}
+          </div>
         )}
       </div>
     );
@@ -549,14 +576,11 @@ export function Sidebar({
               'Favorites',
               favoritesCollapsed,
               () => setFavoritesCollapsed((prev) => !prev),
-              false
+              false,
+              favoritesUnreadCount
             )}
             {(isSearching || !favoritesCollapsed) &&
-              favoriteItems.map((item) =>
-                item.type === 'channel'
-                  ? renderConversationRow(buildChannelRow(item.channel, 'fav-chan'))
-                  : renderConversationRow(buildContactRow(item.contact, 'fav-contact'))
-              )}
+              favoriteRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
@@ -567,12 +591,11 @@ export function Sidebar({
               'Channels',
               channelsCollapsed,
               () => setChannelsCollapsed((prev) => !prev),
-              true
+              true,
+              channelsUnreadCount
             )}
             {(isSearching || !channelsCollapsed) &&
-              nonFavoriteChannels.map((channel) =>
-                renderConversationRow(buildChannelRow(channel, 'chan'))
-              )}
+              channelRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
@@ -583,12 +606,11 @@ export function Sidebar({
               'Contacts',
               contactsCollapsed,
               () => setContactsCollapsed((prev) => !prev),
-              true
+              true,
+              contactsUnreadCount
             )}
             {(isSearching || !contactsCollapsed) &&
-              nonFavoriteContacts.map((contact) =>
-                renderConversationRow(buildContactRow(contact, 'contact'))
-              )}
+              contactRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
@@ -599,12 +621,11 @@ export function Sidebar({
               'Repeaters',
               repeatersCollapsed,
               () => setRepeatersCollapsed((prev) => !prev),
-              true
+              true,
+              repeatersUnreadCount
             )}
             {(isSearching || !repeatersCollapsed) &&
-              nonFavoriteRepeaters.map((contact) =>
-                renderConversationRow(buildContactRow(contact, 'repeater'))
-              )}
+              repeaterRows.map((row) => renderConversationRow(row))}
           </>
         )}
 
