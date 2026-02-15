@@ -512,6 +512,17 @@ class MessageRepository:
         return row["acked"] if row else 0
 
     @staticmethod
+    async def get_ack_and_paths(message_id: int) -> tuple[int, list[MessagePath] | None]:
+        """Get the current ack count and paths for a message."""
+        cursor = await db.conn.execute(
+            "SELECT acked, paths FROM messages WHERE id = ?", (message_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return 0, None
+        return row["acked"], MessageRepository._parse_paths(row["paths"])
+
+    @staticmethod
     async def get_by_content(
         msg_type: str,
         conversation_key: str,

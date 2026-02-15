@@ -250,6 +250,23 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
                 detail="Failed to store outgoing message - unexpected duplicate",
             )
 
+        # Broadcast immediately so all connected clients see the message before any
+        # double-send delay.  This also ensures the message is in the frontend's state
+        # when echo-driven `message_acked` events arrive during the sleep below.
+        broadcast_event(
+            "message",
+            Message(
+                id=message_id,
+                type="CHAN",
+                conversation_key=channel_key_upper,
+                text=text_with_sender,
+                sender_timestamp=now,
+                received_at=now,
+                outgoing=True,
+                acked=0,
+            ).model_dump(),
+        )
+
         # Experimental: byte-perfect resend after a delay to improve delivery reliability.
         # This intentionally holds the radio operation lock for the full delay — it is an
         # opt-in experimental feature where blocking other radio operations is acceptable.
@@ -272,7 +289,7 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
     if message_id is None or now is None:
         raise HTTPException(status_code=500, detail="Failed to store outgoing message")
 
-    acked_count = await MessageRepository.get_ack_count(message_id)
+    acked_count, paths = await MessageRepository.get_ack_and_paths(message_id)
 
     message = Message(
         id=message_id,
@@ -283,10 +300,8 @@ async def send_channel_message(request: SendChannelMessageRequest) -> Message:
         received_at=now,
         outgoing=True,
         acked=acked_count,
+        paths=paths,
     )
-
-    # Broadcast so all connected clients (not just sender) see the outgoing message immediately.
-    broadcast_event("message", message.model_dump())
 
     # Trigger bots for outgoing channel messages (runs in background, doesn't block response)
     from app.bot import run_bot_for_message
