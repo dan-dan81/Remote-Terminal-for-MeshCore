@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CONTACT_TYPE_REPEATER,
   type Contact,
@@ -15,6 +15,25 @@ import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
 type SortOrder = 'alpha' | 'recent';
+
+type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
+
+type ConversationRow = {
+  key: string;
+  type: 'channel' | 'contact';
+  id: string;
+  name: string;
+  unreadCount: number;
+  isMention: boolean;
+  contact?: Contact;
+};
+
+type CollapseState = {
+  favorites: boolean;
+  channels: boolean;
+  contacts: boolean;
+  repeaters: boolean;
+};
 
 interface SidebarProps {
   contacts: Contact[];
@@ -60,6 +79,7 @@ export function Sidebar({
   const [channelsCollapsed, setChannelsCollapsed] = useState(false);
   const [contactsCollapsed, setContactsCollapsed] = useState(false);
   const [repeatersCollapsed, setRepeatersCollapsed] = useState(false);
+  const collapseSnapshotRef = useRef<CollapseState | null>(null);
 
   const handleSortToggle = () => {
     const newOrder = sortOrder === 'alpha' ? 'recent' : 'alpha';
@@ -175,6 +195,8 @@ export function Sidebar({
 
   // Filter by search query
   const query = searchQuery.toLowerCase().trim();
+  const isSearching = query.length > 0;
+
   const filteredChannels = useMemo(
     () =>
       query
@@ -207,9 +229,44 @@ export function Sidebar({
     [sortedRepeaters, query]
   );
 
-  // Separate favorites from regular items, and build combined favorites list
-  type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
+  // Expand sections while searching; restore prior collapse state when search ends.
+  useEffect(() => {
+    if (isSearching) {
+      if (!collapseSnapshotRef.current) {
+        collapseSnapshotRef.current = {
+          favorites: favoritesCollapsed,
+          channels: channelsCollapsed,
+          contacts: contactsCollapsed,
+          repeaters: repeatersCollapsed,
+        };
+      }
 
+      if (favoritesCollapsed || channelsCollapsed || contactsCollapsed || repeatersCollapsed) {
+        setFavoritesCollapsed(false);
+        setChannelsCollapsed(false);
+        setContactsCollapsed(false);
+        setRepeatersCollapsed(false);
+      }
+      return;
+    }
+
+    if (collapseSnapshotRef.current) {
+      const prev = collapseSnapshotRef.current;
+      collapseSnapshotRef.current = null;
+      setFavoritesCollapsed(prev.favorites);
+      setChannelsCollapsed(prev.channels);
+      setContactsCollapsed(prev.contacts);
+      setRepeatersCollapsed(prev.repeaters);
+    }
+  }, [
+    isSearching,
+    favoritesCollapsed,
+    channelsCollapsed,
+    contactsCollapsed,
+    repeatersCollapsed,
+  ]);
+
+  // Separate favorites from regular items, and build combined favorites list
   const { favoriteItems, nonFavoriteChannels, nonFavoriteContacts, nonFavoriteRepeaters } = useMemo(() => {
     const favChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
     const favContacts = [...filteredNonRepeaterContacts, ...filteredRepeaters].filter((c) =>
@@ -257,32 +314,100 @@ export function Sidebar({
     getLastMessageTime,
   ]);
 
+  const buildChannelRow = (channel: Channel, keyPrefix: string): ConversationRow => ({
+    key: `${keyPrefix}-${channel.key}`,
+    type: 'channel',
+    id: channel.key,
+    name: channel.name,
+    unreadCount: getUnreadCount('channel', channel.key),
+    isMention: hasMention('channel', channel.key),
+  });
+
+  const buildContactRow = (contact: Contact, keyPrefix: string): ConversationRow => ({
+    key: `${keyPrefix}-${contact.public_key}`,
+    type: 'contact',
+    id: contact.public_key,
+    name: getContactDisplayName(contact.name, contact.public_key),
+    unreadCount: getUnreadCount('contact', contact.public_key),
+    isMention: hasMention('contact', contact.public_key),
+    contact,
+  });
+
+  const renderConversationRow = (row: ConversationRow) => (
+    <div
+      key={row.key}
+      className={cn(
+        'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
+        isActive(row.type, row.id) && 'bg-accent border-l-primary',
+        row.unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
+      )}
+      onClick={() =>
+        handleSelectConversation({
+          type: row.type,
+          id: row.id,
+          name: row.name,
+        })
+      }
+    >
+      {row.type === 'contact' && row.contact && (
+        <ContactAvatar
+          name={row.contact.name}
+          publicKey={row.contact.public_key}
+          size={24}
+          contactType={row.contact.type}
+        />
+      )}
+      <span className="name flex-1 truncate">{row.name}</span>
+      {row.unreadCount > 0 && (
+        <span
+          className={cn(
+            'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+            row.isMention
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-primary text-primary-foreground'
+          )}
+        >
+          {row.unreadCount}
+        </span>
+      )}
+    </div>
+  );
+
   const renderSectionHeader = (
     title: string,
     collapsed: boolean,
     onToggle: () => void,
     showSortToggle = false
-  ) => (
-    <div className="flex justify-between items-center px-3 py-2 pt-3">
-      <button
-        className="flex items-center gap-1 text-[11px] uppercase text-muted-foreground hover:text-foreground"
-        onClick={onToggle}
-        title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-      >
-        <span className="text-[10px]">{collapsed ? '▸' : '▾'}</span>
-        <span>{title}</span>
-      </button>
-      {showSortToggle && (
+  ) => {
+    const effectiveCollapsed = isSearching ? false : collapsed;
+
+    return (
+      <div className="flex justify-between items-center px-3 py-2 pt-3">
         <button
-          className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
-          onClick={handleSortToggle}
-          title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
+          className={cn(
+            'flex items-center gap-1 text-[11px] uppercase text-muted-foreground hover:text-foreground',
+            isSearching && 'cursor-default'
+          )}
+          onClick={() => {
+            if (!isSearching) onToggle();
+          }}
+          title={effectiveCollapsed ? `Expand ${title}` : `Collapse ${title}`}
         >
-          {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+          <span className="text-[10px]">{effectiveCollapsed ? '▸' : '▾'}</span>
+          <span>{title}</span>
         </button>
-      )}
-    </div>
-  );
+        {showSortToggle && (
+          <button
+            className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
+            onClick={handleSortToggle}
+            title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
+          >
+            {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">
@@ -426,88 +551,12 @@ export function Sidebar({
               () => setFavoritesCollapsed((prev) => !prev),
               false
             )}
-            {!favoritesCollapsed &&
-              favoriteItems.map((item) => {
-                if (item.type === 'channel') {
-                  const channel = item.channel;
-                  const unreadCount = getUnreadCount('channel', channel.key);
-                  const isMention = hasMention('channel', channel.key);
-                  return (
-                    <div
-                      key={`fav-chan-${channel.key}`}
-                      className={cn(
-                        'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                        isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                        unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                      )}
-                      onClick={() =>
-                        handleSelectConversation({
-                          type: 'channel',
-                          id: channel.key,
-                          name: channel.name,
-                        })
-                      }
-                    >
-                      <span className="name flex-1 truncate">{channel.name}</span>
-                      {unreadCount > 0 && (
-                        <span
-                          className={cn(
-                            'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                            isMention
-                              ? 'bg-destructive text-destructive-foreground'
-                              : 'bg-primary text-primary-foreground'
-                          )}
-                        >
-                          {unreadCount}
-                        </span>
-                      )}
-                    </div>
-                  );
-                } else {
-                  const contact = item.contact;
-                  const unreadCount = getUnreadCount('contact', contact.public_key);
-                  const isMention = hasMention('contact', contact.public_key);
-                  return (
-                    <div
-                      key={`fav-contact-${contact.public_key}`}
-                      className={cn(
-                        'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                        isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                        unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                      )}
-                      onClick={() =>
-                        handleSelectConversation({
-                          type: 'contact',
-                          id: contact.public_key,
-                          name: getContactDisplayName(contact.name, contact.public_key),
-                        })
-                      }
-                    >
-                      <ContactAvatar
-                        name={contact.name}
-                        publicKey={contact.public_key}
-                        size={24}
-                        contactType={contact.type}
-                      />
-                      <span className="name flex-1 truncate">
-                        {getContactDisplayName(contact.name, contact.public_key)}
-                      </span>
-                      {unreadCount > 0 && (
-                        <span
-                          className={cn(
-                            'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                            isMention
-                              ? 'bg-destructive text-destructive-foreground'
-                              : 'bg-primary text-primary-foreground'
-                          )}
-                        >
-                          {unreadCount}
-                        </span>
-                      )}
-                    </div>
-                  );
-                }
-              })}
+            {(isSearching || !favoritesCollapsed) &&
+              favoriteItems.map((item) =>
+                item.type === 'channel'
+                  ? renderConversationRow(buildChannelRow(item.channel, 'fav-chan'))
+                  : renderConversationRow(buildContactRow(item.contact, 'fav-contact'))
+              )}
           </>
         )}
 
@@ -520,42 +569,10 @@ export function Sidebar({
               () => setChannelsCollapsed((prev) => !prev),
               true
             )}
-            {!channelsCollapsed &&
-              nonFavoriteChannels.map((channel) => {
-                const unreadCount = getUnreadCount('channel', channel.key);
-                const isMention = hasMention('channel', channel.key);
-                return (
-                  <div
-                    key={`chan-${channel.key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
-                    onClick={() =>
-                      handleSelectConversation({
-                        type: 'channel',
-                        id: channel.key,
-                        name: channel.name,
-                      })
-                    }
-                  >
-                    <span className="name flex-1 truncate">{channel.name}</span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            {(isSearching || !channelsCollapsed) &&
+              nonFavoriteChannels.map((channel) =>
+                renderConversationRow(buildChannelRow(channel, 'chan'))
+              )}
           </>
         )}
 
@@ -568,50 +585,10 @@ export function Sidebar({
               () => setContactsCollapsed((prev) => !prev),
               true
             )}
-            {!contactsCollapsed &&
-              nonFavoriteContacts.map((contact) => {
-                const unreadCount = getUnreadCount('contact', contact.public_key);
-                const isMention = hasMention('contact', contact.public_key);
-                return (
-                  <div
-                    key={contact.public_key}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
-                    onClick={() =>
-                      handleSelectConversation({
-                        type: 'contact',
-                        id: contact.public_key,
-                        name: getContactDisplayName(contact.name, contact.public_key),
-                      })
-                    }
-                  >
-                    <ContactAvatar
-                      name={contact.name}
-                      publicKey={contact.public_key}
-                      size={24}
-                      contactType={contact.type}
-                    />
-                    <span className="name flex-1 truncate">
-                      {getContactDisplayName(contact.name, contact.public_key)}
-                    </span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            {(isSearching || !contactsCollapsed) &&
+              nonFavoriteContacts.map((contact) =>
+                renderConversationRow(buildContactRow(contact, 'contact'))
+              )}
           </>
         )}
 
@@ -624,50 +601,10 @@ export function Sidebar({
               () => setRepeatersCollapsed((prev) => !prev),
               true
             )}
-            {!repeatersCollapsed &&
-              nonFavoriteRepeaters.map((contact) => {
-                const unreadCount = getUnreadCount('contact', contact.public_key);
-                const isMention = hasMention('contact', contact.public_key);
-                return (
-                  <div
-                    key={`repeater-${contact.public_key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
-                    onClick={() =>
-                      handleSelectConversation({
-                        type: 'contact',
-                        id: contact.public_key,
-                        name: getContactDisplayName(contact.name, contact.public_key),
-                      })
-                    }
-                  >
-                    <ContactAvatar
-                      name={contact.name}
-                      publicKey={contact.public_key}
-                      size={24}
-                      contactType={contact.type}
-                    />
-                    <span className="name flex-1 truncate">
-                      {getContactDisplayName(contact.name, contact.public_key)}
-                    </span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+            {(isSearching || !repeatersCollapsed) &&
+              nonFavoriteRepeaters.map((contact) =>
+                renderConversationRow(buildContactRow(contact, 'repeater'))
+              )}
           </>
         )}
 
