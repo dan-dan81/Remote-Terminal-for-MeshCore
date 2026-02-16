@@ -1,12 +1,183 @@
-# RemoteTerm for MeshCore
+# Remote Terminal for MeshCore 🐨
 
-Backend server + browser interface for MeshCore mesh radio networks. Connect your radio over Serial, TCP, or BLE, and then you can:
+A high-performance, web-based terminal and API gateway for MeshCore, optimized for **Proxmox LXC infrastructure**. This fork enables real-time mesh monitoring, remote command execution, and deep integration with **Home Assistant** via MQTT, as well as the messaging
 
-* Send and receive DMs and GroupTexts
-* Cache all received packets, decrypting as you gain keys
-* Monitor unlimited contacts and channels (radio limits don't apply -- packets are decrypted server-side)
-* Access your radio remotely over your network or VPN
-* Brute force hashtag room names for GroupTexts you don't have keys for yet
+
+
+## Key Features
+* **Web-Based Console:** Full interactive terminal for radio configuration and monitoring.
+* **REST API:** Send messages, manage contacts, and check radio health programmatically.
+* **LXC Optimized:** High-performance deployment using unprivileged containers and direct `dev0` mapping.
+* **MQTT Gateway:** Bridge your mesh traffic to Home Assistant (RSSI, SNR, and Text).
+
+## Future Enhancements being investigated.
+* **Observer**
+* **MeshCLI**
+* **Fleet Management**
+* **Deeper Home Assistant Integration** Featuring alerts, status etc to a nominated channel.
+---
+
+# 🛠 Installation: Proxmox LXC Deployment
+
+### 1. LXC Container Requirements
+* **Template:** Debian 12 (Bookworm) or Ubuntu 24.04.
+* **Mode:** **Unprivileged** (Recommended for security).
+* **Resources:** 1GB RAM (for build), 1 CPU Core, 4GB Disk.
+* **Hardware:** Meshtastic-compatible radio (e.g., RAK4631) connected via USB to the host.
+
+### 2. Hardware Passthrough (Proxmox Host)
+Map the USB serial device from the host into the container using the `devX` method. This handles permissions automatically without needing privileged mode.
+
+1.  **Identify device on Host:** `ls -l /dev/serial/by-id/`
+2.  **Edit LXC Config:** `nano /etc/pve/lxc/ID.conf`
+3.  **Add device line:** `dev0: /dev/ttyACM0` (Update path if your device is `ttyUSB0`)
+
+### 3. Environment & Dependencies
+Log into your LXC as `root`. We install **Node.js 20 (LTS)** for frontend compatibility.
+
+1.  **Install Node.js 20 (LTS) & System Tools:**
+    ```bash
+    apt update && apt install -y ca-certificates curl gnupg
+    curl -fsSL [https://deb.nodesource.com/setup_20.x](https://deb.nodesource.com/setup_20.x) | bash -
+    apt install -y nodejs git python3-pip
+    ```
+2.  **Install `uv` (Python Manager):**
+    ```bash
+    curl -LsSf [https://astral.sh/uv/install.sh](https://astral.sh/uv/install.sh) | sh
+    source $HOME/.cargo/env
+    ```
+
+### 4. Build the Frontend
+To match the pre-configured service paths, we will install the application in `/opt/remoteterm`.
+
+```bash
+mkdir -p /opt/remoteterm
+git clone [https://github.com/dan-dan81/Remote-Terminal-for-MeshCore.git](https://github.com/dan-dan81/Remote-Terminal-for-MeshCore.git) /opt/remoteterm
+cd /opt/remoteterm/frontend
+
+# Install node modules and build
+npm install
+npm run build
+npm run dev      # Dev server at http://localhost:5173 (proxies API to :8000)
+
+### 5. Setup Python Backend & Database
+'''bash
+cd /opt/remoteterm
+uv sync
+
+# Create the data directory for the database
+mkdir -p data
+
+### 6. Activate Services
+Use the pre-configured service files included in the repository.
+
+Link Services:
+'''Bash
+# Copy to systemd and set permissions
+cp /opt/remoteterm/remoteterm.service /etc/systemd/system/
+chmod 644 /etc/systemd/system/remoteterm.service
+
+Activate:
+'''Bash
+systemctl daemon-reload
+systemctl enable --now remoteterm.service
+systemctl status
+
+
+📡 Additional Features: MQTT and Home Assistant Integration
+
+1. Configure the MQTT Bridge
+Define Variables in .env:
+
+'''Bash
+echo "MQTT_BROKER=192.168.86.135" >> /opt/remoteterm/.env
+echo "MQTT_TOPIC=meshcore/terminal/rx" >> /opt/remoteterm/.env
+
+
+Setup Bridge Service:
+'''Bash
+cp /opt/remoteterm/remoteterm-bridge.service /etc/systemd/system/
+chmod 644 /etc/systemd/system/remoteterm-bridge.service
+systemctl enable --now remoteterm-bridge.service
+
+3. The Bridge Script (mqtt_bridge.py)
+This is the "engine" that listens to the MeshCore WebSocket and pushes to MQTT. This is in the repo for publishing remoteterm/mqtt_bridge.py
+'''python
+import asyncio
+import websockets
+import json
+import paho.mqtt.client as mqtt
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Config from .env
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "meshcore/terminal/rx")
+WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/api/ws")
+
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected to MQTT Broker with result code {rc}")
+
+mqtt_client = mqtt.Client()
+mqtt_client.on_connect = on_connect
+mqtt_client.connect(MQTT_BROKER, 1883, 60)
+mqtt_client.loop_start()
+
+async def bridge():
+    while True:
+        try:
+            async with websockets.connect(WS_URL) as websocket:
+                print(f"Connected to MeshCore WebSocket at {WS_URL}")
+                while True:
+                    message = await websocket.recv()
+                    # Forward the raw JSON to MQTT
+                    mqtt_client.publish(MQTT_TOPIC, message)
+                    print(f"Forwarded: {message[:50]}...")
+        except Exception as e:
+            print(f"Connection lost, retrying in 5s... Error: {e}")
+            await asyncio.sleep(5)
+
+if __name__ == "__main__":
+    asyncio.run(bridge())
+
+4. Activation Steps
+Once those files are in place, run these commands to go live:
+
+'''Bash
+# Copy and link the service
+cp /opt/remoteterm/remoteterm-bridge.service /etc/systemd/system/
+# Set permissions
+chmod 644 /etc/systemd/system/remoteterm-bridge.service
+# Reload and Start
+systemctl daemon-reload
+systemctl enable --now remoteterm-bridge.service
+
+
+2. Home Assistant Configuration
+Add the following to your configuration.yaml to monitor your mesh health and signal:
+
+YAML
+mqtt:
+  sensor:
+    - name: "Mesh Signal RSSI"
+      state_topic: "meshcore/terminal/rx"
+      unit_of_measurement: "dBm"
+      value_template: "{{ value_json.data.rssi | default(states('sensor.mesh_signal_rssi')) }}"
+      device_class: signal_strength
+
+    - name: "MeshCore Radio Status"
+      state_topic: "meshcore/terminal/rx"
+      value_template: >
+        {% if value_json.type == 'health' %}
+          {{ 'Online' if value_json.data.radio_connected else 'Offline' }}
+        {% else %}
+          {{ states('sensor.meshcore_radio_status') }}
+        {% endif %}
+
+
+
 
 **Warning:** This app has no auth, and is for trusted environments only. _Do not put this on an untrusted network, or open it to the public._ The bots can execute arbitrary Python code which means anyone on your network can, too. If you need access control, consider using a reverse proxy like Nginx, or extending FastAPI.
 
@@ -18,50 +189,6 @@ This is entirely vibecoded slop -- no warranty of fitness for any purpose. It's 
 
 If extending, have your LLM read the three `AGENTS.md` files: `./AGENTS.md`, `./frontend/AGENTS.md`, and `./app/AGENTS.md`.
 
-## Requirements
-
-- Python 3.10+
-- Node.js 18+ (for frontend development only)
-- [UV](https://astral.sh/uv) package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- MeshCore radio connected via USB serial, TCP, or BLE
-
-<details>
-<summary>Finding your serial port</summary>
-
-```bash
-#######
-# Linux
-#######
-ls /dev/ttyUSB* /dev/ttyACM*
-
-#######
-# macOS
-#######
-ls /dev/cu.usbserial-* /dev/cu.usbmodem*
-
-######
-# WSL2
-######
-# Run this in an elevated PowerShell (not WSL) window
-winget install usbipd
-
-# restart console
-
-# find device ID (e.g. 3-8)
-usbipd list
-
-# attach device to WSL
-usbipd bind --busid 3-8
-```
-</details>
-
-## Quick Start
-
-**This approach is recommended over Docker due to intermittent serial communications issues I've seen on \*nix systems.**
-
-```bash
-git clone https://github.com/jkingsman/Remote-Terminal-for-MeshCore.git
-cd Remote-Terminal-for-MeshCore
 
 # Install backend dependencies
 uv sync
@@ -89,28 +216,6 @@ Access at http://localhost:8000
 
 > **Note:** WebGPU cracking requires HTTPS when not on localhost. See the HTTPS section under Additional Setup.
 
-## Docker
-
-> **Warning:** Docker has intermittent issues with serial event subscriptions. The native method above is more reliable.
-
-> **Note:** BLE-in-docker is outside the scope of this README, but the env vars should all still work.
-
-```bash
-# Serial
-docker run -d \
-  --device=/dev/ttyUSB0 \
-  -v remoteterm-data:/app/data \
-  -p 8000:8000 \
-  jkingsman/remote-terminal-for-meshcore:latest
-
-# TCP
-docker run -d \
-  -e MESHCORE_TCP_HOST=192.168.1.100 \
-  -e MESHCORE_TCP_PORT=4000 \
-  -v remoteterm-data:/app/data \
-  -p 8000:8000 \
-  jkingsman/remote-terminal-for-meshcore:latest
-```
 
 ## Development
 
